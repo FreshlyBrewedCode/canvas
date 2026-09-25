@@ -37,9 +37,11 @@ ACP-speaking agent "just works" — rather than the opencode-specific adapter fa
   under `/workspace` → `<dir>/<host path>/.tanstack-projected-<hash>`. The spike produced
   `data/src/canvas/…/.tanstack-projected-*` inside the work dir; factory's `.gitignore`
   carrying `data/` and `.tanstack-projected-*` suggests it hits the same bug.
-  Dropping `workspace` from `defineSandbox` (canvas projects no skills/secrets) removes
-  the marker file, but an **empty** `<first segment of the host path>/…` dir is still
-  created (e.g. `tmp/canvas-smoke/`). Git ignores empty dirs, so it is cosmetic. Worth an
-  upstream issue.
+  Dropping `workspace` from `defineSandbox` is **not** a workaround: the sandbox middleware
+  always declares the `sandbox-projection` capability, and without a workspace `chat()` fails
+  with *Middleware "sandbox" declares it provides "sandbox-projection" but never called
+  provide() in setup()* (it passed once by chance in a smoke run). canvas keeps the empty
+  workspace and adds `.tanstack-projected-*` (and `.canvas/`) to the project's
+  `.git/info/exclude`. Worth an upstream issue.
 - Don't pass an absolute host path as `cwd` either: `cwd` is the *virtual* sandbox path
   (default `/workspace`, mapped to `dir`).

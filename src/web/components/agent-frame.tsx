@@ -273,6 +273,7 @@ function PermissionCard({ permission, frameId }: { permission: Permission; frame
           {permission.options.map((option) => (
             <Button
               key={option.optionId}
+              data-permission-kind={option.kind}
               size="sm"
               variant={
                 option.kind.startsWith("allow")
