@@ -31,9 +31,15 @@ ACP-speaking agent "just works" — rather than the opencode-specific adapter fa
 
 ## Gotchas
 
-- **Don't pass an absolute host path as `cwd`.** `cwd` is the *virtual* sandbox path
-  (default `/workspace`, which `localProcessSandbox({dir})` maps to `dir`). An absolute host
-  path gets nested under the workspace: the spike produced `data/src/canvas/…/.tanstack-projected-*`
-  inside the work dir. (factory's `.gitignore` carries `data/` and `.tanstack-projected-*`,
-  which suggests it hits the same thing.)
-- The sandbox writes a `.tanstack-projected-<hash>` file into the workspace — gitignore it.
+- **`localProcessSandbox` nests host paths under the workspace** (`@tanstack/ai-sandbox`
+  0.5.15). `resolveHarnessCwd` returns the *host* dir for local-process sandboxes, and the
+  workspace-projection marker is then written through the sandbox fs, which maps paths
+  under `/workspace` → `<dir>/<host path>/.tanstack-projected-<hash>`. The spike produced
+  `data/src/canvas/…/.tanstack-projected-*` inside the work dir; factory's `.gitignore`
+  carrying `data/` and `.tanstack-projected-*` suggests it hits the same bug.
+  Dropping `workspace` from `defineSandbox` (canvas projects no skills/secrets) removes
+  the marker file, but an **empty** `<first segment of the host path>/…` dir is still
+  created (e.g. `tmp/canvas-smoke/`). Git ignores empty dirs, so it is cosmetic. Worth an
+  upstream issue.
+- Don't pass an absolute host path as `cwd` either: `cwd` is the *virtual* sandbox path
+  (default `/workspace`, mapped to `dir`).
