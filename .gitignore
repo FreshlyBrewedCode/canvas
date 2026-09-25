@@ -1,0 +1,67 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# playwright artefacts (S2)
+test-results/
+playwright-report/
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# factory spike working dir + raw run dumps (D14)
+*.ndjson
+
+# ...except the recorded corpora promoted to committed test fixtures. D3's
+# event type is designed against these (ADR 0003) and phase 1's corpus-replay
+# adapter reads them, so they have to survive a fresh checkout. 128K total.
+!test/corpus/*.ndjson
+
+# playwright-cli session snapshots
+.playwright-cli/
+
+# factory: regenerable state (the config and workflows above it stay)
+**/factory.db
+**/factory.db-shm
+**/factory.db-wal
+.factory/workspaces/
+.factory/runs/
+
+# per-machine Tailscale cert for the Vite dev server (`tailscale cert`)
+.certs/
+
+# tanstack sandbox projected state
+.tanstack-projected-*
+data/
+
+# canvas: per-project state written by `canvas serve`
+.canvas/
+spikes/acp-workdir/

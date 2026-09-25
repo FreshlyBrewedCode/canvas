@@ -1,0 +1,19 @@
+{
+  "name": "canvas",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tanstack/ai": "^0.61.0",
+    "@tanstack/ai-acp": "^0.3.17",
+    "@tanstack/ai-client": "^0.35.1",
+    "@tanstack/ai-opencode": "^0.4.12",
+    "@tanstack/ai-sandbox": "^0.5.15",
+    "@tanstack/ai-sandbox-local-process": "^0.2.6",
+    "trystero": "^0.25.4",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "playwright": "1.63"
+  }
+}
