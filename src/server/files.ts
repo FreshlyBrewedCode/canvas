@@ -21,7 +21,8 @@ export class Files {
   private resolve(path: string): string {
     const absolute = resolve(this.dir, path);
     const rel = relative(this.dir, absolute);
-    if (rel.startsWith("..") || resolve(this.dir, rel) !== absolute) throw new Error(`path escapes the working dir: ${path}`);
+    if (rel.startsWith("..") || resolve(this.dir, rel) !== absolute)
+      throw new Error(`path escapes the working dir: ${path}`);
     return absolute;
   }
 

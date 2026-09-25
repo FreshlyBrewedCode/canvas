@@ -5,6 +5,8 @@
  */
 
 import type { ServerWebSocket } from "bun";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ClientToServer, ServerToClient } from "../shared/protocol";
 import { AgentManager, detectAgents } from "./agents";
 import { Files } from "./files";
@@ -20,6 +22,7 @@ export interface ServeOptions {
 
 export async function serve(options: ServeOptions) {
   const store = new Store(options.dir);
+  excludeFromGit(options.dir);
   const room = await store.room();
   const clients = new Set<ServerWebSocket<unknown>>();
   const broadcast = (message: ServerToClient) => {
@@ -59,14 +62,26 @@ export async function serve(options: ServeOptions) {
       case "agent-cancel":
         return agents.cancel(message.sessionId);
       case "agent-permission":
-        return agents.resolvePermission(message.sessionId, message.requestId, message.optionId, message.by);
+        return agents.resolvePermission(
+          message.sessionId,
+          message.requestId,
+          message.optionId,
+          message.by,
+        );
       case "file-watch":
         return files.watch(message.path);
       case "file-write":
         return files.write(message.path, message.content);
       case "term-open": {
         const scrollback = terminals.open(message.id, message.cols, message.rows);
-        if (scrollback) ws.send(JSON.stringify({ t: "term-data", id: message.id, data: scrollback } satisfies ServerToClient));
+        if (scrollback)
+          ws.send(
+            JSON.stringify({
+              t: "term-data",
+              id: message.id,
+              data: scrollback,
+            } satisfies ServerToClient),
+          );
         return;
       }
       case "term-input":
@@ -79,13 +94,19 @@ export async function serve(options: ServeOptions) {
   const server = Bun.serve({
     port: options.port,
     hostname: options.hostname,
-    ...(options.tls && { tls: { cert: Bun.file(options.tls.cert), key: Bun.file(options.tls.key) } }),
+    ...(options.tls && {
+      tls: { cert: Bun.file(options.tls.cert), key: Bun.file(options.tls.key) },
+    }),
     fetch(req, server) {
       const url = new URL(req.url);
-      if (url.pathname !== "/ws") return new Response("canvas server — open the link printed in your terminal", { status: 404 });
+      if (url.pathname !== "/ws")
+        return new Response("canvas server — open the link printed in your terminal", {
+          status: 404,
+        });
       // A WebSocket is not subject to CORS: any page could open one to
       // localhost. The token is what keeps other sites out.
-      if (url.searchParams.get("token") !== room.token) return new Response("bad token", { status: 401 });
+      if (url.searchParams.get("token") !== room.token)
+        return new Response("bad token", { status: 401 });
       return server.upgrade(req) ? undefined : new Response("upgrade failed", { status: 400 });
     },
     websocket: {
@@ -109,7 +130,12 @@ export async function serve(options: ServeOptions) {
         try {
           handle(ws, JSON.parse(String(data)) as ClientToServer);
         } catch (error) {
-          ws.send(JSON.stringify({ t: "error", message: error instanceof Error ? error.message : String(error) } satisfies ServerToClient));
+          ws.send(
+            JSON.stringify({
+              t: "error",
+              message: error instanceof Error ? error.message : String(error),
+            } satisfies ServerToClient),
+          );
         }
       },
       close(ws) {
@@ -119,4 +145,20 @@ export async function serve(options: ServeOptions) {
   });
 
   return { server, room };
+}
+
+/**
+ * Keep canvas's own files out of the user's commits: `.canvas/` (board and
+ * session state) and the sandbox's projection marker (finding 01).
+ * `.git/info/exclude` is local to the clone and never committed itself.
+ */
+function excludeFromGit(dir: string) {
+  const exclude = join(dir, ".git", "info", "exclude");
+  if (!existsSync(join(dir, ".git", "info"))) return;
+  const current = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  const missing = [".canvas/", ".tanstack-projected-*"].filter(
+    (line) => !current.split("\n").includes(line),
+  );
+  if (missing.length)
+    appendFileSync(exclude, `\n# canvas: local state, never committed\n${missing.join("\n")}\n`);
 }

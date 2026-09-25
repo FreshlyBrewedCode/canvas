@@ -10,7 +10,7 @@
 
 import { chat } from "@tanstack/ai";
 import { acpCompatible, type AcpCompatibleConfig } from "@tanstack/ai-acp";
-import { defineSandbox, withSandbox } from "@tanstack/ai-sandbox";
+import { defineSandbox, defineWorkspace, withSandbox } from "@tanstack/ai-sandbox";
 import { localProcessSandbox } from "@tanstack/ai-sandbox-local-process";
 import type {
   AgentEvent,
@@ -27,7 +27,10 @@ interface AgentDefinition extends AgentInfo {
   readonly env?: Record<string, string>;
 }
 
-const claudeAcpBin = Bun.resolveSync("@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.dir);
+const claudeAcpBin = Bun.resolveSync(
+  "@agentclientprotocol/claude-agent-acp/dist/index.js",
+  import.meta.dir,
+);
 
 /** The ACP agents canvas knows how to launch, filtered to what is installed. */
 export function detectAgents(): ReadonlyArray<AgentDefinition> {
@@ -91,8 +94,13 @@ export class AgentManager {
 
   create(id: string, agent: AgentKind): void {
     if (this.sessions.has(id)) return;
-    if (!this.options.agents.some((a) => a.kind === agent)) throw new Error(`unknown agent ${agent}`);
-    const session: Session = { meta: { id, agent, status: "idle" }, events: [], pending: new Map() };
+    if (!this.options.agents.some((a) => a.kind === agent))
+      throw new Error(`unknown agent ${agent}`);
+    const session: Session = {
+      meta: { id, agent, status: "idle" },
+      events: [],
+      pending: new Map(),
+    };
     this.sessions.set(id, session);
     this.options.onMeta(session.meta);
   }
@@ -103,7 +111,12 @@ export class AgentManager {
     for (const resolve of session?.pending.values() ?? []) resolve(null);
   }
 
-  resolvePermission(sessionId: string, requestId: string, optionId: string | null, by: string): void {
+  resolvePermission(
+    sessionId: string,
+    requestId: string,
+    optionId: string | null,
+    by: string,
+  ): void {
     const session = this.sessions.get(sessionId);
     const resolve = session?.pending.get(requestId);
     if (!session || !resolve) return;
@@ -116,7 +129,8 @@ export class AgentManager {
   prompt(sessionId: string, text: string, author: Author): void {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no session ${sessionId}`);
-    if (session.meta.status !== "idle") throw new Error("the agent is still working on the last prompt");
+    if (session.meta.status !== "idle")
+      throw new Error("the agent is still working on the last prompt");
     void this.runTurn(session, text, author);
   }
 
@@ -149,6 +163,7 @@ export class AgentManager {
             kind: "permission",
             turnId,
             requestId,
+            toolCallId: request.toolCall.toolCallId,
             title: request.toolCall.title ?? "Tool call",
             options,
           });
@@ -161,6 +176,10 @@ export class AgentManager {
     const sandbox = defineSandbox({
       id: `canvas-${session.meta.id}`,
       provider: localProcessSandbox({ dir: this.options.dir }),
+      // Required: the sandbox middleware always declares a workspace
+      // projection. Its marker file lands in a nested dir (finding 01); the
+      // server keeps it out of git via `.git/info/exclude`.
+      workspace: defineWorkspace({ source: { type: "none" }, setup: [] }),
       lifecycle: { reuse: "thread", destroyOnComplete: false },
     });
 

@@ -9,7 +9,14 @@
  * have working.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { AgentEvent, RoomSecrets, SessionMeta, SessionSnapshot } from "../shared/protocol";
 
@@ -18,7 +25,8 @@ export interface RoomFile extends RoomSecrets {
   readonly token: string;
 }
 
-const randomId = (bytes: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url");
+const randomId = (bytes: number) =>
+  Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url");
 
 export class Store {
   private readonly root: string;
@@ -32,7 +40,10 @@ export class Store {
     const path = join(this.root, "room.json");
     if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")) as RoomFile;
 
-    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+      "sign",
+      "verify",
+    ]);
     const raw = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
     const room: RoomFile = {
       roomId: randomId(9),
@@ -72,10 +83,16 @@ export class Store {
   }
 
   appendMeta(meta: SessionMeta): void {
-    appendFileSync(join(this.root, "sessions", `${meta.id}.ndjson`), `${JSON.stringify({ meta })}\n`);
+    appendFileSync(
+      join(this.root, "sessions", `${meta.id}.ndjson`),
+      `${JSON.stringify({ meta })}\n`,
+    );
   }
 
   appendEvent(sessionId: string, event: AgentEvent): void {
-    appendFileSync(join(this.root, "sessions", `${sessionId}.ndjson`), `${JSON.stringify({ event })}\n`);
+    appendFileSync(
+      join(this.root, "sessions", `${sessionId}.ndjson`),
+      `${JSON.stringify({ event })}\n`,
+    );
   }
 }

@@ -43,7 +43,11 @@ export class Terminals {
     };
     this.terms.set(id, term);
     const shell = process.env.SHELL ?? "bash";
-    const proc = Bun.spawn([shell, "-l"], { cwd: this.dir, terminal: term.terminal, env: { ...process.env, TERM: "xterm-256color" } });
+    const proc = Bun.spawn([shell, "-l"], {
+      cwd: this.dir,
+      terminal: term.terminal,
+      env: { ...process.env, TERM: "xterm-256color" },
+    });
     void proc.exited.then((code) => {
       this.terms.delete(id);
       this.onExit(id, code);

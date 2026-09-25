@@ -47,12 +47,20 @@ export interface PermissionOption {
  * all guests render an identical thread.
  */
 export type AgentEvent =
-  | { readonly kind: "turn"; readonly turnId: string; readonly text: string; readonly author: Author; readonly at: number }
+  | {
+      readonly kind: "turn";
+      readonly turnId: string;
+      readonly text: string;
+      readonly author: Author;
+      readonly at: number;
+    }
   | { readonly kind: "chunk"; readonly turnId: string; readonly chunk: unknown }
   | {
       readonly kind: "permission";
       readonly turnId: string;
       readonly requestId: string;
+      /** The tool call this permission gates, when the agent says. */
+      readonly toolCallId?: string;
       readonly title: string;
       readonly options: ReadonlyArray<PermissionOption>;
     }
@@ -62,7 +70,12 @@ export type AgentEvent =
       readonly optionId: string | null;
       readonly by: string;
     }
-  | { readonly kind: "turn-end"; readonly turnId: string; readonly error?: string; readonly cancelled?: boolean };
+  | {
+      readonly kind: "turn-end";
+      readonly turnId: string;
+      readonly error?: string;
+      readonly cancelled?: boolean;
+    };
 
 export interface SessionSnapshot {
   readonly meta: SessionMeta;
@@ -85,7 +98,12 @@ export interface RoomSecrets {
 export type ClientToServer =
   | { readonly t: "board-save"; readonly state: string }
   | { readonly t: "agent-create"; readonly id: string; readonly agent: AgentKind }
-  | { readonly t: "agent-prompt"; readonly sessionId: string; readonly text: string; readonly author: Author }
+  | {
+      readonly t: "agent-prompt";
+      readonly sessionId: string;
+      readonly text: string;
+      readonly author: Author;
+    }
   | { readonly t: "agent-cancel"; readonly sessionId: string }
   | {
       readonly t: "agent-permission";
@@ -98,7 +116,12 @@ export type ClientToServer =
   | { readonly t: "file-write"; readonly path: string; readonly content: string }
   | { readonly t: "term-open"; readonly id: string; readonly cols: number; readonly rows: number }
   | { readonly t: "term-input"; readonly id: string; readonly data: string }
-  | { readonly t: "term-resize"; readonly id: string; readonly cols: number; readonly rows: number };
+  | {
+      readonly t: "term-resize";
+      readonly id: string;
+      readonly cols: number;
+      readonly rows: number;
+    };
 
 export type ServerToClient =
   | {

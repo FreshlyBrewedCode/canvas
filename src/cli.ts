@@ -35,7 +35,9 @@ if (positionals[0] !== "serve") {
 const dir = resolve(values.dir);
 const tlsHost = values["tls-host"];
 if (tlsHost && !(existsSync(values.cert) && existsSync(values.key))) {
-  console.error(`--tls-host needs a certificate: tailscale cert --cert-file ${values.cert} --key-file ${values.key} ${tlsHost}`);
+  console.error(
+    `--tls-host needs a certificate: tailscale cert --cert-file ${values.cert} --key-file ${values.key} ${tlsHost}`,
+  );
   process.exit(1);
 }
 
@@ -48,7 +50,12 @@ const { server, room } = await serve({
 
 const serverUrl = tlsHost ? `wss://${tlsHost}:${server.port}` : `ws://127.0.0.1:${server.port}`;
 // Secrets ride in the fragment, which browsers never send to the web host.
-const fragment = new URLSearchParams({ k: room.key, pk: room.hostPublicKey, server: serverUrl, token: room.token });
+const fragment = new URLSearchParams({
+  k: room.key,
+  pk: room.hostPublicKey,
+  server: serverUrl,
+  token: room.token,
+});
 const link = `${values["web-url"].replace(/\/$/, "")}/?room=${room.roomId}#${fragment}`;
 
 console.log(`canvas serving ${dir}`);
