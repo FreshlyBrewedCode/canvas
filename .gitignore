@@ -55,7 +55,7 @@ playwright-report/
 .factory/workspaces/
 .factory/runs/
 
-# per-machine Tailscale cert for the Vite dev server (`tailscale cert`)
+# per-machine TLS cert for the dev servers and `canvas serve --tls-host`
 .certs/
 
 # tanstack sandbox projected state

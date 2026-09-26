@@ -1,11 +1,14 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { existsSync, readFileSync } from "node:fs";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
-// `tailscale cert --cert-file .certs/dev.crt --key-file .certs/dev.key
-// dev.example.ts.net` — a real, publicly-trusted cert for the tailnet
-// MagicDNS name, kept out of git. Absent, Vite serves plain HTTP.
+// To reach the dev server from other devices, set `CANVAS_DEV_HOST` (in the
+// environment or a gitignored `.env`) to a name they resolve and put a real
+// certificate for it in `.certs/dev.{crt,key}` (e.g. `tailscale cert`) — both
+// local, neither in git. Absent, Vite serves plain HTTP on localhost names only.
+// Only `VITE_`-prefixed variables reach the bundle, so this one stays here.
+const devHost = loadEnv("development", import.meta.dirname, "CANVAS_DEV_").CANVAS_DEV_HOST;
 const certFile = "./.certs/dev.crt";
 const keyFile = "./.certs/dev.key";
 const https =
@@ -28,7 +31,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 4417,
     strictPort: true,
-    allowedHosts: ["dev.example.ts.net"],
+    allowedHosts: devHost ? [devHost] : [],
     https,
     fs: { allow: [import.meta.dirname] },
   },

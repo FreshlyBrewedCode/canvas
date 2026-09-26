@@ -37,13 +37,22 @@ canvas
 
 - working in this repo
   - `bun run check` = format:check + lint + typecheck + test
-  - dev: `bun run dev` (Vite on :4417, https with `.certs/` from `tailscale cert`) and
-    `bun src/cli.ts serve --dir <project> --tls-host dev.example.ts.net --web-url https://dev.example.ts.net:4417`
+  - dev: `bun run dev` (Vite on :4417) and `bun src/cli.ts serve --dir <project>`. To reach it
+    from other devices: `CANVAS_DEV_HOST=<name>` in a local `.env`, a cert for it in
+    `.certs/dev.{crt,key}`, then `serve --tls-host <name> --web-url https://<name>:4417`. Machine
+    names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
     layout|resume|focus|focus-agent`; `files` wants the scratch repo of finding 05, `tools`/`lines`
     the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file, finding 08)
   - conventional commits; spike → prototype → validate → harden
+  - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
+    semantic-release reads. Every merge to `main` publishes `@frebreco/canvas@next` and deploys its
+    web app to `ui.canvas.frebreco.de/next`; `release.yml` by hand publishes `latest` and deploys
+    to `ui.canvas.frebreco.de` (`ui.yml` pushes to the `canvas-ui` repo, whose Pages serve it). The
+    published CLI opens its own channel's web app (`src/server/web-url.ts`). The package is staged
+    by `scripts/build-release.ts`; `site.yml` deploys `site/` to `canvas.frebreco.de`. One-time
+    setup: `scripts/bootstrap-release.sh`
 
 - docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence; `site/` the public
   landing page and user docs (Astro, own package, see `site/README.md`). A user-visible change

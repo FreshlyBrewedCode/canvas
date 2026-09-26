@@ -3,12 +3,14 @@ import tailwind from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import expressiveCode from "astro-expressive-code";
 import { existsSync, readFileSync } from "node:fs";
+import { loadEnv } from "vite";
 
-// Same arrangement as the app's `vite.config.ts` one level up: a real,
-// publicly-trusted cert for the tailnet MagicDNS name, minted with
-// `tailscale cert --cert-file ../.certs/dev.crt --key-file ../.certs/dev.key
-// dev.example.ts.net` and kept out of git. Absent, the dev server falls
-// back to plain HTTP so a fresh checkout still runs.
+// Same arrangement as the app's `vite.config.ts` one level up, sharing its
+// `.env`: `CANVAS_DEV_HOST` names the host other devices reach the dev server
+// on, `../.certs/dev.{crt,key}` is a real certificate for it, both local and
+// kept out of git. Absent, the dev server falls back to plain HTTP so a fresh
+// checkout still runs.
+const devHost = loadEnv("development", "..", "CANVAS_DEV_").CANVAS_DEV_HOST;
 const certFile = "../.certs/dev.crt";
 const keyFile = "../.certs/dev.key";
 const httpsOptions =
@@ -17,7 +19,7 @@ const httpsOptions =
     : undefined;
 
 export default defineConfig({
-  site: "https://docs.canvas.frebreco.de",
+  site: "https://canvas.frebreco.de",
 
   // No `redirects` entry for `/docs`. On static hosting Astro can only compile
   // one into a meta-refresh stub, and an unstyled stub paints white before it
@@ -27,15 +29,15 @@ export default defineConfig({
   // Expressive Code's own options live in `ec.config.mjs` — see the note there.
   integrations: [expressiveCode()],
 
-  // Bound to the tailnet, not just loopback, so the dev server is shareable.
+  // Bound to all interfaces, not just loopback, so the dev server is shareable.
   server: { host: "0.0.0.0", port: Number(process.env.PORT) || 4419 },
 
   vite: {
     plugins: [tailwind()],
     server: {
       // Vite rejects host headers that aren't localhost or an IP by default
-      // (CVE-2025-30208 hardening); the MagicDNS name needs an explicit allow.
-      allowedHosts: ["dev.example.ts.net"],
+      // (CVE-2025-30208 hardening); the dev host name needs an explicit allow.
+      allowedHosts: devHost ? [devHost] : [],
       https: httpsOptions,
     },
   },
