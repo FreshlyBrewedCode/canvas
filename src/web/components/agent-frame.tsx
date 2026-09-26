@@ -12,6 +12,7 @@ import { promptText, updateFrame, type Frame } from "@/lib/board";
 import { useRoom, useRoomState, useSession } from "@/lib/room-context";
 import { foldThread, type Permission, type Row, type Turn } from "@/lib/thread";
 import { cn } from "@/lib/utils";
+import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
 
 type AgentFrameData = Extract<Frame, { type: "agent" }>;
 
@@ -282,7 +283,7 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
             label={
               <span className="flex min-w-0 items-center gap-1.5">
                 <Wrench className="size-3 shrink-0" />
-                <span className="truncate font-mono">{row.name}</span>
+                <span className="truncate font-mono">{toolLabel(row.name)}</span>
                 <span
                   className={cn(
                     "font-mono",
@@ -309,6 +310,15 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
       );
   }
 }
+
+/** A board tool as each agent names it (`mcp__canvas__open_frame`, `canvas_open_frame`). */
+const BOARD_TOOL = new RegExp(
+  `^(?:mcp__${BOARD_SERVER_NAME}__|${BOARD_SERVER_NAME}_)(${BOARD_TOOL_NAMES.join("|")})$`,
+);
+const toolLabel = (name: string) => {
+  const board = BOARD_TOOL.exec(name);
+  return board ? `${BOARD_SERVER_NAME} · ${board[1]}` : name;
+};
 
 function Disclosure({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);

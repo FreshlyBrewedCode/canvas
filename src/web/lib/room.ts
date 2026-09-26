@@ -41,7 +41,8 @@ import type {
   SessionMeta,
   SessionSnapshot,
 } from "../../shared/protocol";
-import { framesOf, readFrame, type Frame } from "./board";
+import { allFrames, type Frame } from "./board";
+import { runBoardTool } from "./board-tools";
 import { signHost, verifyHost } from "./host-key";
 import type { BoardLink, Identity } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
@@ -519,6 +520,8 @@ export class Room {
         this.putTree(message.paths);
         if (this.access !== "view") this.hostcast(message);
         return;
+      case "board-call":
+        return this.runBoardCall(message);
       case "error":
         this.error = message.message;
         return this.emit("room");
@@ -536,9 +539,29 @@ export class Room {
   }
 
   private frames(): Frame[] {
-    const frames: Frame[] = [];
-    framesOf(this.doc).forEach((map, id) => frames.push(readFrame(map, id)));
-    return frames;
+    return allFrames(this.doc);
+  }
+
+  /** Host: run an agent's board tool call against the board, and answer it. */
+  private runBoardCall(message: Extract<ServerToClient, { t: "board-call" }>) {
+    let ok = true;
+    let text: string;
+    try {
+      text = runBoardTool(
+        {
+          doc: this.doc,
+          self: message.sessionId,
+          agents: this.roomState?.agents ?? [],
+          status: (id) => this.sessions.get(id)?.meta.status,
+        },
+        message.tool,
+        message.args,
+      );
+    } catch (error) {
+      ok = false;
+      text = error instanceof Error ? error.message : String(error);
+    }
+    this.server?.send({ t: "board-result", callId: message.callId, ok, text });
   }
 
   /**
