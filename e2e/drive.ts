@@ -67,10 +67,28 @@ async function approveUntilIdle(host: Page, guest: Page) {
   throw new Error("agent never went idle");
 }
 
+/**
+ * Add a frame from the toolbar and return it. Frames render in a stable
+ * order, not creation order, so the new one is found by its id.
+ */
+async function addFrame(page: Page, button: string) {
+  const ids = () =>
+    page
+      .locator("[data-frame]")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-frame")));
+  const before = new Set(await ids());
+  await page.locator("[data-hud]").getByRole("button", { name: button }).click();
+  await page.waitForFunction(
+    (n) => document.querySelectorAll("[data-frame]").length > n,
+    before.size,
+  );
+  const id = (await ids()).find((frameId) => !before.has(frameId));
+  return page.locator(`[data-frame="${id}"]`);
+}
+
 /** Add an agent frame from the toolbar and pick which agent runs it. */
 async function newAgent(page: Page, kind: string) {
-  await page.locator("[data-hud]").getByRole("button", { name: "Agent" }).click();
-  const frame = page.locator("[data-frame-type=agent]").last();
+  const frame = await addFrame(page, "Agent");
   await frame.locator(`[data-pick-agent=${kind}]`).click();
   return frame;
 }
@@ -180,9 +198,8 @@ if (step === "selection") {
 }
 
 if (step === "extras") {
-  // A markdown artifact bound to the file the agent wrote.
-  await host.getByRole("button", { name: "Markdown" }).click();
-  const md = host.locator("[data-frame-type=markdown]").last();
+  // A file frame on the file the agent wrote.
+  const md = await addFrame(host, "Files");
   await md.waitFor();
   const id = await md.getAttribute("data-frame");
   await host.evaluate(
@@ -220,8 +237,7 @@ if (step === "extras") {
   await shot(host, "04-host-remote-selection");
 
   // A terminal, host types, guest sees output; guest typing is refused in `edit` access.
-  await host.getByRole("button", { name: "Terminal" }).click();
-  const term = host.locator("[data-frame-type=terminal]").last();
+  const term = await addFrame(host, "Terminal");
   await term.waitFor();
   const termId = await term.getAttribute("data-frame");
   await host.evaluate(
@@ -249,8 +265,7 @@ if (step === "extras") {
 }
 if (step === "config") {
   // Host: an agent frame starts with the agent picker.
-  await host.locator("[data-hud]").getByRole("button", { name: "Agent" }).click();
-  const frame = host.locator("[data-frame-type=agent]").last();
+  const frame = await addFrame(host, "Agent");
   await frame.locator("[data-pick-agent]").first().waitFor();
   await shot(host, "10-host-agent-picker");
   await frame.locator("[data-pick-agent=claude]").click();
@@ -306,10 +321,7 @@ if (step === "config") {
   await host.keyboard.type("Which Claude model are you? Answer in five words or fewer.");
   await host.keyboard.press("Control+Enter");
   await approveUntilIdle(host, guest);
-  console.log(
-    "reply:",
-    await frame.locator(".prose-canvas").last().innerText({ timeout: 10000 }),
-  );
+  console.log("reply:", await frame.locator(".prose-canvas").last().innerText({ timeout: 10000 }));
   await shot(guest, "14-guest-after-turn");
 
   // opencode: hundreds of models, so the model list is searchable.
@@ -319,9 +331,7 @@ if (step === "config") {
   await ocChip.click();
   await host.locator("[data-agent-settings-popover] input[aria-label=Search]").fill("glm 5.3");
   await shot(host, "15-host-opencode-search");
-  await host
-    .locator("[data-agent-settings-popover] [data-choice='opencode-go/glm-5.3']")
-    .click();
+  await host.locator("[data-agent-settings-popover] [data-choice='opencode-go/glm-5.3']").click();
   await host.locator("[data-agent-settings-popover] [data-setting=effort]").waitFor();
   await shot(host, "16-host-opencode-effort");
   await host.keyboard.press("Escape");
@@ -346,12 +356,7 @@ if (step === "files") {
     await frame.getByPlaceholder("Search").fill("");
   };
 
-  const ids = () =>
-    host.locator("[data-frame]").evaluateAll((els) => els.map((el) => el.getAttribute("data-frame")));
-  const existing = new Set(await ids());
-  await host.locator("[data-hud]").getByRole("button", { name: "Files" }).click();
-  await host.waitForFunction((n) => document.querySelectorAll("[data-frame]").length > n, existing.size);
-  frameId = (await ids()).find((id) => !existing.has(id))!;
+  frameId = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
   await frameOf(host).getByText("Pick a file from the tree.").waitFor({ timeout: 10000 });
   await frameOf(guest).getByText("Pick a file from the tree.").waitFor({ timeout: 10000 });
   await wait(800);
@@ -428,7 +433,10 @@ if (step === "files") {
   await shot(host, "23-host-typescript");
 
   // Live: an agent (here: us) rewrites the file on disk.
-  await Bun.write(`${dir}/src/server/files.ts`, "// rewritten on disk\nexport const live = true;\n");
+  await Bun.write(
+    `${dir}/src/server/files.ts`,
+    "// rewritten on disk\nexport const live = true;\n",
+  );
   await frameOf(guest).getByText("rewritten on disk").waitFor({ timeout: 10000 });
   console.log("guest saw the disk change");
 
@@ -465,9 +473,9 @@ if (step === "files") {
       },
       [path],
     );
-    const notice = frameOf(guest).locator("p", { hasText: "not shared" }).or(
-      frameOf(guest).locator("p", { hasText: "outside the working dir" }),
-    );
+    const notice = frameOf(guest)
+      .locator("p", { hasText: "not shared" })
+      .or(frameOf(guest).locator("p", { hasText: "outside the working dir" }));
     await notice.first().waitFor({ timeout: 10000 });
     console.log(`${path} →`, await notice.first().innerText());
   }
@@ -509,7 +517,9 @@ if (step === "files") {
   });
   console.log(
     "view guest: tree toggle shown:",
-    await frameOf(guest).getByTitle(/files$/).count(),
+    await frameOf(guest)
+      .getByTitle(/files$/)
+      .count(),
     "treeitems:",
     await frameOf(guest).getByRole("treeitem").count(),
   );
