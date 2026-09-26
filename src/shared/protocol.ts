@@ -32,6 +32,48 @@ export interface SessionMeta {
   readonly status: SessionStatus;
   /** The agent's own session id, used to resume the conversation next turn. */
   readonly acpSessionId?: string;
+  /**
+   * The agent's settings as it last reported them. Small enough to persist:
+   * shown while the agent is not connected, and re-applied when it reconnects.
+   */
+  readonly settings?: ReadonlyArray<AgentSetting>;
+}
+
+export type AgentConfigValue = string | boolean;
+
+/**
+ * One setting an agent offers for its session (an ACP session config option):
+ * model, reasoning effort, mode, … The agent decides which exist — they can
+ * change with the model — so clients render whatever arrives.
+ */
+export interface AgentConfigOption {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  /** ACP category, for placement only: `model`, `thought_level`, `model_config`, `mode`, … */
+  readonly category?: string;
+  readonly type: "select" | "boolean";
+  readonly value: AgentConfigValue;
+  /** The values of a `select` (empty for `boolean`). */
+  readonly choices: ReadonlyArray<AgentConfigChoice>;
+}
+
+export interface AgentConfigChoice {
+  readonly value: string;
+  readonly name: string;
+  readonly description?: string;
+  /** The agent's group heading, if it groups its values. */
+  readonly group?: string;
+}
+
+/** An option's current value, without the list of choices. */
+export interface AgentSetting {
+  readonly id: string;
+  readonly name: string;
+  readonly category?: string;
+  readonly value: AgentConfigValue;
+  /** Display name of `value`. */
+  readonly label: string;
 }
 
 export interface PermissionOption {
@@ -80,7 +122,24 @@ export type AgentEvent =
 export interface SessionSnapshot {
   readonly meta: SessionMeta;
   readonly events: ReadonlyArray<AgentEvent>;
+  /** The settings with their choices; absent until the agent has connected. */
+  readonly options?: ReadonlyArray<AgentConfigOption>;
 }
+
+// ---------------------------------------------------------------------------
+// Files
+
+/**
+ * A file of the working dir as the server lets it out: only paths in the
+ * shared set (ADR 0002), read-only, text only.
+ */
+export type FileContent =
+  | { readonly kind: "text"; readonly text: string }
+  /** Shared, but not there (yet) — an agent may be about to write it. */
+  | { readonly kind: "missing" }
+  | { readonly kind: "binary"; readonly size: number }
+  | { readonly kind: "too-large"; readonly size: number }
+  | { readonly kind: "denied"; readonly reason: string };
 
 // ---------------------------------------------------------------------------
 // Host browser ⇄ server (JSON over one WebSocket)
@@ -106,14 +165,23 @@ export type ClientToServer =
     }
   | { readonly t: "agent-cancel"; readonly sessionId: string }
   | {
+      readonly t: "agent-config";
+      readonly sessionId: string;
+      readonly configId: string;
+      readonly value: AgentConfigValue;
+    }
+  | {
       readonly t: "agent-permission";
       readonly sessionId: string;
       readonly requestId: string;
       readonly optionId: string | null;
       readonly by: string;
     }
-  | { readonly t: "file-watch"; readonly path: string }
-  | { readonly t: "file-write"; readonly path: string; readonly content: string }
+  /** Send a file now and on every change, until closed. */
+  | { readonly t: "file-open"; readonly path: string }
+  | { readonly t: "file-close"; readonly path: string }
+  /** Send the shared set's file list now and whenever it changes. */
+  | { readonly t: "tree-watch" }
   | { readonly t: "term-open"; readonly id: string; readonly cols: number; readonly rows: number }
   | { readonly t: "term-input"; readonly id: string; readonly data: string }
   | {
@@ -135,7 +203,9 @@ export type ServerToClient =
     }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
-  | { readonly t: "file"; readonly path: string; readonly content: string | null }
+  | AgentOptionsMessage
+  | FileMessage
+  | TreeMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | { readonly t: "term-exit"; readonly id: string; readonly code: number | null }
   | { readonly t: "error"; readonly message: string };
@@ -145,10 +215,11 @@ export type ServerToClient =
 
 /**
  * What a guest may do, set by the host for the whole room.
- * - `view`: read-only — board edits are dropped, requests refused.
- * - `edit`: edit the board and prompt drafts; anything that runs on the host's
- *   machine (send a prompt, start an agent, type into a terminal) waits for
- *   the host to approve it.
+ * - `view`: read-only — board edits are dropped, requests refused; sees the
+ *   files others open, but not the file tree.
+ * - `edit`: edit the board and prompt drafts, open shared files and browse the
+ *   tree (ADR 0002); anything that runs on the host's machine (send a prompt,
+ *   start an agent, type into a terminal) waits for the host to approve it.
  * - `trusted`: as `edit`, without the approval step. Tool-call permissions the
  *   agent asks for still go to the host only.
  */
@@ -166,13 +237,44 @@ export type GuestRequest =
   | { readonly t: "agent-create"; readonly frameId: string; readonly agent: AgentKind }
   | { readonly t: "agent-prompt"; readonly sessionId: string; readonly text: string }
   | { readonly t: "agent-cancel"; readonly sessionId: string }
+  | {
+      readonly t: "agent-config";
+      readonly sessionId: string;
+      readonly configId: string;
+      readonly value: AgentConfigValue;
+    }
   | { readonly t: "term-input"; readonly id: string; readonly data: string };
 
 export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly error: string };
 
-/** Host → guests: the mirrored agent sessions and terminals. */
+/**
+ * Host → guests: the mirrored agent sessions, terminals and open files, and
+ * the file tree (not to `view` guests).
+ */
 export type HostBroadcast =
   | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionSnapshot> }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
-  | { readonly t: "term-data"; readonly id: string; readonly data: string };
+  | AgentOptionsMessage
+  | { readonly t: "term-data"; readonly id: string; readonly data: string }
+  | FileMessage
+  | TreeMessage;
+
+export interface FileMessage {
+  readonly t: "file";
+  readonly path: string;
+  readonly file: FileContent;
+}
+
+/** Every file in the shared set, working-dir-relative with `/` separators. */
+export interface TreeMessage {
+  readonly t: "tree";
+  readonly paths: ReadonlyArray<string>;
+}
+
+/** A session's settings changed (or the agent connected and listed them). */
+export interface AgentOptionsMessage {
+  readonly t: "agent-options";
+  readonly sessionId: string;
+  readonly options: ReadonlyArray<AgentConfigOption>;
+}

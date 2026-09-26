@@ -43,8 +43,17 @@ export async function serve(options: ServeOptions) {
       store.appendEvent(sessionId, event);
       broadcast({ t: "agent-event", sessionId, event });
     },
+    // Live state of the agent, not persisted: the meta keeps the values.
+    onOptions: (sessionId, options) => broadcast({ t: "agent-options", sessionId, options }),
+    onError: (message) => broadcast({ t: "error", message }),
   });
-  const files = new Files(options.dir, (path, content) => broadcast({ t: "file", path, content }));
+  process.on("exit", () => agents.close());
+  const files = new Files(
+    options.dir,
+    (path, file) => broadcast({ t: "file", path, file }),
+    (paths) => broadcast({ t: "tree", paths }),
+  );
+  process.on("exit", () => files.stop());
   const terminals = new Terminals(
     options.dir,
     (id, data) => broadcast({ t: "term-data", id, data }),
@@ -61,6 +70,10 @@ export async function serve(options: ServeOptions) {
         return agents.prompt(message.sessionId, message.text, message.author);
       case "agent-cancel":
         return agents.cancel(message.sessionId);
+      case "agent-config":
+        return void agents
+          .configure(message.sessionId, message.configId, message.value)
+          .catch((error: unknown) => sendError(ws, error));
       case "agent-permission":
         return agents.resolvePermission(
           message.sessionId,
@@ -68,10 +81,12 @@ export async function serve(options: ServeOptions) {
           message.optionId,
           message.by,
         );
-      case "file-watch":
-        return files.watch(message.path);
-      case "file-write":
-        return files.write(message.path, message.content);
+      case "file-open":
+        return files.open(message.path, ws);
+      case "file-close":
+        return files.close(message.path, ws);
+      case "tree-watch":
+        return files.watchTree();
       case "term-open": {
         const scrollback = terminals.open(message.id, message.cols, message.rows);
         if (scrollback)
@@ -130,16 +145,12 @@ export async function serve(options: ServeOptions) {
         try {
           handle(ws, JSON.parse(String(data)) as ClientToServer);
         } catch (error) {
-          ws.send(
-            JSON.stringify({
-              t: "error",
-              message: error instanceof Error ? error.message : String(error),
-            } satisfies ServerToClient),
-          );
+          sendError(ws, error);
         }
       },
       close(ws) {
         clients.delete(ws);
+        files.drop(ws);
       },
     },
   });
@@ -147,18 +158,21 @@ export async function serve(options: ServeOptions) {
   return { server, room };
 }
 
+function sendError(ws: ServerWebSocket<unknown>, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  ws.send(JSON.stringify({ t: "error", message } satisfies ServerToClient));
+}
+
 /**
- * Keep canvas's own files out of the user's commits: `.canvas/` (board and
- * session state) and the sandbox's projection marker (finding 01).
- * `.git/info/exclude` is local to the clone and never committed itself.
+ * Keep canvas's own files out of the user's commits: `.canvas/` holds board
+ * and session state. `.git/info/exclude` is local to the clone and never
+ * committed itself.
  */
 function excludeFromGit(dir: string) {
   const exclude = join(dir, ".git", "info", "exclude");
   if (!existsSync(join(dir, ".git", "info"))) return;
   const current = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
-  const missing = [".canvas/", ".tanstack-projected-*"].filter(
-    (line) => !current.split("\n").includes(line),
-  );
+  const missing = [".canvas/"].filter((line) => !current.split("\n").includes(line));
   if (missing.length)
     appendFileSync(exclude, `\n# canvas: local state, never committed\n${missing.join("\n")}\n`);
 }

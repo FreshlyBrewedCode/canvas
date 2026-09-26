@@ -3,16 +3,18 @@
  *
  *   frames            Y.Map<frameId, Y.Map>   position, size, type, settings
  *   prompt:<frameId>  Y.Text                  an agent frame's shared prompt draft
- *   md:<frameId>      Y.Text                  a markdown artifact's content
  *
- * Agent threads and terminal output are not in here: they come from the
- * host's machine and are mirrored separately (see `room.ts`).
+ * Agent threads, terminal output and file contents are not in here: they
+ * come from the host's machine and are mirrored separately (see `room.ts`).
  */
 
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
-export type FrameType = "agent" | "markdown" | "browser" | "terminal";
+export type FrameType = "agent" | "file" | "browser" | "terminal";
+
+/** How a file frame shows its file; null is the file's default (preview for markdown). */
+export type FileView = "preview" | "source";
 
 interface FrameBase {
   readonly id: string;
@@ -27,29 +29,41 @@ interface FrameBase {
 export type Frame = FrameBase &
   (
     | { readonly type: "agent"; readonly agent: string }
-    | { readonly type: "markdown"; readonly path: string }
+    | {
+        readonly type: "file";
+        /** Working-dir-relative; "" until someone picks a file. */
+        readonly path: string;
+        readonly view?: FileView | null;
+      }
     | { readonly type: "browser"; readonly url: string }
     | { readonly type: "terminal" }
   );
 
 export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
   agent: { w: 460, h: 620 },
-  markdown: { w: 480, h: 560 },
+  file: { w: 720, h: 560 },
   browser: { w: 720, h: 520 },
   terminal: { w: 640, h: 400 },
 };
 
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
 export const promptText = (doc: Y.Doc, frameId: string) => doc.getText(`prompt:${frameId}`);
-export const markdownText = (doc: Y.Doc, frameId: string) => doc.getText(`md:${frameId}`);
 
+/** One stored frame. Boards from before the files frame have `markdown` frames: files now. */
+export function readFrame(map: Y.Map<unknown>, id: string): Frame {
+  const value = map.toJSON() as Omit<Frame, "id"> | { type: "markdown" };
+  return (value.type === "markdown" ? { ...value, type: "file", id } : { ...value, id }) as Frame;
+}
+
+/**
+ * In a stable order, not by `z`: frames stack by their z-index. Reordering
+ * them would move a raised frame's DOM node between pointer down and up —
+ * which loses the click that raised it, and reloads a browser frame.
+ */
 function readFrames(doc: Y.Doc): Frame[] {
   const frames: Frame[] = [];
-  framesOf(doc).forEach((map, id) => {
-    const value = map.toJSON() as Omit<Frame, "id">;
-    frames.push({ ...value, id } as Frame);
-  });
-  return frames.sort((a, b) => a.z - b.z);
+  framesOf(doc).forEach((map, id) => frames.push(readFrame(map, id)));
+  return frames.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /** An immutable frames snapshot per doc, rebuilt only when the frames map changes. */
@@ -73,7 +87,14 @@ export function useFrames(doc: Y.Doc): Frame[] {
   return useSyncExternalStore(store.subscribe, store.get);
 }
 
-export function addFrame(doc: Y.Doc, frame: Omit<Frame, "id" | "z">): string {
+/** A frame to add: any kind, without the id and stacking the board assigns. */
+export type NewFrame = Frame extends infer F
+  ? F extends Frame
+    ? Omit<F, "id" | "z">
+    : never
+  : never;
+
+export function addFrame(doc: Y.Doc, frame: NewFrame): string {
   const id = crypto.randomUUID().slice(0, 8);
   const z = topZ(doc) + 1;
   doc.transact(() => {
@@ -109,27 +130,4 @@ function topZ(doc: Y.Doc): number {
   let top = 0;
   framesOf(doc).forEach((map) => (top = Math.max(top, (map.get("z") as number) ?? 0)));
   return top;
-}
-
-/**
- * Replace a Y.Text's content with `next`, touching only the span that
- * differs — so a file changed on disk does not throw everyone's carets and
- * selections in that document back to the start.
- */
-export function replaceText(text: Y.Text, next: string, origin: unknown): void {
-  const current = text.toString();
-  if (current === next) return;
-  let start = 0;
-  while (start < current.length && start < next.length && current[start] === next[start]) start++;
-  let end = 0;
-  while (
-    end < current.length - start &&
-    end < next.length - start &&
-    current[current.length - 1 - end] === next[next.length - 1 - end]
-  )
-    end++;
-  text.doc!.transact(() => {
-    text.delete(start, current.length - start - end);
-    text.insert(start, next.slice(start, next.length - end));
-  }, origin);
 }

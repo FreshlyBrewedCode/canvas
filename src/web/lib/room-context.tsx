@@ -42,10 +42,35 @@ export function useSession(id: string) {
   const session = room.session(id);
   return useMemo(
     () =>
-      session ? { meta: session.meta, events: session.events, version: session.version } : null,
+      session
+        ? {
+            meta: session.meta,
+            events: session.events,
+            options: session.options,
+            version: session.version,
+          }
+        : null,
     // `signal` is the change signal for the mutable session record.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [session, signal],
+  );
+}
+
+/** A file as the host mirrors it; undefined until it arrives. */
+export function useFile(path: string) {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe(`file:${path}`, onChange),
+    () => room.file(path),
+  );
+}
+
+/** The shared set's file list; null until the host sends it (never to `view` guests). */
+export function useTree() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("tree", onChange),
+    () => room.tree(),
   );
 }
 

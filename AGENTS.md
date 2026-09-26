@@ -1,24 +1,30 @@
 canvas
 
-- a multiplayer canvas (think Miro) whose frames are coding-agent sessions, markdown artifacts,
-  browser previews and terminals — the agents run **on one person's machine**, everyone else
-  joins peer to peer. Prototype stage: proving the concept, not hardening it
+- a multiplayer canvas (think Miro) whose frames are coding-agent sessions, files of the
+  project, browser previews and terminals — the agents run **on one person's machine**, everyone
+  else joins peer to peer. Prototype stage: proving the concept, not hardening it
 - two halves
   1. **`canvas serve`** (`src/cli.ts`, `src/server/`) — Bun server started in the project dir:
-     ACP agent sessions, watched markdown files, PTYs, persistence under `<dir>/.canvas/`.
-     One token-guarded WebSocket, used only by the host's browser
+     ACP agent sessions, read-only files of the shared set, PTYs, persistence under
+     `<dir>/.canvas/`. One token-guarded WebSocket, used only by the host's browser
   2. **web app** (`src/web/`) — Vite/React SPA standing in for the publicly hosted UI; peers
      meet over trystero (Nostr), the board is a Yjs doc
-- `src/shared/protocol.ts` is the wire contract of both halves; ADR 0001 is the trust model
-  (the host's browser is the only door to the machine; star for authority, mesh for presence)
+- `src/shared/protocol.ts` is the wire contract of both halves; the trust model is ADR 0001 (the
+  host's browser is the only door to the machine; star for authority, mesh for presence) and
+  ADR 0002 (files reach guests read-only, from a set `canvas serve` fixes — `shared-set.ts`).
+  Anything a board path names comes from a guest: resolve it through the shared set
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied
     from wayful (`docs/design/design.md`)
-  - `@tanstack/ai` + `@tanstack/ai-acp` (`acpCompatible`) + `@tanstack/ai-sandbox-local-process`
-    — any ACP agent works; `claude` via `@agentclientprotocol/claude-agent-acp`, `opencode acp`
+  - ACP via `@agentclientprotocol/sdk`, one connection per agent session so model / effort /
+    mode (ACP session config options) can change any time; AG-UI chunks from `@tanstack/ai-acp`'s
+    `translateAcpStream`, folded by `@tanstack/ai`'s `StreamProcessor` (finding 04) — any ACP
+    agent works; `claude` via `@agentclientprotocol/claude-agent-acp`, `opencode acp`
   - trystero 0.25 (object action API — see finding 02), yjs, y-protocols awareness,
     y-codemirror.next, xterm
+  - files frame (finding 05): `@pierre/trees` (file tree), `@pierre/diffs` `File` (Shiki,
+    virtualized source view), react-markdown, shadcn Resizable on react-resizable-panels v4
   - deliberately not (yet): Effect, TanStack Router/Query — the server is a thin relay and the
     app has one screen. Revisit when hardening
 
@@ -27,7 +33,8 @@ canvas
   - dev: `bun run dev` (Vite on :4417, https with `.certs/` from `tailscale cert`) and
     `bun src/cli.ts serve --dir <project> --tls-host dev.example.ts.net --web-url https://dev.example.ts.net:4417`
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
-    a host and a guest (`STEP=basic|approve|extras|selection|claude`)
+    a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files`; `files`
+    wants the scratch repo described in finding 05)
   - conventional commits; spike → prototype → validate → harden
 
 - docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence

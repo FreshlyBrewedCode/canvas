@@ -1,18 +1,22 @@
 /**
- * Mirroring text selections inside agent threads. A selection is published
- * as (message key, character offset) pairs — the thread renders the same
- * keys on every peer (`thread.ts`), so the pair resolves back to the same
- * text anywhere, whatever the other person's zoom, frame size or scroll.
+ * Mirroring text selections in rendered content: agent threads and markdown
+ * previews. A selection is published as (block key, character offset) pairs
+ * — every peer renders the same keys (`thread.ts`, the preview's source
+ * lines), so the pair resolves back to the same text anywhere, whatever the
+ * other person's zoom, frame size or scroll.
  *
- * Markup: a thread root carries `data-sel-root=<frameId>`, each selectable
- * block `data-sel-key=<key>`.
+ * Markup: a root carries `data-sel-root=<frameId>` (and `data-sel-path` for a
+ * file), each selectable block `data-sel-key=<key>`.
  */
 
-import type { ThreadSelection } from "./room";
+import type { TextSelection } from "./room";
 
-type Anchor = ThreadSelection["anchor"];
+type Anchor = TextSelection["anchor"];
 
-function locate(node: Node, offset: number): { frameId: string; anchor: Anchor } | null {
+function locate(
+  node: Node,
+  offset: number,
+): { frameId: string; path: string | undefined; anchor: Anchor } | null {
   const element = node instanceof Element ? node : node.parentElement;
   const keyed = element?.closest<HTMLElement>("[data-sel-key]");
   const root = keyed?.closest<HTMLElement>("[data-sel-root]");
@@ -22,19 +26,26 @@ function locate(node: Node, offset: number): { frameId: string; anchor: Anchor }
   range.setEnd(node, offset);
   return {
     frameId: root.dataset.selRoot!,
+    path: root.dataset.selPath,
     anchor: { key: keyed.dataset.selKey!, offset: range.toString().length },
   };
 }
 
-/** The current document selection, if it is a non-empty range inside one thread. */
-export function readSelection(): ThreadSelection | null {
+/** The current document selection, if it is a non-empty range inside one root. */
+export function readSelection(): TextSelection | null {
   const selection = document.getSelection();
   if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode)
     return null;
   const anchor = locate(selection.anchorNode, selection.anchorOffset);
   const focus = locate(selection.focusNode, selection.focusOffset);
   if (!anchor || !focus || anchor.frameId !== focus.frameId) return null;
-  return { frameId: anchor.frameId, anchor: anchor.anchor, focus: focus.anchor };
+  return {
+    kind: "text",
+    frameId: anchor.frameId,
+    ...(anchor.path !== undefined && { path: anchor.path }),
+    anchor: anchor.anchor,
+    focus: focus.anchor,
+  };
 }
 
 function resolve(
@@ -65,7 +76,7 @@ export interface Box {
  * Where a remote selection sits inside `root`, in `root`'s own unscaled
  * coordinates (the board is CSS-scaled, client rects are not).
  */
-export function selectionBoxes(root: HTMLElement, selection: ThreadSelection): Box[] {
+export function selectionBoxes(root: HTMLElement, selection: TextSelection): Box[] {
   const a = resolve(root, selection.anchor);
   const b = resolve(root, selection.focus);
   if (!a || !b) return [];

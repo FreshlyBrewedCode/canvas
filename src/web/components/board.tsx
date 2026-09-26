@@ -1,7 +1,7 @@
 import {
   Bot,
   Check,
-  FileText,
+  FileCode,
   Globe,
   Link2,
   Maximize2,
@@ -14,17 +14,24 @@ import { useEffect, useState } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
 import { BrowserFrame } from "@/components/browser-frame";
-import { MarkdownFrame } from "@/components/markdown-frame";
+import { FileFrame } from "@/components/file-frame";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardViewport } from "@/hooks/use-board-viewport";
-import { addFrame, DEFAULT_SIZE, useFrames, type Frame, type FrameType } from "@/lib/board";
+import {
+  addFrame,
+  DEFAULT_SIZE,
+  useFrames,
+  type Frame,
+  type FrameType,
+  type NewFrame,
+} from "@/lib/board";
 import { guestLink, saveIdentity } from "@/lib/link";
-import type { Approval } from "@/lib/room";
+import type { Approval, Presence } from "@/lib/room";
 import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
-import type { GuestAccess } from "../../shared/protocol";
+import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
   const room = useRoomState();
@@ -34,7 +41,7 @@ export function Board() {
   );
   const readOnly = !room.isHost && room.roomState?.access === "view";
 
-  // Publish our pointer (board coordinates) and thread selections as presence.
+  // Publish our pointer (board coordinates) and text selections as presence.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -48,7 +55,9 @@ export function Board() {
     const onLeave = () => room.setPresence({ pointer: null });
     const onSelection = () => {
       const selection = readSelection();
-      const current = room.awareness.getLocalState()?.selection ?? null;
+      const current = (room.awareness.getLocalState() as Presence | null)?.selection ?? null;
+      // Line selections in a source view are not DOM selections; the view owns them.
+      if (!selection && current?.kind === "lines") return;
       if (JSON.stringify(selection) !== JSON.stringify(current)) room.setPresence({ selection });
     };
     wrap.addEventListener("pointermove", onMove);
@@ -73,13 +82,15 @@ export function Board() {
     };
     const frame =
       type === "agent"
-        ? { ...base, type, title: `${extra.agent}-${count}`, agent: extra.agent! }
-        : type === "markdown"
-          ? { ...base, type, title: `notes-${count}`, path: extra.path ?? `docs/notes-${count}.md` }
+        ? // The frame asks which agent to run.
+          { ...base, type, title: `agent-${count}`, agent: "" }
+        : type === "file"
+          ? // The frame opens with its tree, to pick a file.
+            { ...base, type, title: `files-${count}`, path: "" }
           : type === "browser"
             ? { ...base, type, title: `preview-${count}`, url: extra.url ?? "https://example.com" }
             : { ...base, type, title: `shell-${count}` };
-    addFrame(room.doc, frame as Omit<Frame, "id" | "z">);
+    addFrame(room.doc, frame as NewFrame);
   };
 
   return (
@@ -148,8 +159,8 @@ function FrameView({ frame, readOnly }: { frame: Frame; readOnly: boolean }) {
   switch (frame.type) {
     case "agent":
       return <AgentFrame frame={frame} readOnly={readOnly} />;
-    case "markdown":
-      return <MarkdownFrame frame={frame} readOnly={readOnly} />;
+    case "file":
+      return <FileFrame frame={frame} readOnly={readOnly} />;
     case "browser":
       return <BrowserFrame frame={frame} readOnly={readOnly} />;
     case "terminal":
@@ -162,31 +173,16 @@ function Toolbar({
 }: {
   onCreate: (type: FrameType, extra?: Record<string, string>) => void;
 }) {
-  const room = useRoomState();
-  const agents = room.roomState?.agents ?? [];
   return (
     <div
       data-hud=""
       className="bg-card/90 absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur"
     >
-      {agents.map((agent) => (
-        <Button
-          key={agent.kind}
-          variant="ghost"
-          size="sm"
-          onClick={() => onCreate("agent", { agent: agent.kind })}
-        >
-          <Bot /> {agent.label}
-        </Button>
-      ))}
-      {agents.length === 0 && (
-        <span className="text-muted-foreground px-2 text-xs">
-          {room.hostOnline ? "no agents installed on the host" : "host offline"}
-        </span>
-      )}
-      <span className="bg-border mx-1 h-5 w-px" />
-      <Button variant="ghost" size="sm" onClick={() => onCreate("markdown")}>
-        <FileText /> Markdown
+      <Button variant="ghost" size="sm" onClick={() => onCreate("agent")}>
+        <Bot /> Agent
+      </Button>
+      <Button variant="ghost" size="sm" onClick={() => onCreate("file")}>
+        <FileCode /> Files
       </Button>
       <Button variant="ghost" size="sm" onClick={() => onCreate("browser")}>
         <Globe /> Browser
@@ -261,15 +257,18 @@ function Approvals() {
 }
 
 function ApprovalCard({ approval }: { approval: Approval }) {
+  const room = useRoom();
   const { request, peer } = approval;
   const what =
     request.t === "agent-prompt"
       ? "wants to send a prompt"
       : request.t === "agent-create"
         ? `wants to start ${request.agent}`
-        : request.t === "term-input"
-          ? "wants to type in a terminal"
-          : "wants to stop an agent";
+        : request.t === "agent-config"
+          ? `wants to set ${describeConfig(room.session(request.sessionId)?.options, request)}`
+          : request.t === "term-input"
+            ? "wants to type in a terminal"
+            : "wants to stop an agent";
   return (
     <div
       className="bg-card border-status-ready/45 border border-l-[3px] p-3 shadow-md"
@@ -297,6 +296,21 @@ function ApprovalCard({ approval }: { approval: Approval }) {
       </div>
     </div>
   );
+}
+
+/** "Model to Sonnet 5", from the option list the host has for the session. */
+function describeConfig(
+  options: ReadonlyArray<AgentConfigOption> | undefined,
+  request: { configId: string; value: AgentConfigValue },
+) {
+  const option = options?.find((o) => o.id === request.configId);
+  const value =
+    typeof request.value === "boolean"
+      ? request.value
+        ? "on"
+        : "off"
+      : (option?.choices.find((c) => c.value === request.value)?.name ?? request.value);
+  return `${option?.name ?? request.configId} to ${value}`;
 }
 
 // ---------------------------------------------------------------------------

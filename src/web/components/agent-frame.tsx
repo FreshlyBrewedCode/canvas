@@ -1,14 +1,15 @@
-import { ChevronRight, CircleStop, SendHorizontal, ShieldAlert, Wrench } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Bot, ChevronRight, CircleStop, SendHorizontal, ShieldAlert, Wrench } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { AgentSettings } from "@/components/agent-settings";
 import { CollabEditor } from "@/components/collab-editor";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
+import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
-import { promptText, type Frame } from "@/lib/board";
-import { usePeers, useRoom, useRoomState, useSession } from "@/lib/room-context";
-import { selectionBoxes, type Box } from "@/lib/selection";
+import { promptText, updateFrame, type Frame } from "@/lib/board";
+import { useRoom, useRoomState, useSession } from "@/lib/room-context";
 import { foldThread, type Permission, type Row, type Turn } from "@/lib/thread";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,70 @@ type AgentFrameData = Extract<Frame, { type: "agent" }>;
 
 export function AgentFrame({ frame, readOnly }: { frame: AgentFrameData; readOnly: boolean }) {
   const room = useRoomState();
+  if (!frame.agent)
+    return (
+      <FrameShell frame={frame} readOnly={readOnly}>
+        <AgentPicker frame={frame} readOnly={readOnly} />
+      </FrameShell>
+    );
+  return <AgentThread frame={frame} readOnly={readOnly} room={room} />;
+}
+
+/** A new agent frame starts here: which agent runs it is picked once. */
+function AgentPicker({ frame, readOnly }: { frame: AgentFrameData; readOnly: boolean }) {
+  const room = useRoomState();
+  const agents = room.roomState?.agents ?? [];
+  const pick = (kind: string) =>
+    updateFrame(room.doc, frame.id, {
+      agent: kind,
+      // `agent-3` becomes `claude-3`, unless someone already named it.
+      title: frame.title.replace(/^agent-(\d+)$/, `${kind}-$1`),
+    });
+  return (
+    <div className="grid h-full place-items-center p-6">
+      <div className="w-full max-w-72 space-y-3">
+        <h2 className="text-[11px] font-semibold tracking-wide uppercase">Choose an agent</h2>
+        {readOnly ? (
+          <p className="text-muted-foreground text-xs">No agent picked yet.</p>
+        ) : agents.length === 0 ? (
+          <p className="text-muted-foreground text-xs">
+            {room.hostOnline ? "No agents are installed on the host." : "The host is offline."}
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {agents.map((agent) => (
+              <button
+                key={agent.kind}
+                type="button"
+                data-pick-agent={agent.kind}
+                className="hover:bg-accent bg-background flex w-full items-center gap-2.5 rounded-md border px-3 py-2 text-left"
+                onClick={() => pick(agent.kind)}
+              >
+                <Bot className="text-muted-foreground size-4" />
+                <span className="flex-1 text-sm font-medium">{agent.label}</span>
+                <span className="text-muted-foreground font-mono text-[11px]">{agent.kind}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          It runs on the host's machine. Model and reasoning effort can be changed from the composer
+          at any time.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AgentThread({
+  frame,
+  readOnly,
+  room,
+}: {
+  frame: AgentFrameData;
+  readOnly: boolean;
+  room: ReturnType<typeof useRoomState>;
+}) {
   const session = useSession(frame.id);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -73,6 +138,14 @@ export function AgentFrame({ frame, readOnly }: { frame: AgentFrameData; readOnl
             className="max-h-40 min-h-16 overflow-auto"
           />
           <div className="flex items-center gap-2 px-2.5 pb-2">
+            <AgentSettings
+              settings={session?.meta.settings}
+              options={session?.options}
+              disabled={readOnly || !room.hostOnline}
+              onChange={(configId, value) =>
+                room.act({ t: "agent-config", sessionId: frame.id, configId, value })
+              }
+            />
             <span className="text-muted-foreground flex-1 truncate text-[11px]">
               {error ? (
                 <span className="text-destructive">{error}</span>
@@ -292,67 +365,6 @@ function PermissionCard({ permission, frameId }: { permission: Permission; frame
         <p className="text-muted-foreground text-xs">
           Waiting for the host to decide — this runs on their machine.
         </p>
-      )}
-    </div>
-  );
-}
-
-/** Other people's text selections in this thread, drawn in their colour. */
-function RemoteSelections({ frameId, version }: { frameId: string; version: number }) {
-  const peers = usePeers();
-  const anchor = useRef<HTMLDivElement>(null);
-  const [boxes, setBoxes] = useState<
-    Array<{ peerId: string; name: string; color: string; boxes: Box[] }>
-  >([]);
-  const [tick, setTick] = useState(0);
-
-  // Frame resizes re-flow the text; re-measure.
-  useEffect(() => {
-    const root = anchor.current?.parentElement;
-    if (!root) return;
-    const observer = new ResizeObserver(() => setTick((t) => t + 1));
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
-
-  useLayoutEffect(() => {
-    const root = anchor.current?.parentElement;
-    if (!root) return;
-    setBoxes(
-      peers
-        .filter((peer) => peer.selection?.frameId === frameId)
-        .map((peer) => ({
-          peerId: peer.user.peerId,
-          name: peer.user.name,
-          color: peer.user.color,
-          boxes: selectionBoxes(root, peer.selection!),
-        })),
-    );
-  }, [peers, frameId, version, tick]);
-
-  return (
-    <div ref={anchor} className="pointer-events-none absolute inset-0" aria-hidden="true">
-      {boxes.map((peer) =>
-        peer.boxes.map((box, index) => (
-          <div
-            key={`${peer.peerId}:${index}`}
-            className="absolute mix-blend-multiply dark:mix-blend-screen"
-            style={{
-              ...box,
-              backgroundColor: `${peer.color}40`,
-              borderBottom: `2px solid ${peer.color}`,
-            }}
-          >
-            {index === 0 && (
-              <span
-                className="absolute -top-4 left-0 rounded-sm px-1 text-[10px] font-semibold whitespace-nowrap"
-                style={{ backgroundColor: peer.color, color: "oklch(0.2 0 0)" }}
-              >
-                {peer.name}
-              </span>
-            )}
-          </div>
-        )),
       )}
     </div>
   );
