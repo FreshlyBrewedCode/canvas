@@ -10,9 +10,10 @@ import {
   type Frame,
 } from "@/lib/board";
 import { useFrameFocus, useRoom } from "@/lib/room-context";
-import { setSnapPreview } from "@/lib/snap-preview";
+import { setSnapPreview, type SnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import {
+  insertion,
   lift,
   moveFrame,
   resizeInRow,
@@ -150,12 +151,16 @@ function Drag({
    * The patches a drop at `here` would apply: into a row, or out of the old
    * one. Either way it leaves from where the drag began, so that gap closes.
    */
-  const drop = (here: Rect, s: Box): { patches: Patch[]; snapped: boolean } => {
+  const drop = (here: Rect, s: Box): { patches: Patch[]; preview: SnapPreview | null } => {
     const others = allFrames(room.doc).filter((f) => f.id !== frame.id);
     const origin = [...others, { ...here, x: s.x, y: s.y }];
-    const target = snapTarget([...others, here], frame.id);
-    if (target) return { patches: moveFrame(origin, frame.id, target), snapped: true };
-    return { patches: lift(origin, frame.id), snapped: false };
+    const rects = [...others, here];
+    const target = snapTarget(rects, frame.id);
+    if (!target) return { patches: lift(origin, frame.id), preview: null };
+    const patches = moveFrame(origin, frame.id, target);
+    const line = insertion(rects, target, frame.id);
+    const box = { ...here, ...patches.find((p) => p.id === frame.id) };
+    return { patches, preview: line ? { kind: "insert", line } : { kind: "place", box } };
   };
 
   const end = (event: React.PointerEvent) => {
@@ -203,9 +208,7 @@ function Drag({
             const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy) };
             updateFrame(room.doc, frame.id, here);
             if (free || !s.moved) return setSnapPreview(null);
-            const { patches, snapped } = drop({ ...here, w: s.w, h: s.h }, s);
-            const landing = patches.find((p) => p.id === frame.id);
-            setSnapPreview(snapped && landing ? { x: 0, y: 0, w: s.w, h: s.h, ...landing } : null);
+            setSnapPreview(drop({ ...here, w: s.w, h: s.h }, s).preview);
           } else {
             const size = {
               w: Math.max(280, Math.round(s.w + dx)),
