@@ -1027,4 +1027,89 @@ if (step === "preview") {
     check((await p.locator(`[data-frame="${web}"] iframe`).count()) === 0, `${who}: no iframe for javascript:`);
   }
 }
+// Agents show what only belongs on the board as scratch files (ADR 0005),
+// without writing into the project. Run against the shop repo of finding 07
+// in DIR; AGENT picks the agent (default claude).
+if (step === "scratch") {
+  const dir = process.env.DIR ?? "/tmp/canvas-scratch-demo";
+  const kind = process.env.AGENT ?? "claude";
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const gitStatus = () =>
+    Bun.spawnSync(["git", "status", "--porcelain"], { cwd: dir }).stdout.toString().trim();
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, kind);
+  const self = (await frame.getAttribute("data-frame"))!;
+  await place(host, self, { x: 0, y: 0 });
+  await frame
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 30000 });
+  const before = gitStatus();
+
+  await ask(
+    frame,
+    "On the board, show us a short markdown write-up of how login works in this project, and a " +
+      "small HTML page that visualises the login flow as boxes and arrows. Keep your reply short.",
+  );
+  const frames = await framesOf(host);
+  console.log("board:\n  " + frames.map(brief).join("\n  "));
+  const scratch = frames.filter((f) => f.type === "file" && f.path?.startsWith("canvas:scratch/"));
+  const md = scratch.find((f) => /\.md$/.test(f.path));
+  const html = scratch.find((f) => /\.html?$/.test(f.path));
+  check(!!md && !!html, `a markdown and an HTML scratch file (${scratch.map((f) => f.path)})`);
+  check(gitStatus() === before, `the project is untouched (${gitStatus() || "clean"})`);
+  const onDisk = Bun.spawnSync(["ls", `${dir}/.canvas/scratch`]).stdout.toString().trim();
+  console.log("in .canvas/scratch:", onDisk.split("\n").join(", "));
+  const boardJson = JSON.stringify(frames);
+  check(boardJson.length < 4000, `the board holds paths, not content (${boardJson.length} bytes)`);
+
+  for (const [p, who] of [[host, "host"], [guest, "guest"]] as const) {
+    if (md) {
+      const heading = p.locator(`[data-frame="${md.id}"] .prose-canvas h1, [data-frame="${md.id}"] .prose-canvas h2`);
+      await heading.first().waitFor({ timeout: 10000 });
+      check(true, `${who}: the write-up renders (${await heading.first().innerText()})`);
+    }
+    if (html) {
+      const body = p.locator(`[data-frame="${html.id}"] iframe`).contentFrame().locator("body");
+      await body.waitFor({ timeout: 10000 });
+      const text = (await body.innerText()).replace(/\s+/g, " ").slice(0, 80);
+      check(text.length > 0, `${who}: the visualisation renders (${text})`);
+    }
+  }
+  for (const p of [host, guest]) await p.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 1500));
+  await shot(host, `70-${kind}-scratch-host`);
+  await shot(guest, `70-${kind}-scratch-guest`);
+
+  // Another turn rewrites the write-up in place: the frame follows.
+  if (md) {
+    const was = await guest.locator(`[data-frame="${md.id}"] .prose-canvas`).innerText();
+    await ask(
+      frame,
+      `Add a section "Open questions" with one question to the write-up at ${md.path}. Short reply.`,
+    );
+    await guest
+      .locator(`[data-frame="${md.id}"] .prose-canvas`)
+      .getByText("Open questions")
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {});
+    const now = await guest.locator(`[data-frame="${md.id}"] .prose-canvas`).innerText();
+    check(now !== was && now.includes("Open questions"), "guest: the rewritten write-up shows live");
+    const after = await framesOf(host);
+    check(
+      after.filter((f) => f.path?.startsWith("canvas:scratch/")).length === scratch.length,
+      "rewritten in place, no new frame",
+    );
+    check(gitStatus() === before, "the project is still untouched");
+    await shot(guest, `71-${kind}-scratch-rewritten`);
+  }
+  await frame.screenshot({ path: `${out}/72-${kind}-scratch-thread.png` });
+}
 await browser.close();
