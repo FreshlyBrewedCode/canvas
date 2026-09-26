@@ -127,6 +127,21 @@ export interface SessionSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Files
+
+/**
+ * A file of the working dir as the server lets it out: only paths in the
+ * shared set (ADR 0002), read-only, text only.
+ */
+export type FileContent =
+  | { readonly kind: "text"; readonly text: string }
+  /** Shared, but not there (yet) — an agent may be about to write it. */
+  | { readonly kind: "missing" }
+  | { readonly kind: "binary"; readonly size: number }
+  | { readonly kind: "too-large"; readonly size: number }
+  | { readonly kind: "denied"; readonly reason: string };
+
+// ---------------------------------------------------------------------------
 // Host browser ⇄ server (JSON over one WebSocket)
 
 export interface RoomSecrets {
@@ -162,8 +177,11 @@ export type ClientToServer =
       readonly optionId: string | null;
       readonly by: string;
     }
-  | { readonly t: "file-watch"; readonly path: string }
-  | { readonly t: "file-write"; readonly path: string; readonly content: string }
+  /** Send a file now and on every change, until closed. */
+  | { readonly t: "file-open"; readonly path: string }
+  | { readonly t: "file-close"; readonly path: string }
+  /** Send the shared set's file list now and whenever it changes. */
+  | { readonly t: "tree-watch" }
   | { readonly t: "term-open"; readonly id: string; readonly cols: number; readonly rows: number }
   | { readonly t: "term-input"; readonly id: string; readonly data: string }
   | {
@@ -186,7 +204,8 @@ export type ServerToClient =
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage
-  | { readonly t: "file"; readonly path: string; readonly content: string | null }
+  | FileMessage
+  | TreeMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | { readonly t: "term-exit"; readonly id: string; readonly code: number | null }
   | { readonly t: "error"; readonly message: string };
@@ -196,10 +215,11 @@ export type ServerToClient =
 
 /**
  * What a guest may do, set by the host for the whole room.
- * - `view`: read-only — board edits are dropped, requests refused.
- * - `edit`: edit the board and prompt drafts; anything that runs on the host's
- *   machine (send a prompt, start an agent, type into a terminal) waits for
- *   the host to approve it.
+ * - `view`: read-only — board edits are dropped, requests refused; sees the
+ *   files others open, but not the file tree.
+ * - `edit`: edit the board and prompt drafts, open shared files and browse the
+ *   tree (ADR 0002); anything that runs on the host's machine (send a prompt,
+ *   start an agent, type into a terminal) waits for the host to approve it.
  * - `trusted`: as `edit`, without the approval step. Tool-call permissions the
  *   agent asks for still go to the host only.
  */
@@ -227,13 +247,30 @@ export type GuestRequest =
 
 export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly error: string };
 
-/** Host → guests: the mirrored agent sessions and terminals. */
+/**
+ * Host → guests: the mirrored agent sessions, terminals and open files, and
+ * the file tree (not to `view` guests).
+ */
 export type HostBroadcast =
   | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionSnapshot> }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage
-  | { readonly t: "term-data"; readonly id: string; readonly data: string };
+  | { readonly t: "term-data"; readonly id: string; readonly data: string }
+  | FileMessage
+  | TreeMessage;
+
+export interface FileMessage {
+  readonly t: "file";
+  readonly path: string;
+  readonly file: FileContent;
+}
+
+/** Every file in the shared set, working-dir-relative with `/` separators. */
+export interface TreeMessage {
+  readonly t: "tree";
+  readonly paths: ReadonlyArray<string>;
+}
 
 /** A session's settings changed (or the agent connected and listed them). */
 export interface AgentOptionsMessage {

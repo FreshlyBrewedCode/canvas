@@ -56,6 +56,24 @@ export function useSession(id: string) {
   );
 }
 
+/** A file as the host mirrors it; undefined until it arrives. */
+export function useFile(path: string) {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe(`file:${path}`, onChange),
+    () => room.file(path),
+  );
+}
+
+/** The shared set's file list; null until the host sends it (never to `view` guests). */
+export function useTree() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("tree", onChange),
+    () => room.tree(),
+  );
+}
+
 /** Everyone else's presence, re-read on every awareness change. */
 export function usePeers(): Presence[] {
   const room = useRoom();

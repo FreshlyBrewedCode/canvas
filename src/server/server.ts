@@ -48,7 +48,12 @@ export async function serve(options: ServeOptions) {
     onError: (message) => broadcast({ t: "error", message }),
   });
   process.on("exit", () => agents.close());
-  const files = new Files(options.dir, (path, content) => broadcast({ t: "file", path, content }));
+  const files = new Files(
+    options.dir,
+    (path, file) => broadcast({ t: "file", path, file }),
+    (paths) => broadcast({ t: "tree", paths }),
+  );
+  process.on("exit", () => files.stop());
   const terminals = new Terminals(
     options.dir,
     (id, data) => broadcast({ t: "term-data", id, data }),
@@ -76,10 +81,12 @@ export async function serve(options: ServeOptions) {
           message.optionId,
           message.by,
         );
-      case "file-watch":
-        return files.watch(message.path);
-      case "file-write":
-        return files.write(message.path, message.content);
+      case "file-open":
+        return files.open(message.path, ws);
+      case "file-close":
+        return files.close(message.path, ws);
+      case "tree-watch":
+        return files.watchTree();
       case "term-open": {
         const scrollback = terminals.open(message.id, message.cols, message.rows);
         if (scrollback)
@@ -143,6 +150,7 @@ export async function serve(options: ServeOptions) {
       },
       close(ws) {
         clients.delete(ws);
+        files.drop(ws);
       },
     },
   });

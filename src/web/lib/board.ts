@@ -3,10 +3,9 @@
  *
  *   frames            Y.Map<frameId, Y.Map>   position, size, type, settings
  *   prompt:<frameId>  Y.Text                  an agent frame's shared prompt draft
- *   md:<frameId>      Y.Text                  a markdown artifact's content
  *
- * Agent threads and terminal output are not in here: they come from the
- * host's machine and are mirrored separately (see `room.ts`).
+ * Agent threads, terminal output and file contents are not in here: they
+ * come from the host's machine and are mirrored separately (see `room.ts`).
  */
 
 import { useSyncExternalStore } from "react";
@@ -41,7 +40,6 @@ export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
 
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
 export const promptText = (doc: Y.Doc, frameId: string) => doc.getText(`prompt:${frameId}`);
-export const markdownText = (doc: Y.Doc, frameId: string) => doc.getText(`md:${frameId}`);
 
 function readFrames(doc: Y.Doc): Frame[] {
   const frames: Frame[] = [];
@@ -109,27 +107,4 @@ function topZ(doc: Y.Doc): number {
   let top = 0;
   framesOf(doc).forEach((map) => (top = Math.max(top, (map.get("z") as number) ?? 0)));
   return top;
-}
-
-/**
- * Replace a Y.Text's content with `next`, touching only the span that
- * differs — so a file changed on disk does not throw everyone's carets and
- * selections in that document back to the start.
- */
-export function replaceText(text: Y.Text, next: string, origin: unknown): void {
-  const current = text.toString();
-  if (current === next) return;
-  let start = 0;
-  while (start < current.length && start < next.length && current[start] === next[start]) start++;
-  let end = 0;
-  while (
-    end < current.length - start &&
-    end < next.length - start &&
-    current[current.length - 1 - end] === next[next.length - 1 - end]
-  )
-    end++;
-  text.doc!.transact(() => {
-    text.delete(start, current.length - start - end);
-    text.insert(start, next.slice(start, next.length - end));
-  }, origin);
 }

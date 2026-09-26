@@ -9,8 +9,9 @@
  *  - board updates: guests send theirs to the host only; the host applies
  *    what the guest's access allows and re-broadcasts. A read-only guest's
  *    edits therefore never reach anyone.
- *  - agent threads and terminals: only the host has them (from the server);
- *    it mirrors them to guests.
+ *  - agent threads, terminals and files: only the host has them (from the
+ *    server); it mirrors them to guests. A file frame's path in the board is
+ *    only a request — what the server lets out is the shared set (ADR 0002).
  *  - anything that runs on the host's machine is a request to the host,
  *    checked against the room's access policy, possibly waiting for the host
  *    to approve it.
@@ -30,6 +31,7 @@ import {
 import type {
   AgentConfigOption,
   AgentEvent,
+  FileContent,
   GuestAccess,
   GuestReply,
   GuestRequest,
@@ -39,7 +41,7 @@ import type {
   SessionMeta,
   SessionSnapshot,
 } from "../../shared/protocol";
-import { framesOf, markdownText, replaceText, type Frame } from "./board";
+import { framesOf, type Frame } from "./board";
 import { signHost, verifyHost } from "./host-key";
 import type { BoardLink, Identity } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
@@ -69,7 +71,14 @@ export interface ThreadSelection {
   readonly focus: { readonly key: string; readonly offset: number };
 }
 
-type Topic = "room" | "approvals" | "peers" | `session:${string}` | `term:${string}`;
+type Topic =
+  | "room"
+  | "approvals"
+  | "peers"
+  | "tree"
+  | `session:${string}`
+  | `term:${string}`
+  | `file:${string}`;
 
 const APP_ID = "canvas-prototype-v1";
 const TERM_SCROLLBACK = 200_000;
@@ -91,6 +100,9 @@ export class Room {
 
   private readonly sessions = new Map<string, MirroredSession>();
   private readonly terminals = new Map<string, string>();
+  private readonly files = new Map<string, FileContent>();
+  /** The shared set's file list; null until the host sends it (never to `view` guests). */
+  private treePaths: ReadonlyArray<string> | null = null;
   private readonly listeners = new Map<Topic, Set<() => void>>();
   private readonly peerClients = new Map<string, Set<number>>();
   private readonly server: ServerLink | null = null;
@@ -98,10 +110,11 @@ export class Room {
   private trystero: TrysteroRoom | null = null;
   private actions: ReturnType<Room["makeActions"]> | null = null;
   private access: GuestAccess = "edit";
+  /** Paths opened with the server since the link came up. */
   private readonly watched = new Set<string>();
+  private treeWatched = false;
   /** Terminals opened and agent sessions ensured since the server link came up. */
   private readonly opened = new Set<string>();
-  private readonly writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -130,6 +143,7 @@ export class Room {
           this.serverStatus = status;
           if (status !== "open") {
             this.watched.clear();
+            this.treeWatched = false;
             this.opened.clear();
           }
           this.emit("room");
@@ -160,6 +174,14 @@ export class Room {
 
   terminal(id: string): string {
     return this.terminals.get(id) ?? "";
+  }
+
+  file(path: string): FileContent | undefined {
+    return this.files.get(path);
+  }
+
+  tree(): ReadonlyArray<string> | null {
+    return this.treePaths;
   }
 
   // -------------------------------------------------------------------------
@@ -320,6 +342,16 @@ export class Room {
         { target: peerId },
       );
     }
+    for (const [path, file] of this.files) {
+      void this.actions?.broadcast.send(json({ t: "file", path, file } satisfies HostBroadcast), {
+        target: peerId,
+      });
+    }
+    if (this.treePaths && this.access !== "view")
+      void this.actions?.broadcast.send(
+        json({ t: "tree", paths: this.treePaths } satisfies HostBroadcast),
+        { target: peerId },
+      );
   }
 
   private hostcast(message: HostBroadcast) {
@@ -356,6 +388,10 @@ export class Room {
         return this.putOptions(message.sessionId, message.options);
       case "term-data":
         return this.pushTerm(message.id, message.data);
+      case "file":
+        return this.putFile(message.path, message.file);
+      case "tree":
+        return this.putTree(message.paths);
     }
   }
 
@@ -400,6 +436,16 @@ export class Room {
   private pushTerm(id: string, data: string) {
     this.terminals.set(id, (this.terminal(id) + data).slice(-TERM_SCROLLBACK));
     this.emit(`term:${id}`);
+  }
+
+  private putFile(path: string, file: FileContent) {
+    this.files.set(path, file);
+    this.emit(`file:${path}`);
+  }
+
+  private putTree(paths: ReadonlyArray<string>) {
+    this.treePaths = paths;
+    this.emit("tree");
   }
 
   // -------------------------------------------------------------------------
@@ -450,7 +496,12 @@ export class Room {
         return this.hostcast({ t: "term-data", id: message.id, data });
       }
       case "file":
-        return this.onFile(message.path, message.content);
+        this.putFile(message.path, message.file);
+        return this.hostcast(message);
+      case "tree":
+        this.putTree(message.paths);
+        if (this.access !== "view") this.hostcast(message);
+        return;
       case "error":
         this.error = message.message;
         return this.emit("room");
@@ -474,22 +525,32 @@ export class Room {
   }
 
   /**
-   * Host: make sure every markdown frame is watched, every terminal is
-   * running and every agent frame that has its agent picked has a session
-   * (which also brings up the agent, so its settings can be listed).
+   * Host: make sure exactly the files the board shows are open, every
+   * terminal is running and every agent frame that has its agent picked has
+   * a session (which also brings up the agent, so its settings can be
+   * listed).
    */
   private syncResources() {
     if (!this.isHost || this.server?.status !== "open") return;
-    for (const frame of this.frames()) {
-      if (
-        frame.type === "markdown" &&
-        frame.path &&
-        !this.watched.has(`${frame.id}:${frame.path}`)
-      ) {
-        this.watched.add(`${frame.id}:${frame.path}`);
-        this.observeMarkdown(frame.id);
-        this.server.send({ t: "file-watch", path: frame.path });
-      }
+    const frames = this.frames();
+    const paths = new Set(
+      frames.flatMap((frame) => (frame.type === "markdown" && frame.path ? [frame.path] : [])),
+    );
+    for (const path of paths) {
+      if (this.watched.has(path)) continue;
+      this.watched.add(path);
+      this.server.send({ t: "file-open", path });
+    }
+    for (const path of this.watched) {
+      if (paths.has(path)) continue;
+      this.watched.delete(path);
+      this.server.send({ t: "file-close", path });
+    }
+    if (frames.some((frame) => frame.type === "markdown") && !this.treeWatched) {
+      this.treeWatched = true;
+      this.server.send({ t: "tree-watch" });
+    }
+    for (const frame of frames) {
       if (frame.type === "agent" && frame.agent && !this.opened.has(frame.id)) {
         this.opened.add(frame.id);
         this.server.send({ t: "agent-create", id: frame.id, agent: frame.agent });
@@ -499,45 +560,6 @@ export class Room {
         this.terminals.delete(frame.id);
         this.server.send({ t: "term-open", id: frame.id, cols: 80, rows: 24 });
       }
-    }
-  }
-
-  private readonly observedMarkdown = new Set<string>();
-
-  /** Host: write collaborative edits of a markdown frame back to its file. */
-  private observeMarkdown(frameId: string) {
-    if (this.observedMarkdown.has(frameId)) return;
-    this.observedMarkdown.add(frameId);
-    markdownText(this.doc, frameId).observe((_, transaction) => {
-      if (transaction.origin === "disk") return;
-      clearTimeout(this.writeTimers.get(frameId));
-      this.writeTimers.set(
-        frameId,
-        setTimeout(() => {
-          const frame = this.frames().find((f) => f.id === frameId);
-          if (frame?.type !== "markdown") return;
-          this.server?.send({
-            t: "file-write",
-            path: frame.path,
-            content: markdownText(this.doc, frameId).toString(),
-          });
-        }, 400),
-      );
-    });
-  }
-
-  private onFile(path: string, content: string | null) {
-    for (const frame of this.frames()) {
-      if (frame.type !== "markdown" || frame.path !== path) continue;
-      const text = markdownText(this.doc, frame.id);
-      if (content === null) {
-        // A new artifact: create the file from whatever the board has.
-        this.server?.send({
-          t: "file-write",
-          path,
-          content: text.length ? text.toString() : `# ${frame.title}\n`,
-        });
-      } else replaceText(text, content, "disk");
     }
   }
 
@@ -644,9 +666,13 @@ export class Room {
 
   setAccess(access: GuestAccess) {
     if (!this.isHost || !this.roomState) return;
+    const wasView = this.access === "view";
     this.access = access;
     this.roomState = { ...this.roomState, access };
     void this.actions?.state.send(json(this.roomState));
+    // `view` guests never got the tree; now they may browse it.
+    if (wasView && access !== "view" && this.treePaths)
+      this.hostcast({ t: "tree", paths: this.treePaths });
     this.emit("room");
   }
 
