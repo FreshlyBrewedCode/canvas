@@ -45,7 +45,7 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|resume|focus|focus-agent|preview`; `files` wants the scratch repo of finding 05,
+    layout|arrange|resume|focus|focus-agent|preview`; `files` wants the scratch repo of finding 05,
     `tools`/`lines` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown
     file, finding 08, `preview` an HTML file and a loopback server, finding 09)
   - conventional commits; spike → prototype → validate → harden

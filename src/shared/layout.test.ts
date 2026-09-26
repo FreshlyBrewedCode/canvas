@@ -4,6 +4,7 @@ import {
   applyPatches,
   clusters,
   GAP,
+  insertion,
   lift,
   moveFrame,
   placeNear,
@@ -106,6 +107,20 @@ describe("lift", () => {
     const rects = [r("a", 0, 0), r("b", 124, 0), r("c", 248, 0), r("d", 0, 124)];
     expect(lift(rects, "b")).toEqual([{ id: "c", x: 124 }]);
   });
+
+  test("a frame alone in its row: the rows below move up into its place", () => {
+    const rects = [r("a", 0, 0), r("b", 0, 124, 100, 200), r("c", 0, 348), r("d", 124, 348)];
+    expect(lift(rects, "b")).toEqual([
+      { id: "c", y: 124 },
+      { id: "d", y: 124 },
+    ]);
+  });
+
+  test("the last row leaves no patches; other clusters stay", () => {
+    const rects = [r("a", 0, 0), r("b", 0, 124), r("far", 0, 2000)];
+    expect(lift(rects, "b")).toEqual([]);
+    expect(lift(rects, "a")).toEqual([{ id: "b", y: 0 }]);
+  });
 });
 
 describe("snapTarget", () => {
@@ -138,10 +153,49 @@ describe("moveFrame", () => {
     expect(after.n!.x).toBe(0);
   });
 
+  test("leaves its old row closed up when it moves to another cluster", () => {
+    const rects = [r("a", 0, 0), r("b", 124, 0), r("c", 248, 0), r("d", 1000, 0)];
+    const after = byId(applyPatches(rects, moveFrame(rects, "b", { anchor: "d", side: "right" })));
+    expect(after.b).toEqual(r("b", 1124, 0));
+    expect(after.c!.x).toBe(124);
+  });
+
+  test("moving a row's only frame below the next row: that row moves up first", () => {
+    const rects = [r("a", 0, 0), r("b", 0, 124), r("c", 0, 248)];
+    const after = byId(applyPatches(rects, moveFrame(rects, "a", { anchor: "c", side: "below" })));
+    expect([after.b!.y, after.c!.y, after.a!.y]).toEqual([0, 124, 248]);
+  });
+
   test("reorders within a row", () => {
     const rects = [r("a", 0, 0), r("b", 124, 0), r("c", 248, 0)];
     const after = byId(applyPatches(rects, moveFrame(rects, "c", { anchor: "a", side: "left" })));
     expect([after.c!.x, after.a!.x, after.b!.x]).toEqual([0, 124, 248]);
+  });
+});
+
+describe("insertion", () => {
+  const row = [r("a", 0, 0), r("b", 124, 0, 100, 150), r("c", 0, 174)];
+
+  test("between two frames of a row: a vertical line in the gap, as tall as the row", () => {
+    expect(insertion(row, { anchor: "a", side: "right" })).toEqual({ x: 112, y: 0, w: 0, h: 150 });
+    expect(insertion(row, { anchor: "b", side: "left" })).toEqual({ x: 112, y: 0, w: 0, h: 150 });
+  });
+
+  test("between two rows: a horizontal line in the gap, as wide as the cluster", () => {
+    expect(insertion(row, { anchor: "a", side: "below" })).toEqual({ x: 0, y: 162, w: 224, h: 0 });
+    expect(insertion(row, { anchor: "c", side: "above" })).toEqual({ x: 0, y: 162, w: 224, h: 0 });
+  });
+
+  test("nothing at a cluster's edge", () => {
+    expect(insertion(row, { anchor: "b", side: "right" })).toBeNull();
+    expect(insertion(row, { anchor: "a", side: "left" })).toBeNull();
+    expect(insertion(row, { anchor: "a", side: "above" })).toBeNull();
+    expect(insertion(row, { anchor: "c", side: "below" })).toBeNull();
+  });
+
+  test("the moving frame is not a neighbour", () => {
+    const rects = [r("a", 0, 0), r("m", 124, 0)];
+    expect(insertion(rects, { anchor: "a", side: "right" }, "m")).toBeNull();
   });
 });
 
