@@ -526,4 +526,210 @@ if (step === "files") {
   await shot(guest, "27-view-guest");
   await host.getByLabel("Guest access").selectOption("edit");
 }
+/** The board's frames as the host's doc has them. */
+const framesOf = (page: Page) =>
+  page.evaluate(() => {
+    const frames: Array<Record<string, any>> = [];
+    (window as any).room.doc
+      .getMap("frames")
+      .forEach((map: any, id: string) => frames.push({ id, ...map.toJSON() }));
+    return frames;
+  });
+const brief = (f: Record<string, any>) =>
+  `${f.id} ${f.type} "${f.title}" ${f.path ?? f.url ?? f.agent ?? ""}` +
+  `${f.lines ? ` L${f.lines.start}-${f.lines.end}` : ""} @${f.x},${f.y} ${f.w}x${f.h}` +
+  `${f.origin ? ` origin=${f.origin}` : ""}`;
+
+/** Put a frame somewhere in board coordinates, as its own change. */
+const place = (page: Page, id: string, patch: Record<string, unknown>) =>
+  page.evaluate(
+    ([frameId, p]) => {
+      const map = (window as any).room.doc.getMap("frames").get(frameId);
+      (window as any).room.doc.transact(() => {
+        for (const [k, v] of Object.entries(p as object)) map.set(k, v);
+      });
+    },
+    [id, patch] as const,
+  );
+
+/** Send a prompt from the host and wait for the agent to finish. */
+async function ask(frame: ReturnType<Page["locator"]>, text: string) {
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type(text);
+  await host.keyboard.press("Control+Enter");
+  await approveUntilIdle(host, guest);
+  await new Promise((r) => setTimeout(r, 800));
+  const tools = await frame
+    .locator("button .font-mono.truncate")
+    .evaluateAll((els) => els.map((el) => el.textContent));
+  console.log("tool calls:", tools.join(", "));
+  console.log("reply:", (await frame.locator(".prose-canvas").last().innerText()).slice(0, 600));
+}
+
+// Agents use the board tools (finding 06). Run against a project with auth
+// code, e.g. the scratch repo of finding 07.
+if (step === "tools") {
+  const kind = process.env.AGENT ?? "claude";
+  // A clean board: the agent's cluster should be what this step puts there.
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, kind);
+  const self = (await frame.getAttribute("data-frame"))!;
+  await place(host, self, { x: 0, y: 0 });
+  // Another cluster far away, which the agent should leave alone.
+  const other = await addFrame(host, "Files");
+  const otherId = (await other.getAttribute("data-frame"))!;
+  await place(host, otherId, { x: 3000, y: 0, path: "README.md", title: "README.md" });
+  await frame
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 30000 });
+
+  await ask(
+    frame,
+    "Show me the files relevant to authentication in this project on the board, at the relevant lines. Keep your reply short.",
+  );
+  let frames = await framesOf(host);
+  console.log("board after 1st prompt:\n  " + frames.map(brief).join("\n  "));
+  const opened = frames.filter((f) => f.origin === self);
+  console.log(`opened by the agent: ${opened.length}; README untouched:`, frames.find((f) => f.id === otherId)?.x === 3000);
+  await guest.locator(`[data-frame="${opened[0]?.id}"]`).waitFor({ timeout: 10000 });
+  console.log("guest sees the agent's frames:", await guest.locator("[data-frame-type=file]").count());
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await guest.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 1500));
+  await shot(host, `30-${kind}-host-auth-files`);
+  await shot(guest, `30-${kind}-guest-auth-files`);
+  if (opened[0]) await host.locator(`[data-frame="${opened[0].id}"]`).screenshot({ path: `${out}/31-${kind}-file-lines.png` });
+
+  await ask(
+    frame,
+    "Open src/auth/password.ts at the lines of the function that verifies a password; close the login.ts frame; and open a terminal in a new row below your frame. Short reply.",
+  );
+  frames = await framesOf(host);
+  console.log("board after 2nd prompt:\n  " + frames.map(brief).join("\n  "));
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 1000));
+  await shot(host, `32-${kind}-host-after-close`);
+  const lined = frames.find((f) => f.origin === self && f.lines);
+  if (lined) {
+    await new Promise((r) => setTimeout(r, 1000));
+    await host
+      .locator(`[data-frame="${lined.id}"]`)
+      .screenshot({ path: `${out}/34-${kind}-highlighted-lines.png` });
+  }
+  await frame.screenshot({ path: `${out}/33-${kind}-thread.png` });
+}
+
+// After a `canvas serve` restart the board tools reach the reloaded session.
+if (step === "resume") {
+  const frame = host.locator("[data-frame-type=agent]").last();
+  await frame.waitFor({ timeout: 10000 });
+  await ask(frame, "Call view_board and tell me how many frames are in your cluster. One line.");
+}
+
+// A file frame with a line range opens there, highlighted, for everyone.
+// Needs a long file in the project: LONG=path (e.g. a copy of room.ts).
+if (step === "lines") {
+  const path = process.env.LONG ?? "src/big.ts";
+  const frame = await addFrame(host, "Files");
+  const id = (await frame.getAttribute("data-frame"))!;
+  await place(host, id, { path, title: path, lines: { start: 400, end: 412 }, x: 0, y: 0, h: 700 });
+  for (const page of [host, guest]) {
+    await page.getByTitle("Reset to 100%").click();
+    await page.locator(`[data-frame="${id}"] diffs-container`).waitFor({ timeout: 10000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    const visible = await page.locator(`[data-frame="${id}"]`).evaluate((section) => {
+      const scroller = section.querySelector("diffs-container")!.closest(".overflow-auto")!;
+      const line = section.querySelector("diffs-container")!.shadowRoot!.querySelector('[data-line="400"]');
+      if (!line) return "line 400 not rendered";
+      const s = scroller.getBoundingClientRect();
+      const l = line.getBoundingClientRect();
+      return `line 400 at ${Math.round(l.top - s.top)}px of ${Math.round(s.height)}px`;
+    });
+    console.log(`${page === host ? "host" : "guest"}: ${visible}`);
+    await page.locator(`[data-frame="${id}"]`).screenshot({ path: `${out}/35-lines-${page === host ? "host" : "guest"}.png` });
+  }
+}
+
+// Dragging and resizing follow the layout rules; Alt opts out.
+if (step === "layout") {
+  const ids: string[] = [];
+  for (const [i, path] of ["README.md", "src/db.ts", "src/routes/products.ts"].entries()) {
+    const frame = await addFrame(host, "Files");
+    const id = (await frame.getAttribute("data-frame"))!;
+    ids.push(id);
+    await place(host, id, { path, title: path, x: i * 1400, y: i === 1 ? 900 : 0, w: 600, h: 400 + i * 60 });
+  }
+  const [a, b, c] = ids as [string, string, string];
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 500));
+  const frame = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
+  const scale = async () => (await host.locator(`[data-frame="${a}"]`).boundingBox())!.width / (await frame(a)).w;
+
+  /** Drag a frame by its header so its top-left lands at board (x, y). */
+  const drag = async (id: string, x: number, y: number, alt = false) => {
+    const f = await frame(id);
+    const k = await scale();
+    const box = (await host.locator(`[data-frame="${id}"]`).boundingBox())!;
+    const from = { x: box.x + 14 * k, y: box.y + 18 * k };
+    if (alt) await host.keyboard.down("Alt");
+    await host.mouse.move(from.x, from.y);
+    await host.mouse.down();
+    await host.mouse.move(from.x + ((x - f.x) * k) / 2, from.y + ((y - f.y) * k) / 2, { steps: 5 });
+    await host.mouse.move(from.x + (x - f.x) * k, from.y + (y - f.y) * k, { steps: 5 });
+    await new Promise((r) => setTimeout(r, 300));
+    const ghost = await host.locator("[data-snap-preview]").isVisible();
+    await shot(host, `4${alt ? "2" : "0"}-drag-${id}`);
+    await host.mouse.up();
+    if (alt) await host.keyboard.up("Alt");
+    await new Promise((r) => setTimeout(r, 400));
+    return ghost;
+  };
+
+  // B dropped roughly right of A: snaps into A's row, at A's height.
+  const A = await frame(a);
+  let ghost = await drag(b, A.x + A.w + 40, A.y + 30);
+  let B = await frame(b);
+  console.log(`snap right: ghost=${ghost} B=${brief(B)} expect x=${A.x + A.w + 24} y=${A.y} h=${A.h}`);
+
+  // C dropped under A: a new row.
+  ghost = await drag(c, A.x + 20, A.y + A.h + 40);
+  let C = await frame(c);
+  console.log(`snap below: ghost=${ghost} C=${brief(C)} expect x=${A.x} y=${A.y + A.h + 24}`);
+
+  // Resizing A's height: B follows, C's row moves down.
+  const k = await scale();
+  const corner = (await host.locator(`[data-frame="${a}"] .cursor-nwse-resize`).boundingBox())!;
+  await host.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+  await host.mouse.down();
+  await host.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2 + 100 * k, { steps: 6 });
+  await host.mouse.up();
+  await new Promise((r) => setTimeout(r, 400));
+  const [A2, B2, C2] = [await frame(a), await frame(b), await frame(c)];
+  console.log(`resize row: A.h=${A2.h} B.h=${B2.h} C.y=${C2.y} (was ${C.y})`);
+  await shot(host, "41-resized-row");
+
+  // C moved into A's row, left of A: reorders the row.
+  await drag(c, A2.x - 200, A2.y + 20);
+  const order = (await framesOf(host))
+    .filter((f) => ids.includes(f.id))
+    .sort((p, q) => p.y - q.y || p.x - q.x)
+    .map((f) => `${f.path}@${f.x},${f.y} ${f.w}x${f.h}`);
+  console.log("after dropping C left of A:", order.join(" | "));
+
+  // With Alt: dropped where it is, no snap.
+  B = await frame(b);
+  ghost = await drag(b, B.x + 60, B.y + 90, true);
+  const B3 = await frame(b);
+  console.log(`alt drag: ghost=${ghost} moved to ${B3.x},${B3.y} (expect ${B.x + 60},${B.y + 90}, give or take rounding)`);
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 400));
+  await shot(host, "43-final");
+  await guest.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 400));
+  await shot(guest, "43-guest-final");
+}
 await browser.close();
