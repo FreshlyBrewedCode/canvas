@@ -1,0 +1,170 @@
+---
+import { Image } from "astro:assets";
+import TriangleAlert from "@lucide/astro/icons/triangle-alert";
+import board from "../../content/docs/screenshots/board.webp";
+import Base from "../layouts/Base.astro";
+
+const features = [
+  {
+    title: "Agent frames",
+    body: "Claude Code or opencode sessions running on the host's machine. Everyone reads the thread and writes the prompt together.",
+    href: "/docs/agent",
+  },
+  {
+    title: "Board tools",
+    body: "Agents open files at the relevant lines, terminals and previews next to their own frame.",
+    href: "/docs/board-tools",
+  },
+  {
+    title: "Files frames",
+    body: "Project files, read-only and live, with a file tree, markdown preview and shared selections.",
+    href: "/docs/files",
+  },
+  {
+    title: "Terminal and browser frames",
+    body: "Shells on the host's machine mirrored to everyone, and previews of any URL.",
+    href: "/docs/terminal",
+  },
+  {
+    title: "Guest access",
+    body: "View, edit or trusted. With edit, the host approves every prompt before it runs.",
+    href: "/docs/guests",
+  },
+  {
+    title: "Focus",
+    body: "See who is in which frame, and scroll with them.",
+    href: "/docs/focus",
+  },
+];
+
+const steps = [
+  { command: "bunx @frebreco/canvas serve", body: "in your project. It prints the host link." },
+  { command: "Open the host link", body: "in your browser. You are the host." },
+  { command: "Copy guest link", body: "from the top bar, and send it to the people you work with." },
+];
+---
+
+<Base title="canvas — a multiplayer board for coding agents">
+  <main class="mx-auto max-w-6xl px-6">
+    <section class="pt-20 pb-12 text-center">
+      <h1 class="font-mono text-6xl font-semibold tracking-tighter sm:text-7xl">canvas</h1>
+      <p class="mx-auto mt-5 max-w-2xl text-lg text-muted-foreground text-balance">
+        A multiplayer board whose frames are coding agents, project files, terminals and browser
+        previews. The agents run on one person's machine; everyone else joins from their browser,
+        peer to peer.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a
+          href="/docs"
+          class="inline-flex h-10 items-center rounded-md bg-primary px-5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          Read the docs
+        </a>
+        <code
+          class="inline-flex h-10 items-center rounded-md border border-border bg-card px-4 font-mono text-sm"
+        >
+          bunx @frebreco/canvas serve
+        </code>
+      </div>
+    </section>
+
+    <aside
+      class="mx-auto flex max-w-3xl gap-3 rounded-lg border border-l-[3px] border-l-primary bg-card p-4 text-sm"
+    >
+      <TriangleAlert class="mt-0.5 size-4 shrink-0 text-primary" />
+      <p class="leading-relaxed">
+        <strong>A prototype.</strong> canvas runs agents and shells on the host's machine and lets
+        other people reach them. Don't use it for critical work, or where security is an absolute
+        requirement.{" "}<a class="underline underline-offset-3" href="/docs/security">Security</a
+        >{" · "}<a
+          class="underline underline-offset-3"
+          href="/docs/limits">Limits</a
+        >
+      </p>
+    </aside>
+
+    <figure class="mt-12">
+      <Image
+        src={board}
+        alt="A board: an agent frame, the file it opened at the relevant lines, a markdown plan, a terminal and a browser frame"
+        widths={[1000, 1600, 2000]}
+        sizes="(min-width: 72rem) 72rem, 100vw"
+        class="w-full rounded-lg border border-border shadow-sm"
+        loading="eager"
+      />
+      <figcaption class="mt-3 text-center text-sm text-muted-foreground">
+        An agent opened the login code at the relevant lines. Ada, a guest, points at the plan.
+      </figcaption>
+    </figure>
+
+    <section class="mt-20">
+      <h2 class="font-mono text-xl font-semibold">What's on the board</h2>
+      <div class="mt-6 grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+        {
+          features.map((feature) => (
+            <a href={feature.href} class="group bg-card p-5 hover:bg-accent">
+              <h3 class="font-medium">{feature.title}</h3>
+              <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{feature.body}</p>
+            </a>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="mt-20">
+      <h2 class="font-mono text-xl font-semibold">Start</h2>
+      <ol class="mt-6 grid gap-4 sm:grid-cols-3">
+        {
+          steps.map((step, i) => (
+            <li class="rounded-lg border border-border bg-card p-5">
+              <span class="font-mono text-xs text-muted-foreground">{i + 1}</span>
+              <p class="mt-2 font-mono text-sm font-medium">{step.command}</p>
+              <p class="mt-1 text-sm text-muted-foreground">{step.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+      <p class="mt-6 text-sm text-muted-foreground">
+        Needs{" "}<a class="underline underline-offset-3 hover:text-foreground" href="https://bun.sh"
+          >Bun</a
+        >{" "}and Claude Code or opencode on the host's machine. Guests need a browser.{" "}<a
+          class="underline underline-offset-3 hover:text-foreground"
+          href="/docs/quick-start">Quick start</a
+        >
+      </p>
+    </section>
+
+    <section class="mt-20">
+      <h2 class="font-mono text-xl font-semibold">How it stays on your machine</h2>
+      <ul class="mt-6 grid gap-4 text-sm leading-relaxed sm:grid-cols-3">
+        <li class="rounded-lg border border-border bg-card p-5">
+          <p class="font-medium">One door</p>
+          <p class="mt-1 text-muted-foreground">
+            Only the host's browser talks to <code class="font-mono">canvas serve</code>, with a
+            token guests never see.
+          </p>
+        </li>
+        <li class="rounded-lg border border-border bg-card p-5">
+          <p class="font-medium">Host decides</p>
+          <p class="mt-1 text-muted-foreground">
+            Guests' prompts wait for the host's approval. Agents' permission requests are the host's
+            alone.
+          </p>
+        </li>
+        <li class="rounded-lg border border-border bg-card p-5">
+          <p class="font-medium">Files read-only</p>
+          <p class="mt-1 text-muted-foreground">
+            Guests see only files git tracks or would track, never <code class="font-mono">.env</code>,
+            keys or <code class="font-mono">.git</code>.
+          </p>
+        </li>
+      </ul>
+      <p class="mt-6 text-sm">
+        <a class="underline underline-offset-3" href="/docs/architecture">Architecture</a>{" · "}<a
+          class="underline underline-offset-3"
+          href="/docs/security">Security</a
+        >
+      </p>
+    </section>
+  </main>
+</Base>
