@@ -126,7 +126,7 @@ export const BOARD_TOOLS: ReadonlyArray<{
     name: "update_frame",
     description:
       "Change a frame: point a file frame at another file or line range, switch a markdown " +
-      "file between preview and source, change a browser frame's URL, rename a frame, or move " +
+      "or HTML file between preview and source, change a browser frame's URL, rename a frame, or move " +
       "it next to another frame.",
     inputSchema: {
       type: "object",
@@ -167,5 +167,6 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - File frames are read-only and live: they show a file as it is on disk, so they follow your edits. Only files git doesn't ignore can be shown, never secrets.
 - A terminal frame is an idle shell for people; you cannot type into it. Run commands with your own tools.
 - An agent frame starts another agent. You can leave a draft prompt in it; only a person can send it.
-- A browser frame loads its URL in each viewer's own browser, so localhost means their machine, not this one.`;
+- A browser frame loads its URL in each viewer's own browser, so localhost means their machine, not this one: only the host sees a localhost URL, guests get a notice.
+- To show a page you wrote to everyone, open the HTML file as a file frame: it renders, scripts included, but relative links and assets (CSS, images, other scripts) don't load, so inline them.`;
 }

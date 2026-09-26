@@ -23,8 +23,13 @@ Anything outside it cannot be opened.
 ## Views
 
 - **Source**: syntax-highlighted, for any text file. Long files are virtualized.
-- **Preview**: markdown files open rendered. The **<>** button switches between preview and source
-  for everyone.
+- **Preview**: markdown and HTML files open rendered. The **<>** button switches between preview
+  and source for everyone.
+
+An HTML preview runs the page's scripts, sandboxed: the page can't reach the board or your
+browser's storage for canvas. It is one file: links and assets relative to it (CSS, images, other
+scripts) don't load, so inline them. The page keeps its own scroll, and selections don't show in
+it.
 
 Files over 1 MiB are **too large to show**; binary files are **not shown**. A path that does not
 exist yet waits, and shows the file as soon as something writes it.

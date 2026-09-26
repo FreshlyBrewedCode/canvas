@@ -13,7 +13,7 @@ instead of pasting code into its reply.
 | -------------- | ------------------------------------------------------------------------ |
 | `view_board`   | Lists the agent's own cluster row by row, and summarises the others      |
 | `open_frame`   | Opens a frame: a file (optionally at a line range), a browser, a terminal, an agent |
-| `update_frame` | Points a files frame at another file or lines, switches preview/source, changes a URL, renames, moves |
+| `update_frame` | Points a files frame at another file or lines, switches preview/source (markdown, HTML), changes a URL, renames, moves |
 | `close_frame`  | Removes a frame                                                          |
 
 ![The login code, opened by the agent at lines 5–15, next to its frame](./screenshots/files-lines.webp)
