@@ -229,7 +229,7 @@ function SnapGhost() {
       className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
       style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
     >
-      {preview.kind === "insert" ? "Insert here · " : ""}Hold Alt to place freely
+      {preview.kind === "insert" ? "Insert here · " : ""}Alt: place freely · Shift: move the cluster
     </span>
   );
   if (preview.kind === "place") {

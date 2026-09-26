@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import {
   insertion,
   lift,
+  locate,
   moveFrame,
   resizeInRow,
   snapTarget,
@@ -30,7 +31,8 @@ const ICONS = { agent: Bot, file: FileCode, browser: Globe, terminal: SquareTerm
  * Geometry lives in the board doc, so every move is seen by everyone.
  * Near other frames, the layout rules apply (`shared/layout.ts`): a drop
  * snaps into a row or a new row, resizing keeps a row's height. Holding Alt
- * places and sizes a frame freely.
+ * places and sizes a frame freely; holding Shift drags its whole cluster
+ * along, as it is.
  * Frames hold user data, so they are square (design.md › Shapes).
  *
  * Pressing on a frame claims it (`focus.ts`): its occupant shows in the
@@ -143,6 +145,10 @@ function Drag({
     scale: number;
     /** The board when the drag began: where row mates were, for resizing. */
     rects: Rect[];
+    /** Its cluster mates where they were when the drag began, for Shift. */
+    mates: Array<Pick<Rect, "id" | "x" | "y">>;
+    /** Whether the mates were last moved along. */
+    carrying: boolean;
     moved: boolean;
   } | null>(null);
   const frameRequest = useRef(0);
@@ -163,16 +169,27 @@ function Drag({
     return { patches, preview: line ? { kind: "insert", line } : { kind: "place", box } };
   };
 
+  /** With Shift the mates keep their offsets; let go of it and they go back. */
+  const carry = (s: NonNullable<typeof start.current>, dx: number, dy: number, shift: boolean) => {
+    if (!shift && !s.carrying) return [];
+    s.carrying = shift;
+    return shift
+      ? s.mates.map((m) => ({ id: m.id, x: Math.round(m.x + dx), y: Math.round(m.y + dy) }))
+      : s.mates;
+  };
+
   const end = (event: React.PointerEvent) => {
     const s = start.current;
     start.current = null;
     setSnapPreview(null);
-    if (!s || mode !== "move" || !s.moved || event.altKey) return;
+    if (!s || mode !== "move" || !s.moved) return;
     cancelAnimationFrame(frameRequest.current);
     const dx = (event.clientX - s.px) / s.scale;
     const dy = (event.clientY - s.py) / s.scale;
     const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy), w: s.w, h: s.h };
-    applyPatches(room.doc, [here, ...drop(here, s).patches]);
+    const mates = carry(s, dx, dy, event.shiftKey);
+    const snap = event.shiftKey || event.altKey ? [] : drop(here, s).patches;
+    applyPatches(room.doc, [here, ...mates, ...snap]);
   };
 
   return (
@@ -191,6 +208,10 @@ function Drag({
           h: frame.h,
           scale,
           rects: allFrames(room.doc),
+          mates: locate(allFrames(room.doc), frame.id)
+            .cluster.frames.filter((f) => f.id !== frame.id)
+            .map(({ id, x, y }) => ({ id, x, y })),
+          carrying: false,
           moved: false,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -202,12 +223,13 @@ function Drag({
         const dy = (event.clientY - s.py) / s.scale;
         if (Math.hypot(dx, dy) > 3) s.moved = true;
         const free = event.altKey;
+        const shift = event.shiftKey;
         cancelAnimationFrame(frameRequest.current);
         frameRequest.current = requestAnimationFrame(() => {
           if (mode === "move") {
             const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy) };
-            updateFrame(room.doc, frame.id, here);
-            if (free || !s.moved) return setSnapPreview(null);
+            applyPatches(room.doc, [here, ...carry(s, dx, dy, shift)]);
+            if (free || shift || !s.moved) return setSnapPreview(null);
             setSnapPreview(drop({ ...here, w: s.w, h: s.h }, s).preview);
           } else {
             const size = {
