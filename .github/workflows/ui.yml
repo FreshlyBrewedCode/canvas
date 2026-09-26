@@ -65,7 +65,10 @@ jobs:
             echo "base=/" >> "$GITHUB_OUTPUT"
           fi
 
+      # The version tells the page which `canvas serve` it matches (src/web/lib/version.ts).
       - name: Build the web app
+        env:
+          VITE_CANVAS_VERSION: ${{ inputs.version }}
         run: bunx vite build --base "${{ steps.channel.outputs.base }}"
 
       - uses: actions/checkout@v4
