@@ -20,6 +20,13 @@ const STYLE = {
 } as React.CSSProperties;
 
 /**
+ * Not flush with the top: the virtualizer anchors scrolling to a file's
+ * bottom while its top is at 0 and it has no height yet, so a new file
+ * would open scrolled to its end.
+ */
+const CONTENT = { paddingBlock: 4 };
+
+/**
  * A file's source, read-only: Shiki highlighting (language from the file
  * name), line numbers, and only the visible lines in the DOM. Prose (`wrap`)
  * wraps long lines; code scrolls.
@@ -28,7 +35,7 @@ export function CodeView({ path, text, wrap }: { path: string; text: string; wra
   const file = useMemo<FileContents>(() => ({ name: path, contents: text }), [path, text]);
 
   return (
-    <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full">
+    <Virtualizer className="h-full overflow-auto" contentStyle={CONTENT}>
       <File file={file} options={wrap ? WRAP : SCROLL} style={STYLE} />
     </Virtualizer>
   );
