@@ -44,6 +44,7 @@ playwright-report/
 # event type is designed against these (ADR 0003) and phase 1's corpus-replay
 # adapter reads them, so they have to survive a fresh checkout. 128K total.
 !test/corpus/*.ndjson
+!src/test/corpus/*.ndjson
 
 # playwright-cli session snapshots
 .playwright-cli/
