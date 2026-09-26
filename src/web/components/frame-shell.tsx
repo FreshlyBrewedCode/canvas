@@ -17,6 +17,7 @@ import {
   moveFrame,
   resizeInRow,
   snapTarget,
+  type Box,
   type Patch,
   type Rect,
 } from "../../shared/layout";
@@ -96,7 +97,7 @@ export function FrameShell({
             title="Remove frame"
             className="text-muted-foreground hover:text-foreground -mr-1 rounded-md p-1"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => removeFrame(room.doc, frame.id)}
+            onClick={() => removeFrame(room.doc, frame.id, lift(allFrames(room.doc), frame.id))}
           >
             <X className="size-3.5" />
           </button>
@@ -139,18 +140,22 @@ function Drag({
     w: number;
     h: number;
     scale: number;
-    /** The board when the drag began: where row mates were. */
+    /** The board when the drag began: where row mates were, for resizing. */
     rects: Rect[];
     moved: boolean;
   } | null>(null);
   const frameRequest = useRef(0);
 
-  /** The patches a drop here would apply: into a row, or out of the old one. */
-  const drop = (rects: Rect[], before: Rect[]): { patches: Patch[]; snapped: boolean } => {
-    const target = snapTarget(rects, frame.id);
-    if (target) return { patches: moveFrame(rects, frame.id, target), snapped: true };
-    // Dropped away from everything: the row it left closes up.
-    return { patches: lift(before, frame.id), snapped: false };
+  /**
+   * The patches a drop at `here` would apply: into a row, or out of the old
+   * one. Either way it leaves from where the drag began, so that gap closes.
+   */
+  const drop = (here: Rect, s: Box): { patches: Patch[]; snapped: boolean } => {
+    const others = allFrames(room.doc).filter((f) => f.id !== frame.id);
+    const origin = [...others, { ...here, x: s.x, y: s.y }];
+    const target = snapTarget([...others, here], frame.id);
+    if (target) return { patches: moveFrame(origin, frame.id, target), snapped: true };
+    return { patches: lift(origin, frame.id), snapped: false };
   };
 
   const end = (event: React.PointerEvent) => {
@@ -162,8 +167,7 @@ function Drag({
     const dx = (event.clientX - s.px) / s.scale;
     const dy = (event.clientY - s.py) / s.scale;
     const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy), w: s.w, h: s.h };
-    const rects = [...allFrames(room.doc).filter((f) => f.id !== frame.id), here];
-    applyPatches(room.doc, [here, ...drop(rects, s.rects).patches]);
+    applyPatches(room.doc, [here, ...drop(here, s).patches]);
   };
 
   return (
@@ -199,11 +203,7 @@ function Drag({
             const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy) };
             updateFrame(room.doc, frame.id, here);
             if (free || !s.moved) return setSnapPreview(null);
-            const rects = [
-              ...allFrames(room.doc).filter((f) => f.id !== frame.id),
-              { ...here, w: s.w, h: s.h },
-            ];
-            const { patches, snapped } = drop(rects, s.rects);
+            const { patches, snapped } = drop({ ...here, w: s.w, h: s.h }, s);
             const landing = patches.find((p) => p.id === frame.id);
             setSnapPreview(snapped && landing ? { x: 0, y: 0, w: s.w, h: s.h, ...landing } : null);
           } else {
