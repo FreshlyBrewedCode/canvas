@@ -30,6 +30,7 @@ import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Presence } from "@/lib/room";
 import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
+import { useSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
@@ -105,6 +106,7 @@ export function Board() {
           {frames.map((frame) => (
             <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
           ))}
+          <SnapGhost />
           <Pointers />
         </div>
 
@@ -205,6 +207,26 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
             : "Add an agent from the toolbar. It runs on the host's machine; everyone here sees the thread and can write the prompt together."}
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Where the frame being dragged lands if dropped now. */
+function SnapGhost() {
+  const box = useSnapPreview();
+  if (!box) return null;
+  return (
+    <div
+      data-snap-preview=""
+      className="border-primary/70 bg-primary/5 pointer-events-none absolute z-[99999] border-2 border-dashed"
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+    >
+      <span
+        className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
+        style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
+      >
+        Hold Alt to place freely
+      </span>
     </div>
   );
 }
