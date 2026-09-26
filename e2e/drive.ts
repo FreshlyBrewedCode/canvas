@@ -15,8 +15,13 @@ const open = async (url: string, name: string, color: string) => {
     viewport: { width: 1400, height: 900 },
     colorScheme: "dark",
   });
+  // Runs in every frame; sandboxed ones (HTML previews) have no storage.
   await context.addInitScript(
-    ([n, c]) => localStorage.setItem("canvas.identity", JSON.stringify({ name: n, color: c })),
+    ([n, c]) => {
+      try {
+        localStorage.setItem("canvas.identity", JSON.stringify({ name: n, color: c }));
+      } catch {}
+    },
     [name, color],
   );
   const page = await context.newPage();
@@ -936,5 +941,90 @@ if (step === "focus-agent") {
   const max = await thread(host).evaluate((el) => el.scrollHeight - el.clientHeight);
   check(ht < max - 40 && Math.abs(ht - gt) <= 2, `guest follows the thread (host ${ht}, guest ${gt}, end ${max})`);
   await shot(guest, "56-focus-thread-follow");
+}
+// Needs a project with PAGE (default page.html, see finding 09) in DIR and a
+// dev server on the host's loopback at LOCAL (default http://127.0.0.1:5199/).
+if (step === "preview") {
+  const dir = process.env.DIR ?? "/tmp/canvas-preview";
+  const page = process.env.PAGE ?? "page.html";
+  const local = process.env.LOCAL ?? "http://127.0.0.1:5199/";
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 800) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+
+  // An HTML file of the shared set renders for everyone, scripts sandboxed.
+  const file = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  await place(host, file, { path: page, title: page, x: 0, y: 0, w: 640, h: 420 });
+  const doc = (p: Page) => p.locator(`[data-frame="${file}"] iframe`).contentFrame();
+  for (const [p, who] of [[host, "host"], [guest, "guest"]] as const) {
+    await doc(p).locator("#probe").getByText("scripts run").waitFor({ timeout: 10000 });
+    const probe = await doc(p).locator("#probe").innerText();
+    check(
+      probe === "scripts run; storage blocked; parent blocked",
+      `${who}: the page's script runs, sandboxed (${probe})`,
+    );
+    check(
+      (await p.locator(`[data-frame="${file}"] iframe`).getAttribute("sandbox")) === "allow-scripts",
+      `${who}: sandbox is allow-scripts only`,
+    );
+  }
+  await Bun.write(
+    `${dir}/${page}`,
+    (await Bun.file(`${dir}/${page}`).text()).replace("Hello preview", "Hello again"),
+  );
+  await doc(guest).getByText("Hello again").waitFor({ timeout: 10000 });
+  check(true, "guest: the preview follows the file on disk");
+
+  // Loopback: the host's frame loads it, a guest's shows a notice instead.
+  const web = (await (await addFrame(host, "Browser")).getAttribute("data-frame"))!;
+  await place(host, web, { url: local, title: "local", x: 700, y: 0, w: 640, h: 420 });
+  const bar = (p: Page) => p.locator(`[data-frame="${web}"] input[name=url]`);
+  await host.locator(`[data-frame="${web}"] iframe[src="${local}"]`).waitFor({ timeout: 10000 });
+  const hostText = await host
+    .locator(`[data-frame="${web}"] iframe`)
+    .contentFrame()
+    .locator("body")
+    .innerText();
+  check(hostText.includes("local dev server"), "host: loads its own localhost");
+  await guest
+    .locator(`[data-frame="${web}"]`)
+    .getByText("is on the host's machine")
+    .waitFor({ timeout: 10000 });
+  check(
+    (await guest.locator(`[data-frame="${web}"] iframe`).count()) === 0,
+    "guest: no iframe for the host's localhost",
+  );
+  for (const p of [host, guest]) await p.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle();
+  await shot(host, "60-preview-host");
+  await shot(guest, "60-preview-guest");
+
+  // A typed loopback address gets http, not https.
+  await bar(guest).fill("localhost:5199");
+  await bar(guest).press("Enter");
+  await settle();
+  check(
+    (await bar(host).inputValue()) === "http://localhost:5199",
+    `a typed loopback address gets http (${await bar(host).inputValue()})`,
+  );
+
+  // Anything but http(s), written straight into the board, loads nowhere.
+  await guest.evaluate(
+    ([frameId]) => (window as any).room.doc.getMap("frames").get(frameId).set("url", "javascript:alert(1)"),
+    [web],
+  );
+  for (const [p, who] of [[host, "host"], [guest, "guest"]] as const) {
+    await p
+      .locator(`[data-frame="${web}"]`)
+      .getByText("Only http and https URLs load.")
+      .waitFor({ timeout: 10000 });
+    check((await p.locator(`[data-frame="${web}"] iframe`).count()) === 0, `${who}: no iframe for javascript:`);
+  }
 }
 await browser.close();

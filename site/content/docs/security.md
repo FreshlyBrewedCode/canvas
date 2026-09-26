@@ -71,8 +71,11 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
 - **An agent can read what files frames cannot**, `.env` included, and write it into its thread for
   everyone.
 - **A secret in a tracked file with an ordinary name** is in the shared set.
-- **A browser frame** loads whatever URL an edit guest enters, in everyone's browser, including the
-  host's.
+- **A browser frame** loads whatever http(s) URL an edit guest enters, in everyone's browser,
+  including the host's. A `localhost` URL loads only in the host's browser, so an edit guest can
+  make the host's browser open a page on a service on the host's machine.
+- **An HTML file in a files frame** runs its scripts in everyone's browser. They are sandboxed away
+  from canvas and the board, but can still reach the network.
 - **Peers see each other's IP addresses**, as with any WebRTC connection.
 
 ## Not covered

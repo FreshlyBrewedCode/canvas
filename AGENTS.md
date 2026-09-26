@@ -12,7 +12,9 @@ canvas
 - `src/shared/protocol.ts` is the wire contract of both halves; the trust model is ADR 0001 (the
   host's browser is the only door to the machine; star for authority, mesh for presence) and
   ADR 0002 (files reach guests read-only, from a set `canvas serve` fixes — `shared-set.ts`).
-  Anything a board path names comes from a guest: resolve it through the shared set
+  Anything a board path names comes from a guest: resolve it through the shared set. So does a
+  browser frame's URL: ADR 0004 (loopback loads for the host only, http(s) only, HTML files
+  render in a sandboxed `srcdoc` — `web/lib/browser-url.ts`)
 - agents act on the board (ADR 0003): `canvas serve` gives each session an MCP server
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
   MCP server instructions, never a replaced system prompt (finding 06). Layout rules — clusters
@@ -43,8 +45,9 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|resume|focus|focus-agent`; `files` wants the scratch repo of finding 05, `tools`/`lines`
-    the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file, finding 08)
+    layout|resume|focus|focus-agent|preview`; `files` wants the scratch repo of finding 05,
+    `tools`/`lines` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown
+    file, finding 08, `preview` an HTML file and a loopback server, finding 09)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
     semantic-release reads. Every merge to `main` publishes `@frebreco/canvas@next` and deploys its

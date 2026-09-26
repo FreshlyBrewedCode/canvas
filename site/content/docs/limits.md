@@ -33,7 +33,8 @@ canvas is a prototype. These are known, and not bugs to report.
 - **Terminals** do not survive a restart of `canvas serve`, and keep running after their frame is
   removed, until `canvas serve` stops.
 - **Browser frames** load pages per viewer: a dev server on the host's `localhost` is not visible
-  to guests.
+  to guests, who see a notice.
+- **HTML previews** are one file: relative assets and links don't load.
 - **Files are read-only.** The board cannot create or edit files; agents do.
 - **The shared set is fixed by rule.** There is no `.canvasignore` yet.
 - **Layout**: only rows, no stacks; a dropped frame can still run into a neighbouring cluster.

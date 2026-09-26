@@ -27,19 +27,22 @@ import type { FileContent } from "../../shared/protocol";
 type FileFrameData = Extract<Frame, { type: "file" }>;
 
 const isMarkdown = (path: string) => /\.(md|markdown|mdx)$/i.test(path);
+const isHtml = (path: string) => /\.html?$/i.test(path);
+/** Files with a rendered view, which they open in. */
+const hasPreview = (path: string) => isMarkdown(path) || isHtml(path);
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 /**
  * A file of the host's working dir, read-only (ADR 0002). Which file and how
- * it is shown (markdown: rendered or source) are shared; the tree panel is
+ * it is shown (markdown and HTML: rendered or source) are shared; the tree panel is
  * each viewer's own. Changes on disk — typically an agent's — flow in live.
  */
 export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly: boolean }) {
   const room = useRoom();
   const file = useFile(frame.path);
-  const markdown = isMarkdown(frame.path);
+  const previewable = hasPreview(frame.path);
   // Lines only show in the source; a range asked for means the source.
-  const view: FileView = frame.view ?? (markdown && !frame.lines ? "preview" : "source");
+  const view: FileView = frame.view ?? (previewable && !frame.lines ? "preview" : "source");
   // `view` guests don't get the tree (ADR 0002).
   const canBrowse = !readOnly;
   const [treeOpen, setTreeOpen] = useState(canBrowse && !frame.path);
@@ -98,7 +101,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
       }
       actions={
         <>
-          {markdown && (
+          {previewable && (
             <Button
               size="icon-sm"
               variant="ghost"
@@ -185,7 +188,8 @@ function FileBody({
     case "too-large":
       return <Notice>Too large to show ({formatSize(file.size)}).</Notice>;
     case "text":
-      return view === "preview" ? (
+      if (view === "preview" && isHtml(path)) return <HtmlPreview path={path} html={file.text} />;
+      return view === "preview" && isMarkdown(path) ? (
         <MarkdownPreview frameId={frameId} path={path} text={file.text} />
       ) : (
         <div data-frame-body="" className="h-full select-text">
@@ -235,6 +239,26 @@ function MarkdownPreview({ frameId, path, text }: { frameId: string; path: strin
         <RemoteSelections frameId={frameId} path={path} version={text} />
       </div>
     </div>
+  );
+}
+
+/**
+ * An HTML file of the shared set, rendered (ADR 0004). Its scripts run, in a
+ * sandbox without `allow-same-origin`: an opaque origin that cannot reach
+ * the web app's storage (the room key, the host token), navigate the board
+ * or open windows. Relative links and assets don't resolve — one-file pages.
+ * The page keeps its own scroll; selections don't reach it.
+ */
+function HtmlPreview({ path, html }: { path: string; html: string }) {
+  return (
+    <iframe
+      title={path}
+      srcDoc={html}
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      // Pointer events off while the board is being dragged, or the iframe swallows them.
+      className="size-full bg-white [[data-grabbing]_&]:pointer-events-none"
+    />
   );
 }
 

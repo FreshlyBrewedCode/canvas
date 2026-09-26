@@ -3,17 +3,20 @@ import { useState } from "react";
 
 import { FrameShell } from "@/components/frame-shell";
 import { updateFrame, type Frame } from "@/lib/board";
+import { browserTarget, typedUrl } from "@/lib/browser-url";
 import { useRoom } from "@/lib/room-context";
 
 type BrowserFrameData = Extract<Frame, { type: "browser" }>;
 
 /**
  * A live preview of a URL. The URL is shared; the page is loaded by each
- * browser itself — so `localhost` means each viewer's own machine.
+ * browser itself — so `localhost` means each viewer's own machine, and only
+ * the host loads it (ADR 0004).
  */
 export function BrowserFrame({ frame, readOnly }: { frame: BrowserFrameData; readOnly: boolean }) {
   const room = useRoom();
   const [reload, setReload] = useState(0);
+  const target = browserTarget(frame.url);
 
   return (
     <FrameShell frame={frame} readOnly={readOnly}>
@@ -22,9 +25,8 @@ export function BrowserFrame({ frame, readOnly }: { frame: BrowserFrameData; rea
           className="flex items-center gap-1 border-b px-2 py-1"
           onSubmit={(event) => {
             event.preventDefault();
-            const draft = new FormData(event.currentTarget).get("url")?.toString().trim() ?? "";
-            const url = /^[a-z]+:\/\//i.test(draft) ? draft : `https://${draft}`;
-            updateFrame(room.doc, frame.id, { url });
+            const draft = new FormData(event.currentTarget).get("url")?.toString() ?? "";
+            updateFrame(room.doc, frame.id, { url: typedUrl(draft) });
           }}
         >
           <button
@@ -45,14 +47,27 @@ export function BrowserFrame({ frame, readOnly }: { frame: BrowserFrameData; rea
             readOnly={readOnly}
           />
         </form>
-        {/* Pointer events off while the board is being dragged, or the iframe swallows them. */}
-        <iframe
-          key={reload}
-          title={frame.title}
-          src={frame.url}
-          className="min-h-0 flex-1 bg-white [[data-grabbing]_&]:pointer-events-none"
-        />
+        {target.kind === "invalid" ? (
+          <Notice>Only http and https URLs load.</Notice>
+        ) : target.kind === "loopback" && !room.isHost ? (
+          <Notice>
+            <span className="font-mono">{target.host}</span> is on the host's machine, so only the
+            host sees it here. Guests need a URL their browser can reach.
+          </Notice>
+        ) : (
+          // Pointer events off while the board is being dragged, or the iframe swallows them.
+          <iframe
+            key={reload}
+            title={frame.title}
+            src={frame.url}
+            className="min-h-0 flex-1 bg-white [[data-grabbing]_&]:pointer-events-none"
+          />
+        )}
       </div>
     </FrameShell>
   );
+}
+
+function Notice({ children }: { children: React.ReactNode }) {
+  return <p className="text-muted-foreground p-4 text-xs">{children}</p>;
 }
