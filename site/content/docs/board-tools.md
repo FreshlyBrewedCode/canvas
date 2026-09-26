@@ -5,16 +5,18 @@ section: Features
 order: 4
 ---
 
-Every agent session gets four tools to see and change the board. Asked to "show me the code that
+Every agent session gets tools to see and change the board. Asked to "show me the code that
 handles login", an agent opens the file as a frame, at the relevant lines, next to its own frame,
 instead of pasting code into its reply.
 
 | Tool           | Does                                                                     |
 | -------------- | ------------------------------------------------------------------------ |
 | `view_board`   | Lists the agent's own cluster row by row, and summarises the others      |
-| `open_frame`   | Opens a frame: a file (optionally at a line range), a browser, a terminal, an agent |
-| `update_frame` | Points a files frame at another file or lines, switches preview/source (markdown, HTML), changes a URL, renames, moves |
+| `open_frame`   | Opens a frame: a file (optionally at a line range), a new scratch file, a browser, a terminal, an agent |
+| `update_frame` | Points a files frame at another file, lines or a new scratch file, switches preview/source (markdown, HTML), changes a URL, renames, moves |
 | `close_frame`  | Removes a frame                                                          |
+| `read_board_file` | Reads a scratch file                                                  |
+| `write_board_file` | Creates a scratch file, or overwrites one                            |
 
 ![The login code, opened by the agent at lines 5–15, next to its frame](./screenshots/files-lines.webp)
 
@@ -29,6 +31,21 @@ the board runs anything by itself:
 
 Board tool calls therefore never ask for permission. Tool calls that touch the machine, like shell
 commands, still ask the host.
+
+## Scratch files
+
+Some things exist only to be shown on the board: a write-up of a feature, a diagram, a small HTML
+visualisation. An agent passes that text with the tool call instead of writing a file into your
+project. `canvas serve` keeps it in `.canvas/scratch/`, and the frame shows it as
+`canvas:scratch/<name>`, rendered like any markdown or HTML file.
+
+- Only agents write scratch files. Everyone else reads them, like any file in a files frame.
+- A name is never taken twice: a second `overview.md` becomes `overview-2.md`, and the agent is told.
+- Any agent can read, show or overwrite any scratch file. Frames showing it update live.
+- They stay in `.canvas/scratch/` until you delete them.
+
+Agents are told to use scratch files only for the board. Temp files for their own work go wherever
+they would without canvas.
 
 ## Placement
 

@@ -11,7 +11,7 @@ order: 5
 | **agent settings**| An agent session's model, reasoning effort, mode and so on, as the agent offers them |
 | **approval**      | The host's yes or no to something an edit guest wants to run. [Guests](/docs/guests#approvals) |
 | **board**         | The shared surface all frames live on. One per project                      |
-| **board tools**   | `view_board`, `open_frame`, `update_frame`, `close_frame`: how agents change the board. [Board tools](/docs/board-tools) |
+| **board tools**   | `view_board`, `open_frame`, `update_frame`, `close_frame`, `read_board_file`, `write_board_file`: how agents change the board. [Board tools](/docs/board-tools) |
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
 | **cluster**       | Frames within 48 px of each other. [Board](/docs/board#layout)              |
@@ -27,6 +27,7 @@ order: 5
 | **permission**    | An agent asking before a tool call. Only the host answers                   |
 | **prompt draft**  | The shared composer of an agent frame, written by several people at once    |
 | **row**           | Frames in a cluster whose top edges line up; they share a height            |
+| **scratch file**  | A file an agent wrote for the board only, kept in `.canvas/scratch/`, shown as `canvas:scratch/<name>`. [Board tools](/docs/board-tools#scratch-files) |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |
 | **terminal frame**| A shell on the host's machine. [Terminal](/docs/terminal)                   |
 | **web app**       | The browser UI at `ui.canvas.frebreco.de`                                   |

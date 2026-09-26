@@ -74,6 +74,8 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
 - **A browser frame** loads whatever http(s) URL an edit guest enters, in everyone's browser,
   including the host's. A `localhost` URL loads only in the host's browser, so an edit guest can
   make the host's browser open a page on a service on the host's machine.
+- **Scratch files** are whatever an agent writes, and anyone who can prompt an agent can have it
+  write one. Only agents can write them; the board holds just their paths.
 - **An HTML file in a files frame** runs its scripts in everyone's browser. They are sandboxed away
   from canvas and the board, but can still reach the network.
 - **Peers see each other's IP addresses**, as with any WebRTC connection.

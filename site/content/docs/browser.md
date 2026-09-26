@@ -22,7 +22,8 @@ Guests see a notice instead: their browser would load their own machine. For gue
 server, they need a URL their browser can reach, for example a tunnel the host sets up.
 
 To show everyone a page an agent wrote, open the HTML file in a [files frame](/docs/files#views)
-instead: it renders for everyone.
+instead: it renders for everyone. Agents can also pass a page as a
+[scratch file](/docs/board-tools#scratch-files), without writing it into the project.
 
 ## Limits
 
