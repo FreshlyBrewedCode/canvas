@@ -17,6 +17,9 @@ canvas
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
   MCP server instructions, never a replaced system prompt (finding 06). Layout rules — clusters
   and rows read off positions — are pure geometry in `src/shared/layout.ts`
+- frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
+  drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
+  frame they last opened or changed until their turn ends
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied
@@ -38,8 +41,8 @@ canvas
     `bun src/cli.ts serve --dir <project> --tls-host dev.example.ts.net --web-url https://dev.example.ts.net:4417`
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|resume`; `files` wants the scratch repo of finding 05, `tools`/`lines` the one of
-    finding 07)
+    layout|resume|focus|focus-agent`; `files` wants the scratch repo of finding 05, `tools`/`lines`
+    the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file, finding 08)
   - conventional commits; spike → prototype → validate → harden
 
 - docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence
