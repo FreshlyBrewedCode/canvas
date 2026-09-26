@@ -189,6 +189,13 @@ export type ClientToServer =
       readonly id: string;
       readonly cols: number;
       readonly rows: number;
+    }
+  /** The answer to a `board-call`: the tool's text, for the agent. */
+  | {
+      readonly t: "board-result";
+      readonly callId: string;
+      readonly ok: boolean;
+      readonly text: string;
     };
 
 export type ServerToClient =
@@ -208,6 +215,17 @@ export type ServerToClient =
   | TreeMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | { readonly t: "term-exit"; readonly id: string; readonly code: number | null }
+  /**
+   * An agent called a board tool (`shared/board-tools.ts`); the board is in
+   * the browser, so the browser runs it. `sessionId` is the agent's frame.
+   */
+  | {
+      readonly t: "board-call";
+      readonly callId: string;
+      readonly sessionId: string;
+      readonly tool: string;
+      readonly args: unknown;
+    }
   | { readonly t: "error"; readonly message: string };
 
 // ---------------------------------------------------------------------------

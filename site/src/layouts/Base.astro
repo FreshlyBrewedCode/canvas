@@ -1,0 +1,51 @@
+---
+import Header from "../components/Header.astro";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Path to canonicalize to, for a page also served at another URL. Defaults to this page's own. */
+  canonical?: string;
+}
+
+const {
+  title,
+  description = "A multiplayer board for coding agents that run on your machine.",
+  canonical,
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <link rel="canonical" href={new URL(canonical ?? Astro.url.pathname, Astro.site)} />
+    {/* Resolve the scheme before first paint, or dark mode flashes white. */}
+    <script is:inline>
+      const stored = localStorage.getItem("theme");
+      const dark = stored ? stored === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.classList.toggle("dark", dark);
+    </script>
+  </head>
+  <body class="relative min-h-screen">
+    <Header />
+    <slot />
+    <footer class="mt-24 border-t border-border">
+      <div
+        class="mx-auto max-w-6xl px-6 py-8 flex items-center justify-between text-sm text-muted-foreground"
+      >
+        <span>A prototype. Not for critical work.</span>
+        <a class="hover:text-foreground" href="https://github.com/FreshlyBrewedCode/canvas">
+          GitHub
+        </a>
+      </div>
+    </footer>
+  </body>
+</html>

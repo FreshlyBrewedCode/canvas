@@ -4,6 +4,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 
 import { FrameShell } from "@/components/frame-shell";
+import { useFollowScroll, type ScrollSurface } from "@/hooks/use-follow-scroll";
 import type { Frame } from "@/lib/board";
 import { useRoomState } from "@/lib/room-context";
 
@@ -25,6 +26,10 @@ export function TerminalFrame({
   const host = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const canType = room.isHost || room.roomState?.access === "trusted";
+  // The scrollback, in lines, follows the frame's occupant.
+  const surface = useRef<ScrollSurface | null>(null);
+  const [terminal, setTerminal] = useState(0);
+  useFollowScroll(frame.id, "term", () => surface.current, terminal);
 
   useEffect(() => {
     if (!host.current) return;
@@ -41,6 +46,19 @@ export function TerminalFrame({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current);
+    surface.current = {
+      element: host.current,
+      read: () => {
+        const buffer = term.buffer.active;
+        return { top: buffer.viewportY, end: buffer.viewportY >= buffer.baseY };
+      },
+      write: ({ top, end }) => (end ? term.scrollToBottom() : term.scrollToLine(top)),
+      onScroll: (listener) => {
+        const subscription = term.onScroll(listener);
+        return () => subscription.dispose();
+      },
+    };
+    setTerminal((n) => n + 1);
 
     let written = 0;
     const flush = () => {
@@ -78,6 +96,7 @@ export function TerminalFrame({
       unsubscribe();
       input.dispose();
       observer.disconnect();
+      surface.current = null;
       term.dispose();
     };
   }, [room, frame.id, readOnly]);

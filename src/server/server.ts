@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ClientToServer, ServerToClient } from "../shared/protocol";
 import { AgentManager, detectAgents } from "./agents";
+import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
 import { Store } from "./store";
 import { Terminals } from "./terminals";
@@ -30,11 +31,30 @@ export async function serve(options: ServeOptions) {
     for (const ws of clients) ws.send(text);
   };
 
+  const files = new Files(
+    options.dir,
+    (path, file) => broadcast({ t: "file", path, file }),
+    (paths) => broadcast({ t: "tree", paths }),
+  );
+  process.on("exit", () => files.stop());
+  // Board tools: an agent's call goes to one host browser (the board is there).
+  const boardMcp = new BoardMcp({
+    read: (path) => files.read(path),
+    relay: (call) => {
+      const [ws] = clients;
+      if (!ws) return false;
+      ws.send(JSON.stringify({ t: "board-call", ...call } satisfies ServerToClient));
+      return true;
+    },
+  });
+  process.on("exit", () => boardMcp.stop());
+
   const agentDefinitions = detectAgents();
   const agents = new AgentManager({
     dir: options.dir,
     agents: agentDefinitions,
     restored: store.sessions(),
+    mcpServers: (sessionId) => [boardMcp.serverFor(sessionId)],
     onMeta: (meta) => {
       store.appendMeta(meta);
       broadcast({ t: "agent-meta", meta });
@@ -48,12 +68,6 @@ export async function serve(options: ServeOptions) {
     onError: (message) => broadcast({ t: "error", message }),
   });
   process.on("exit", () => agents.close());
-  const files = new Files(
-    options.dir,
-    (path, file) => broadcast({ t: "file", path, file }),
-    (paths) => broadcast({ t: "tree", paths }),
-  );
-  process.on("exit", () => files.stop());
   const terminals = new Terminals(
     options.dir,
     (id, data) => broadcast({ t: "term-data", id, data }),
@@ -103,6 +117,8 @@ export async function serve(options: ServeOptions) {
         return terminals.input(message.id, message.data);
       case "term-resize":
         return terminals.resize(message.id, message.cols, message.rows);
+      case "board-result":
+        return boardMcp.result(message.callId, message.ok, message.text);
     }
   };
 

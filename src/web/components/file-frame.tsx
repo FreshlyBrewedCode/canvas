@@ -11,7 +11,16 @@ import { FrameShell } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { addFrame, updateFrame, type FileView, type Frame } from "@/lib/board";
+import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
+import {
+  addFrame,
+  allFrames,
+  updateFrame,
+  type FileView,
+  type Frame,
+  type LineRange,
+} from "@/lib/board";
+import { placeNew } from "../../shared/layout";
 import { useFile, useRoom } from "@/lib/room-context";
 import type { FileContent } from "../../shared/protocol";
 
@@ -29,7 +38,8 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   const room = useRoom();
   const file = useFile(frame.path);
   const markdown = isMarkdown(frame.path);
-  const view: FileView = frame.view ?? (markdown ? "preview" : "source");
+  // Lines only show in the source; a range asked for means the source.
+  const view: FileView = frame.view ?? (markdown && !frame.lines ? "preview" : "source");
   // `view` guests don't get the tree (ADR 0002).
   const canBrowse = !readOnly;
   const [treeOpen, setTreeOpen] = useState(canBrowse && !frame.path);
@@ -47,10 +57,18 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   });
   const open = useCallback(
     (path: string, newFrame: boolean) => {
-      const { id, x, y, w, h } = latest.current;
-      if (newFrame)
-        addFrame(room.doc, { type: "file", path, title: basename(path), x: x + w + 32, y, w, h });
-      else updateFrame(room.doc, id, { path, title: basename(path), view: null });
+      const { id, w, h } = latest.current;
+      if (newFrame) {
+        const { rect, patches } = placeNew(
+          allFrames(room.doc),
+          { anchor: id, side: "right" },
+          {
+            w,
+            h,
+          },
+        );
+        addFrame(room.doc, { type: "file", path, title: basename(path), ...rect }, patches);
+      } else updateFrame(room.doc, id, { path, title: basename(path), view: null, lines: null });
     },
     [room.doc],
   );
@@ -59,6 +77,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
     <FileBody
       frameId={frame.id}
       path={frame.path}
+      lines={frame.lines}
       file={file}
       view={view}
       empty={canBrowse ? "tree" : "none"}
@@ -139,12 +158,14 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
 function FileBody({
   frameId,
   path,
+  lines,
   file,
   view,
   empty,
 }: {
   frameId: string;
   path: string;
+  lines: LineRange | null | undefined;
   file: FileContent | undefined;
   view: FileView;
   empty: "tree" | "none";
@@ -168,7 +189,13 @@ function FileBody({
         <MarkdownPreview frameId={frameId} path={path} text={file.text} />
       ) : (
         <div data-frame-body="" className="h-full select-text">
-          <CodeView frameId={frameId} path={path} text={file.text} wrap={isMarkdown(path)} />
+          <CodeView
+            frameId={frameId}
+            path={path}
+            text={file.text}
+            wrap={isMarkdown(path)}
+            lines={lines}
+          />
         </div>
       );
   }
@@ -190,8 +217,15 @@ const REHYPE = [keyBlocks];
 const REMARK = [remarkGfm];
 
 function MarkdownPreview({ frameId, path, text }: { frameId: string; path: string; text: string }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  useFollowScroll(
+    frameId,
+    `preview:${path}`,
+    () => scroller.current && domSurface(scroller.current),
+    text,
+  );
   return (
-    <div data-frame-body="" className="h-full overflow-auto">
+    <div ref={scroller} data-frame-body="" className="h-full overflow-auto">
       <div data-sel-root={frameId} data-sel-path={path} className="relative p-4">
         <div className="prose-canvas text-sm select-text">
           <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE}>

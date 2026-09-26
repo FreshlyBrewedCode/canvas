@@ -1,16 +1,38 @@
 import { Bot, FileCode, Globe, SquareTerminal, X } from "lucide-react";
 import { useRef } from "react";
 
-import { raiseFrame, removeFrame, updateFrame, type Frame } from "@/lib/board";
-import { useRoom } from "@/lib/room-context";
+import {
+  allFrames,
+  applyPatches,
+  raiseFrame,
+  removeFrame,
+  updateFrame,
+  type Frame,
+} from "@/lib/board";
+import { useFrameFocus, useRoom } from "@/lib/room-context";
+import { setSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
+import {
+  lift,
+  moveFrame,
+  resizeInRow,
+  snapTarget,
+  type Patch,
+  type Rect,
+} from "../../shared/layout";
 
 const ICONS = { agent: Bot, file: FileCode, browser: Globe, terminal: SquareTerminal };
 
 /**
  * The chrome every frame shares: drag by the header, resize from the corner.
  * Geometry lives in the board doc, so every move is seen by everyone.
+ * Near other frames, the layout rules apply (`shared/layout.ts`): a drop
+ * snaps into a row or a new row, resizing keeps a row's height. Holding Alt
+ * places and sizes a frame freely.
  * Frames hold user data, so they are square (design.md › Shapes).
+ *
+ * Pressing on a frame claims it (`focus.ts`): its occupant shows in the
+ * header, and the frame is ringed in their colour while we follow them.
  */
 export function FrameShell({
   frame,
@@ -27,14 +49,28 @@ export function FrameShell({
 }) {
   const room = useRoom();
   const Icon = ICONS[frame.type];
+  const focus = useFrameFocus(frame.id);
+  const ring = focus.occupant && (focus.mine || focus.following) ? focus.occupant.color : null;
 
   return (
     <section
       data-frame={frame.id}
       data-frame-type={frame.type}
+      data-occupant={focus.occupant?.name}
+      data-following={focus.following || undefined}
       className="bg-card absolute flex flex-col border shadow-sm"
-      style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h, zIndex: frame.z }}
-      onPointerDownCapture={() => !readOnly && raiseFrame(room.doc, frame.id)}
+      style={{
+        left: frame.x,
+        top: frame.y,
+        width: frame.w,
+        height: frame.h,
+        zIndex: frame.z,
+        ...(ring && { borderColor: ring, boxShadow: `0 0 0 1px ${ring}, 0 0 18px -6px ${ring}` }),
+      }}
+      onPointerDownCapture={() => {
+        room.focusFrame(frame.id);
+        if (!readOnly) raiseFrame(room.doc, frame.id);
+      }}
     >
       <Drag
         frame={frame}
@@ -52,6 +88,7 @@ export function FrameShell({
           onChange={(event) => updateFrame(room.doc, frame.id, { title: event.target.value })}
         />
         {status}
+        {focus.occupant && <OccupantBadge frameId={frame.id} focus={focus} />}
         {actions}
         {!readOnly && (
           <button
@@ -102,8 +139,32 @@ function Drag({
     w: number;
     h: number;
     scale: number;
+    /** The board when the drag began: where row mates were. */
+    rects: Rect[];
+    moved: boolean;
   } | null>(null);
   const frameRequest = useRef(0);
+
+  /** The patches a drop here would apply: into a row, or out of the old one. */
+  const drop = (rects: Rect[], before: Rect[]): { patches: Patch[]; snapped: boolean } => {
+    const target = snapTarget(rects, frame.id);
+    if (target) return { patches: moveFrame(rects, frame.id, target), snapped: true };
+    // Dropped away from everything: the row it left closes up.
+    return { patches: lift(before, frame.id), snapped: false };
+  };
+
+  const end = (event: React.PointerEvent) => {
+    const s = start.current;
+    start.current = null;
+    setSnapPreview(null);
+    if (!s || mode !== "move" || !s.moved || event.altKey) return;
+    cancelAnimationFrame(frameRequest.current);
+    const dx = (event.clientX - s.px) / s.scale;
+    const dy = (event.clientY - s.py) / s.scale;
+    const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy), w: s.w, h: s.h };
+    const rects = [...allFrames(room.doc).filter((f) => f.id !== frame.id), here];
+    applyPatches(room.doc, [here, ...drop(rects, s.rects).patches]);
+  };
 
   return (
     <div
@@ -120,6 +181,8 @@ function Drag({
           w: frame.w,
           h: frame.h,
           scale,
+          rects: allFrames(room.doc),
+          moved: false,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
@@ -128,22 +191,79 @@ function Drag({
         if (!s) return;
         const dx = (event.clientX - s.px) / s.scale;
         const dy = (event.clientY - s.py) / s.scale;
+        if (Math.hypot(dx, dy) > 3) s.moved = true;
+        const free = event.altKey;
         cancelAnimationFrame(frameRequest.current);
-        frameRequest.current = requestAnimationFrame(() =>
-          updateFrame(
-            room.doc,
-            frame.id,
-            mode === "move"
-              ? { x: Math.round(s.x + dx), y: Math.round(s.y + dy) }
-              : { w: Math.max(280, Math.round(s.w + dx)), h: Math.max(180, Math.round(s.h + dy)) },
-          ),
-        );
+        frameRequest.current = requestAnimationFrame(() => {
+          if (mode === "move") {
+            const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy) };
+            updateFrame(room.doc, frame.id, here);
+            if (free || !s.moved) return setSnapPreview(null);
+            const rects = [
+              ...allFrames(room.doc).filter((f) => f.id !== frame.id),
+              { ...here, w: s.w, h: s.h },
+            ];
+            const { patches, snapped } = drop(rects, s.rects);
+            const landing = patches.find((p) => p.id === frame.id);
+            setSnapPreview(snapped && landing ? { x: 0, y: 0, w: s.w, h: s.h, ...landing } : null);
+          } else {
+            const size = {
+              w: Math.max(280, Math.round(s.w + dx)),
+              h: Math.max(180, Math.round(s.h + dy)),
+            };
+            // Row mates follow from where they were when the resize began.
+            if (free) updateFrame(room.doc, frame.id, size);
+            else applyPatches(room.doc, resizeInRow(s.rects, frame.id, size));
+          }
+        });
       }}
-      onPointerUp={() => (start.current = null)}
-      onPointerCancel={() => (start.current = null)}
+      onPointerUp={end}
+      onPointerCancel={() => {
+        start.current = null;
+        setSnapPreview(null);
+      }}
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Who is in the frame. Following them, it just says so; scrolled away,
+ * it fades, and a click follows them again.
+ */
+function OccupantBadge({
+  frameId,
+  focus,
+}: {
+  frameId: string;
+  focus: ReturnType<typeof useFrameFocus>;
+}) {
+  const room = useRoom();
+  const occupant = focus.occupant!;
+  const detached = !focus.mine && !focus.following;
+  const who = occupant.kind === "agent" ? `${occupant.name} (agent)` : occupant.name;
+  const title = focus.mine
+    ? "You are here: others follow your scroll"
+    : detached
+      ? `${who} is here. Click to follow them again`
+      : `${who} is here: you follow their scroll`;
+  return (
+    <button
+      type="button"
+      data-occupant-badge=""
+      title={title}
+      className={cn(
+        "grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold transition-opacity",
+        detached && "opacity-45 hover:opacity-100",
+        focus.mine && "cursor-default",
+      )}
+      style={{ backgroundColor: occupant.color, color: "oklch(0.2 0 0)" }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={() => detached && room.follow(frameId)}
+    >
+      {occupant.kind === "agent" ? <Bot className="size-3" /> : occupant.name.slice(0, 1)}
+    </button>
   );
 }
 

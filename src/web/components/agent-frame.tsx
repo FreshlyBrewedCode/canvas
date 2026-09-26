@@ -8,10 +8,12 @@ import { CollabEditor } from "@/components/collab-editor";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
+import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { promptText, updateFrame, type Frame } from "@/lib/board";
 import { useRoom, useRoomState, useSession } from "@/lib/room-context";
 import { foldThread, type Permission, type Row, type Turn } from "@/lib/thread";
 import { cn } from "@/lib/utils";
+import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
 
 type AgentFrameData = Extract<Frame, { type: "agent" }>;
 
@@ -198,6 +200,13 @@ function Thread({
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [version]);
+  // After the pin above: following someone, their place wins.
+  useFollowScroll(
+    frameId,
+    "thread",
+    () => scroller.current && domSurface(scroller.current),
+    version,
+  );
 
   return (
     <div
@@ -282,7 +291,7 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
             label={
               <span className="flex min-w-0 items-center gap-1.5">
                 <Wrench className="size-3 shrink-0" />
-                <span className="truncate font-mono">{row.name}</span>
+                <span className="truncate font-mono">{toolLabel(row)}</span>
                 <span
                   className={cn(
                     "font-mono",
@@ -308,6 +317,22 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
         </div>
       );
   }
+}
+
+/** A board tool as each agent names it (`mcp__canvas__open_frame`, `canvas_open_frame`). */
+const BOARD_TOOL = new RegExp(
+  `^(?:mcp__${BOARD_SERVER_NAME}__|${BOARD_SERVER_NAME}_)(${BOARD_TOOL_NAMES.join("|")})$`,
+);
+
+/**
+ * A tool row's label. Rows are named by ACP tool kind (`other`, `read`, …);
+ * the tool's own name arrives only as the call's title, first in `args`
+ * (which some agents stream as several JSON objects back to back).
+ */
+function toolLabel(row: Extract<Row, { kind: "tool" }>): string {
+  const title = /"title":"([^"]+)"/.exec(row.args)?.[1] ?? row.name;
+  const board = BOARD_TOOL.exec(title);
+  return board ? `${BOARD_SERVER_NAME} · ${board[1]}` : row.name;
 }
 
 function Disclosure({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {

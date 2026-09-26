@@ -30,6 +30,7 @@ import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Presence } from "@/lib/room";
 import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
+import { useSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
@@ -41,7 +42,7 @@ export function Board() {
   );
   const readOnly = !room.isHost && room.roomState?.access === "view";
 
-  // Publish our pointer (board coordinates) and text selections as presence.
+  // Publish our pointer (board coordinates), text selections and frame focus as presence.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -53,6 +54,10 @@ export function Board() {
       );
     };
     const onLeave = () => room.setPresence({ pointer: null });
+    // Pressing on the board itself lets go of the frame we were in.
+    const onDown = (event: PointerEvent) => {
+      if (!(event.target as Element).closest("[data-frame], [data-hud]")) room.focusFrame(null);
+    };
     const onSelection = () => {
       const selection = readSelection();
       const current = (room.awareness.getLocalState() as Presence | null)?.selection ?? null;
@@ -62,10 +67,12 @@ export function Board() {
     };
     wrap.addEventListener("pointermove", onMove);
     wrap.addEventListener("pointerleave", onLeave);
+    wrap.addEventListener("pointerdown", onDown);
     document.addEventListener("selectionchange", onSelection);
     return () => {
       wrap.removeEventListener("pointermove", onMove);
       wrap.removeEventListener("pointerleave", onLeave);
+      wrap.removeEventListener("pointerdown", onDown);
       document.removeEventListener("selectionchange", onSelection);
     };
   }, [room, viewport, wrapRef]);
@@ -105,6 +112,7 @@ export function Board() {
           {frames.map((frame) => (
             <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
           ))}
+          <SnapGhost />
           <Pointers />
         </div>
 
@@ -205,6 +213,26 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
             : "Add an agent from the toolbar. It runs on the host's machine; everyone here sees the thread and can write the prompt together."}
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Where the frame being dragged lands if dropped now. */
+function SnapGhost() {
+  const box = useSnapPreview();
+  if (!box) return null;
+  return (
+    <div
+      data-snap-preview=""
+      className="border-primary/70 bg-primary/5 pointer-events-none absolute z-[99999] border-2 border-dashed"
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+    >
+      <span
+        className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
+        style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
+      >
+        Hold Alt to place freely
+      </span>
     </div>
   );
 }

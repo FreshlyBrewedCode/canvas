@@ -11,6 +11,8 @@
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
+import type { Patch } from "../../shared/layout";
+
 export type FrameType = "agent" | "file" | "browser" | "terminal";
 
 /** How a file frame shows its file; null is the file's default (preview for markdown). */
@@ -24,6 +26,8 @@ interface FrameBase {
   readonly h: number;
   readonly z: number;
   readonly title: string;
+  /** The agent frame whose agent opened it, if an agent did. */
+  readonly origin?: string;
 }
 
 export type Frame = FrameBase &
@@ -34,10 +38,17 @@ export type Frame = FrameBase &
         /** Working-dir-relative; "" until someone picks a file. */
         readonly path: string;
         readonly view?: FileView | null;
+        /** Lines to show and highlight (1-based, inclusive); null for none. */
+        readonly lines?: LineRange | null;
       }
     | { readonly type: "browser"; readonly url: string }
     | { readonly type: "terminal" }
   );
+
+export interface LineRange {
+  readonly start: number;
+  readonly end: number;
+}
 
 export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
   agent: { w: 460, h: 620 },
@@ -55,15 +66,20 @@ export function readFrame(map: Y.Map<unknown>, id: string): Frame {
   return (value.type === "markdown" ? { ...value, type: "file", id } : { ...value, id }) as Frame;
 }
 
+/** Every frame, in no particular order. */
+export function allFrames(doc: Y.Doc): Frame[] {
+  const frames: Frame[] = [];
+  framesOf(doc).forEach((map, id) => frames.push(readFrame(map, id)));
+  return frames;
+}
+
 /**
  * In a stable order, not by `z`: frames stack by their z-index. Reordering
  * them would move a raised frame's DOM node between pointer down and up —
  * which loses the click that raised it, and reloads a browser frame.
  */
 function readFrames(doc: Y.Doc): Frame[] {
-  const frames: Frame[] = [];
-  framesOf(doc).forEach((map, id) => frames.push(readFrame(map, id)));
-  return frames.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return allFrames(doc).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /** An immutable frames snapshot per doc, rebuilt only when the frames map changes. */
@@ -94,15 +110,24 @@ export type NewFrame = Frame extends infer F
     : never
   : never;
 
-export function addFrame(doc: Y.Doc, frame: NewFrame): string {
+/** Add a frame; `patches` move others out of its way in the same change. */
+export function addFrame(doc: Y.Doc, frame: NewFrame, patches: ReadonlyArray<Patch> = []): string {
   const id = crypto.randomUUID().slice(0, 8);
   const z = topZ(doc) + 1;
   doc.transact(() => {
     const map = new Y.Map<unknown>();
     for (const [key, value] of Object.entries({ ...frame, z })) map.set(key, value);
     framesOf(doc).set(id, map);
+    applyPatches(doc, patches);
   });
   return id;
+}
+
+/** Move and resize frames as the layout says, as one change. */
+export function applyPatches(doc: Y.Doc, patches: ReadonlyArray<Patch>): void {
+  doc.transact(() => {
+    for (const { id, ...patch } of patches) updateFrame(doc, id, patch);
+  });
 }
 
 export function updateFrame(doc: Y.Doc, id: string, patch: Partial<Record<string, unknown>>): void {
@@ -119,8 +144,9 @@ export function raiseFrame(doc: Y.Doc, id: string): void {
   if (map && (map.get("z") as number) < top) map.set("z", top + 1);
 }
 
-export function removeFrame(doc: Y.Doc, id: string): void {
+export function removeFrame(doc: Y.Doc, id: string, patches: ReadonlyArray<Patch> = []): void {
   doc.transact(() => {
+    applyPatches(doc, patches);
     framesOf(doc).delete(id);
     promptText(doc, id).delete(0, promptText(doc, id).length);
   });

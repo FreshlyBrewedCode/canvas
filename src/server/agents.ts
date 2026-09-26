@@ -17,6 +17,7 @@
 
 import {
   ClientSideConnection,
+  type McpServer,
   ndJsonStream,
   PROTOCOL_VERSION,
   type RequestPermissionRequest,
@@ -31,6 +32,7 @@ import {
   type AcpStreamEvent,
 } from "@tanstack/ai-acp";
 import type { Subprocess } from "bun";
+import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../shared/board-tools";
 import type {
   AgentConfigOption,
   AgentConfigValue,
@@ -48,6 +50,8 @@ import { fromAcp, pendingChanges, settingsOf } from "./agent-config";
 interface AgentDefinition extends AgentInfo {
   readonly command: ReadonlyArray<string>;
   readonly env?: Record<string, string>;
+  /** Agent-specific `_meta` for `session/new` and `session/load`. */
+  readonly sessionMeta?: Record<string, unknown>;
 }
 
 const claudeAcpBin = Bun.resolveSync(
@@ -67,6 +71,15 @@ export function detectAgents(): ReadonlyArray<AgentDefinition> {
       label: "Claude Code",
       needs: "claude",
       command: ["bun", claudeAcpBin],
+      // The board tools run without asking: they only change the board,
+      // which the host's browser already lets the agent do (finding 06).
+      sessionMeta: {
+        claudeCode: {
+          options: {
+            allowedTools: BOARD_TOOL_NAMES.map((name) => `mcp__${BOARD_SERVER_NAME}__${name}`),
+          },
+        },
+      },
     },
     {
       kind: "opencode",
@@ -112,6 +125,8 @@ export interface AgentManagerOptions {
   readonly dir: string;
   readonly agents: ReadonlyArray<AgentDefinition>;
   readonly restored: ReadonlyArray<SessionSnapshot>;
+  /** MCP servers to give a session's agent (the board tools). */
+  readonly mcpServers?: (sessionId: string) => McpServer[];
   readonly onMeta: (meta: SessionMeta) => void;
   readonly onEvent: (sessionId: string, event: AgentEvent) => void;
   readonly onOptions: (sessionId: string, options: ReadonlyArray<AgentConfigOption>) => void;
@@ -332,7 +347,11 @@ export class AgentManager {
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
         }),
       );
-      const request = { cwd: this.options.dir, mcpServers: [] };
+      const request = {
+        cwd: this.options.dir,
+        mcpServers: this.options.mcpServers?.(session.meta.id) ?? [],
+        ...(definition.sessionMeta && { _meta: definition.sessionMeta }),
+      };
       let sessionId: string | undefined;
       let configOptions: SessionConfigOption[] | null | undefined;
       const resume = session.meta.acpSessionId;

@@ -1,0 +1,116 @@
+name: ui
+
+# Deploys the web app of one release to ui.canvas.frebreco.de, which is the
+# GitHub Pages site of FreshlyBrewedCode/canvas-ui: a repo holding nothing but
+# built files, because a repo gets one Pages site and this one's is the docs.
+#
+#   stable  X.Y.Z         -> the root of canvas-ui
+#   next    X.Y.Z-next.N  -> next/ in canvas-ui (Vite `base` /next/)
+#
+# Called by release.yml after each release; run it by hand to redeploy a
+# released version (e.g. after a botched deploy). It builds from the release's
+# tag, never from a branch, so the web app always matches a published CLI.
+#
+# Needs the `UI_DEPLOY_KEY` secret: the private half of a deploy key with write
+# access on canvas-ui (scripts/bootstrap-release.sh sets it up).
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+    secrets:
+      UI_DEPLOY_KEY:
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: A released version, e.g. 0.3.0 or 0.3.0-next.2
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Deploys push to one branch of canvas-ui: queue them rather than race.
+    concurrency:
+      group: ui-deploy
+      cancel-in-progress: false
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - run: bun install --frozen-lockfile
+
+      # semver: a `-` suffix is a pre-release, and pre-releases are `next`.
+      - name: Pick the channel
+        id: channel
+        run: |
+          if [[ "$VERSION" == *-* ]]; then
+            echo "dir=next" >> "$GITHUB_OUTPUT"
+            echo "base=/next/" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=." >> "$GITHUB_OUTPUT"
+            echo "base=/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the web app
+        run: bunx vite build --base "${{ steps.channel.outputs.base }}"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: FreshlyBrewedCode/canvas-ui
+          ssh-key: ${{ secrets.UI_DEPLOY_KEY }}
+          path: pages
+
+      - name: Publish to canvas-ui
+        working-directory: pages
+        env:
+          DIR: ${{ steps.channel.outputs.dir }}
+        run: |
+          set -euo pipefail
+          if [ "$DIR" = next ]; then
+            rm -rf next
+            mkdir next
+            cp -r ../dist/web/. next/
+          else
+            # Replace the stable build, keep the next one.
+            find . -mindepth 1 -maxdepth 1 ! -name .git ! -name next -exec rm -rf {} +
+            cp -r ../dist/web/. .
+          fi
+          printf '{ "version": "%s" }\n' "$VERSION" > "$DIR/version.json"
+
+          # Before the first stable release the root has no app of its own:
+          # send its visitors to next, keeping ?room= and the #k= fragment.
+          if [ ! -f index.html ]; then
+            cat > index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8" />
+          <title>canvas</title>
+          <script>location.replace("next/" + location.search + location.hash);</script>
+          HTML
+          fi
+
+          echo ui.canvas.frebreco.de > CNAME
+          touch .nojekyll
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "canvas-ui already serves $VERSION."
+          else
+            git commit -m "deploy: $VERSION"
+            git push
+          fi
