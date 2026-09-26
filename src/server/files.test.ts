@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import type { FileContent } from "../shared/protocol";
 import { Files, MAX_FILE_BYTES } from "./files";
+import { Scratch } from "./scratch";
 
 const until = async (what: string, test: () => boolean) => {
   const end = Date.now() + 3000;
@@ -91,5 +92,38 @@ describe("Files", () => {
     writeFileSync(join(dir, "new.ts"), "export const a = 2;\n");
     await Bun.sleep(400);
     expect(count()).toBe(2);
+  });
+});
+
+describe("Files with scratch files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "canvas-files-scratch-"));
+  Bun.spawnSync(["git", "init", "-q"], { cwd: dir });
+  writeFileSync(join(dir, "README.md"), "# hi\n");
+  const seen: Array<[string, FileContent]> = [];
+  const trees: Array<ReadonlyArray<string>> = [];
+  const scratch = new Scratch(dir, (path) => files.scratchChanged(path));
+  const files = new Files(
+    dir,
+    (path, file) => seen.push([path, file]),
+    (paths) => trees.push(paths),
+    scratch,
+  );
+  afterAll(() => files.stop());
+
+  test("reads them by their board path, lists them and sends them live", () => {
+    files.watchTree();
+    expect(trees.at(-1)).toEqual(["README.md"]);
+    files.open("canvas:scratch/flow.html", "host");
+    expect(seen.at(-1)).toEqual(["canvas:scratch/flow.html", { kind: "missing" }]);
+
+    const path = scratch.create("flow.html", "<p>1</p>");
+    expect(path).toBe("canvas:scratch/flow.html");
+    expect(seen.at(-1)).toEqual([path, { kind: "text", text: "<p>1</p>" }]);
+    expect(trees.at(-1)).toEqual(["README.md", "canvas:scratch/flow.html"]);
+
+    scratch.write(path, "<p>2</p>");
+    expect(seen.at(-1)).toEqual([path, { kind: "text", text: "<p>2</p>" }]);
+    // Still not reachable as a plain path: the shared set refuses .canvas.
+    expect(files.read(".canvas/scratch/flow.html").kind).toBe("denied");
   });
 });

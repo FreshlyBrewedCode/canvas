@@ -58,6 +58,9 @@ export interface CloseFrameArgs {
   readonly frame: string;
 }
 
+/** Where scratch files live, as board paths name them. */
+export const SCRATCH_PREFIX = "canvas:scratch/";
+
 const placement = {
   next_to: {
     type: "string",
