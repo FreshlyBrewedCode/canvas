@@ -178,17 +178,30 @@ export class BoardMcp {
         args.path = this.createScratch(args.name, args.content, created, notes);
         delete args.content;
         delete args.name;
-      } else if (typeof args.path === "string" && args.path.trim()) {
-        const path = args.path.trim().replace(/^(\.\/)+/, "");
-        const file = this.options.read(path);
-        if (file.kind === "denied") throw new Error(file.reason);
-        if (file.kind === "missing")
-          notes.push(`(${path} doesn't exist yet; the frame shows it as soon as it is written.)`);
-        if (file.kind === "text" && typeof args.start_line === "number") {
-          const lines = file.text.split("\n").length - (file.text.endsWith("\n") ? 1 : 0);
-          if (args.start_line > lines) throw new Error(`${path} has ${lines} lines`);
-        }
-      }
+      } else this.checkPath(args, notes);
+      if (Array.isArray(args.files))
+        args.files = args.files.map((value: unknown) => {
+          if (typeof value !== "object" || value === null)
+            throw new Error("each entry of files is an object with a display path");
+          const entry = { ...(value as Record<string, unknown>) };
+          if (entry.content !== undefined) {
+            if (entry.path !== undefined)
+              throw new Error("give a list entry either path or content, not both");
+            // No name: one from the display path's last segment, e.g. "1 Overview.md" → 1-Overview.md.
+            const name =
+              entry.name ??
+              (String(entry.display ?? "")
+                .split("/")
+                .at(-1)!
+                .replace(/[^\w.-]+/g, "-")
+                .replace(/^[^\w]+/, "") ||
+                "file");
+            entry.path = this.createScratch(name, entry.content, created, notes);
+            delete entry.content;
+            delete entry.name;
+          } else this.checkPath(entry, notes);
+          return entry;
+        });
     } catch (error) {
       undo();
       return failed((error as Error).message);
@@ -206,6 +219,20 @@ export class BoardMcp {
       return answer;
     }
     return notes.length ? done([answer.content[0]!.text, ...notes].join("\n")) : answer;
+  }
+
+  /** A named file must be in the shared set (or a scratch file), and have the lines asked for. */
+  private checkPath(args: Record<string, unknown>, notes: string[]) {
+    if (typeof args.path !== "string" || !args.path.trim()) return;
+    const path = args.path.trim().replace(/^(\.\/)+/, "");
+    const file = this.options.read(path);
+    if (file.kind === "denied") throw new Error(file.reason);
+    if (file.kind === "missing")
+      notes.push(`(${path} doesn't exist yet; the frame shows it as soon as it is written.)`);
+    if (file.kind === "text" && typeof args.start_line === "number") {
+      const lines = file.text.split("\n").length - (file.text.endsWith("\n") ? 1 : 0);
+      if (args.start_line > lines) throw new Error(`${path} has ${lines} lines`);
+    }
   }
 
   private relay(sessionId: string, tool: string, args: Record<string, unknown>) {

@@ -142,6 +142,36 @@ describe("BoardMcp", () => {
     expect(calls.length).toBe(before);
   });
 
+  test("list entries: paths checked, content becomes scratch files", async () => {
+    const denied = await call("open_frame", {
+      type: "file",
+      files: [
+        { display: "a.md", content: "# a" },
+        { display: "Secrets/.env", path: ".env" },
+      ],
+    });
+    expect(denied.content[0]!.text).toContain("looks like a secret");
+    expect(scratch.list()).not.toContain("canvas:scratch/a.md");
+
+    const opened = await call("open_frame", {
+      type: "file",
+      files: [
+        { display: "Tour/1 Overview.md", content: "# tour" },
+        { display: "Tour/auth.ts", path: "src/auth.ts", start_line: 2 },
+        { display: "Tour/flow.html", name: "tour-flow.html", content: "<p>flow</p>" },
+      ],
+    });
+    expect(opened.content[0]!.text).toContain("canvas:scratch/1-Overview.md");
+    expect(calls.at(-1)!.args).toEqual({
+      type: "file",
+      files: [
+        { display: "Tour/1 Overview.md", path: "canvas:scratch/1-Overview.md" },
+        { display: "Tour/auth.ts", path: "src/auth.ts", start_line: 2 },
+        { display: "Tour/flow.html", path: "canvas:scratch/tour-flow.html" },
+      ],
+    });
+  });
+
   test("read_board_file and write_board_file need no board", async () => {
     const before = calls.length;
     online = false;
@@ -163,7 +193,9 @@ describe("BoardMcp", () => {
 
   test("view_board lists the scratch files", async () => {
     const text = (await call("view_board", {})).content[0]!.text;
-    expect(text).toContain("Scratch files: canvas:scratch/flow.html, canvas:scratch/overview-2.md");
+    expect(text).toContain(
+      "Scratch files: canvas:scratch/1-Overview.md, canvas:scratch/flow.html,",
+    );
   });
 
   test("says so when the board isn't open", async () => {
