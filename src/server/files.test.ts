@@ -41,6 +41,9 @@ describe("Files", () => {
     expect(files.read("huge.txt")).toMatchObject({ kind: "too-large" });
     for (const path of [".canvas/room.json", "etc-link/hostname", "../x", "/etc/passwd"])
       expect(files.read(path), path).toMatchObject({ kind: "denied" });
+    expect(files.read("etc-link/hostname")).toMatchObject({
+      reason: expect.stringContaining("symlink"),
+    });
   });
 
   test("sends an open file now and on every change, replaced or not", async () => {

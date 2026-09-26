@@ -93,7 +93,8 @@ export class SharedSet {
       const { exitCode } = Bun.spawnSync(["git", "check-ignore", "-q", "--", rel], {
         cwd: this.dir,
       });
-      if (exitCode !== 1) throw new Error(`${path} is not shared: ignored by git`);
+      if (exitCode === 0) throw new Error(`${path} is not shared: ignored by git`);
+      if (exitCode !== 1) throw new Error(`${path} is not shared: git can't place it (a symlink?)`);
     } else if (
       rel
         .split(sep)
