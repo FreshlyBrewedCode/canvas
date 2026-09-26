@@ -48,6 +48,8 @@ export function useSession(id: string) {
             events: session.events,
             options: session.options,
             version: session.version,
+            /** Its history is still on its way from the host. */
+            loading: session.pending !== null,
           }
         : null,
     // `signal` is the change signal for the mutable session record.

@@ -46,6 +46,7 @@ import type {
   SessionSnapshot,
 } from "../shared/protocol";
 import { fromAcp, pendingChanges, settingsOf } from "./agent-config";
+import { trimEvent } from "./trim-event";
 
 interface AgentDefinition extends AgentInfo {
   readonly command: ReadonlyArray<string>;
@@ -139,10 +140,11 @@ export class AgentManager {
 
   constructor(private readonly options: AgentManagerOptions) {
     for (const snapshot of options.restored) {
-      // A turn that was in flight when the server stopped is over.
+      // A turn that was in flight when the server stopped is over. Logs
+      // written before events were trimmed are trimmed here.
       this.sessions.set(snapshot.meta.id, {
         meta: { ...snapshot.meta, status: "idle" },
-        events: [...snapshot.events],
+        events: snapshot.events.map(trimEvent),
         pending: new Map(),
       });
     }
@@ -478,7 +480,8 @@ export class AgentManager {
     void live?.then((l) => l.process.kill()).catch(() => undefined);
   }
 
-  private append(session: Session, event: AgentEvent): void {
+  private append(session: Session, raw: AgentEvent): void {
+    const event = trimEvent(raw);
     session.events.push(event);
     this.options.onEvent(session.meta.id, event);
   }
