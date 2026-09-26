@@ -61,14 +61,31 @@ export interface Presence {
     readonly host: boolean;
   };
   readonly pointer: { readonly x: number; readonly y: number } | null;
-  /** A text selection inside an agent thread, anchored to message keys. */
-  readonly selection: ThreadSelection | null;
+  readonly selection: Selection | null;
 }
 
-export interface ThreadSelection {
+export type Selection = TextSelection | LineSelection;
+
+/**
+ * A text range in rendered content — an agent thread, a markdown preview —
+ * anchored to block keys every peer renders the same (see `selection.ts`).
+ */
+export interface TextSelection {
+  readonly kind: "text";
   readonly frameId: string;
+  /** The file, for a file frame: the selection is gone once it shows another. */
+  readonly path?: string;
   readonly anchor: { readonly key: string; readonly offset: number };
   readonly focus: { readonly key: string; readonly offset: number };
+}
+
+/** Lines of a file frame's source view, 1-based and inclusive. */
+export interface LineSelection {
+  readonly kind: "lines";
+  readonly frameId: string;
+  readonly path: string;
+  readonly start: number;
+  readonly end: number;
 }
 
 type Topic =

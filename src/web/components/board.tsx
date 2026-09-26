@@ -27,7 +27,7 @@ import {
   type NewFrame,
 } from "@/lib/board";
 import { guestLink, saveIdentity } from "@/lib/link";
-import type { Approval } from "@/lib/room";
+import type { Approval, Presence } from "@/lib/room";
 import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,7 @@ export function Board() {
   );
   const readOnly = !room.isHost && room.roomState?.access === "view";
 
-  // Publish our pointer (board coordinates) and thread selections as presence.
+  // Publish our pointer (board coordinates) and text selections as presence.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -55,7 +55,9 @@ export function Board() {
     const onLeave = () => room.setPresence({ pointer: null });
     const onSelection = () => {
       const selection = readSelection();
-      const current = room.awareness.getLocalState()?.selection ?? null;
+      const current = (room.awareness.getLocalState() as Presence | null)?.selection ?? null;
+      // Line selections in a source view are not DOM selections; the view owns them.
+      if (!selection && current?.kind === "lines") return;
       if (JSON.stringify(selection) !== JSON.stringify(current)) room.setPresence({ selection });
     };
     wrap.addEventListener("pointermove", onMove);

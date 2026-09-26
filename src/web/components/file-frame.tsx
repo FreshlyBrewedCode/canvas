@@ -1,4 +1,5 @@
 import { Code, Eye, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import type { Root } from "hast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import Markdown from "react-markdown";
@@ -7,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { CodeView } from "@/components/code-view";
 import { FileTree } from "@/components/file-tree";
 import { FrameShell } from "@/components/frame-shell";
+import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { addFrame, updateFrame, type FileView, type Frame } from "@/lib/board";
@@ -54,7 +56,13 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   );
 
   const body = (
-    <FileBody path={frame.path} file={file} view={view} empty={canBrowse ? "tree" : "none"} />
+    <FileBody
+      frameId={frame.id}
+      path={frame.path}
+      file={file}
+      view={view}
+      empty={canBrowse ? "tree" : "none"}
+    />
   );
 
   return (
@@ -129,11 +137,13 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
 }
 
 function FileBody({
+  frameId,
   path,
   file,
   view,
   empty,
 }: {
+  frameId: string;
   path: string;
   file: FileContent | undefined;
   view: FileView;
@@ -155,18 +165,43 @@ function FileBody({
       return <Notice>Too large to show ({formatSize(file.size)}).</Notice>;
     case "text":
       return view === "preview" ? (
-        <div
-          data-frame-body=""
-          className="prose-canvas h-full overflow-auto p-4 text-sm select-text"
-        >
-          <Markdown remarkPlugins={[remarkGfm]}>{file.text}</Markdown>
-        </div>
+        <MarkdownPreview frameId={frameId} path={path} text={file.text} />
       ) : (
         <div data-frame-body="" className="h-full select-text">
-          <CodeView path={path} text={file.text} wrap={isMarkdown(path)} />
+          <CodeView frameId={frameId} path={path} text={file.text} wrap={isMarkdown(path)} />
         </div>
       );
   }
+}
+
+/**
+ * Keys each top-level block by its source line, so a selection resolves to
+ * the same text on every peer. An edit above it changes the key: the remote
+ * selection disappears rather than point at the wrong block.
+ */
+function keyBlocks() {
+  return (tree: Root) => {
+    for (const node of tree.children)
+      if (node.type === "element")
+        node.properties = { ...node.properties, dataSelKey: `L${node.position?.start.line ?? 0}` };
+  };
+}
+const REHYPE = [keyBlocks];
+const REMARK = [remarkGfm];
+
+function MarkdownPreview({ frameId, path, text }: { frameId: string; path: string; text: string }) {
+  return (
+    <div data-frame-body="" className="h-full overflow-auto">
+      <div data-sel-root={frameId} data-sel-path={path} className="relative p-4">
+        <div className="prose-canvas text-sm select-text">
+          <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE}>
+            {text}
+          </Markdown>
+        </div>
+        <RemoteSelections frameId={frameId} path={path} version={text} />
+      </div>
+    </div>
+  );
 }
 
 function Notice({ children }: { children: React.ReactNode }) {

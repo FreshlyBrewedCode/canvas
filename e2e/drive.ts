@@ -139,12 +139,12 @@ if (step === "claude") {
 }
 
 if (step === "selection") {
-  // Put the markdown frame beside the agent, then the guest selects reply text.
+  // Put the file frame beside the agent, then the guest selects reply text.
   for (const page of [host]) {
     await page.evaluate(() => {
       const room = (window as any).room;
       room.doc.getMap("frames").forEach((map: any) => {
-        if (map.get("type") === "markdown") map.set("x", 1000);
+        if (map.get("type") === "file") map.set("x", 1000);
         if (map.get("type") === "agent") {
           map.set("x", 460);
           map.set("y", 60);
@@ -367,11 +367,59 @@ if (step === "files") {
   console.log("guest preview h1:", await frameOf(guest).locator(".prose-canvas h1").innerText());
   await shot(guest, "21-guest-markdown-preview");
 
+  // The guest selects text in the preview; the host sees it in the guest's colour.
+  const selected = await frameOf(guest).evaluate((section) => {
+    const block = [...section.querySelectorAll("[data-sel-key]")].find((el) =>
+      el.textContent?.includes("The markdown frame"),
+    )!;
+    const text = document.createTreeWalker(block, NodeFilter.SHOW_TEXT).nextNode() as Text;
+    const range = document.createRange();
+    range.setStart(text, 4);
+    range.setEnd(text, 18);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    return `${range.toString()} @ ${block.getAttribute("data-sel-key")}`;
+  });
+  console.log("guest selected in preview:", selected);
+  await wait(1000);
+  console.log(
+    "host preview selection boxes:",
+    await frameOf(host).locator("[data-sel-root] [aria-hidden] > div").count(),
+  );
+  await frameOf(host).screenshot({ path: `${out}/21b-host-sees-preview-selection.png` });
+  await guest.evaluate(() => document.getSelection()!.removeAllRanges());
+
   // Toggle to source: shared.
   await frameOf(host).getByTitle("Show source").click();
   await frameOf(guest).locator("diffs-container").waitFor({ timeout: 10000 });
   await wait(800);
   await shot(guest, "22-guest-markdown-source");
+
+  // The guest drags over line numbers 3–6; the host sees those lines.
+  const from = (await frameOf(guest).locator('[data-column-number="3"]').first().boundingBox())!;
+  const to = (await frameOf(guest).locator('[data-column-number="6"]').first().boundingBox())!;
+  await guest.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await guest.mouse.down();
+  await guest.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 5 });
+  await guest.mouse.up();
+  await wait(1000);
+  console.log(
+    "guest presence:",
+    await guest.evaluate(() =>
+      JSON.stringify((window as any).room.awareness.getLocalState().selection),
+    ),
+  );
+  console.log(
+    "host draws guest's lines:",
+    await frameOf(host)
+      .locator("diffs-container")
+      .evaluate((el) =>
+        [...(el.shadowRoot?.querySelectorAll("style") ?? [])].some((s) =>
+          s.textContent?.includes('[data-line="3"]'),
+        ),
+      ),
+  );
+  await frameOf(host).screenshot({ path: `${out}/22b-host-sees-guest-lines.png` });
 
   // The guest browses: a TypeScript file, highlighted, for the host too.
   await pick(guest, "src/server/files.ts");

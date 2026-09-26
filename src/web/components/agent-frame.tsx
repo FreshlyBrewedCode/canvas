@@ -1,15 +1,15 @@
 import { Bot, ChevronRight, CircleStop, SendHorizontal, ShieldAlert, Wrench } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { AgentSettings } from "@/components/agent-settings";
 import { CollabEditor } from "@/components/collab-editor";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
+import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { promptText, updateFrame, type Frame } from "@/lib/board";
-import { usePeers, useRoom, useRoomState, useSession } from "@/lib/room-context";
-import { selectionBoxes, type Box } from "@/lib/selection";
+import { useRoom, useRoomState, useSession } from "@/lib/room-context";
 import { foldThread, type Permission, type Row, type Turn } from "@/lib/thread";
 import { cn } from "@/lib/utils";
 
@@ -365,67 +365,6 @@ function PermissionCard({ permission, frameId }: { permission: Permission; frame
         <p className="text-muted-foreground text-xs">
           Waiting for the host to decide — this runs on their machine.
         </p>
-      )}
-    </div>
-  );
-}
-
-/** Other people's text selections in this thread, drawn in their colour. */
-function RemoteSelections({ frameId, version }: { frameId: string; version: number }) {
-  const peers = usePeers();
-  const anchor = useRef<HTMLDivElement>(null);
-  const [boxes, setBoxes] = useState<
-    Array<{ peerId: string; name: string; color: string; boxes: Box[] }>
-  >([]);
-  const [tick, setTick] = useState(0);
-
-  // Frame resizes re-flow the text; re-measure.
-  useEffect(() => {
-    const root = anchor.current?.parentElement;
-    if (!root) return;
-    const observer = new ResizeObserver(() => setTick((t) => t + 1));
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, []);
-
-  useLayoutEffect(() => {
-    const root = anchor.current?.parentElement;
-    if (!root) return;
-    setBoxes(
-      peers
-        .filter((peer) => peer.selection?.frameId === frameId)
-        .map((peer) => ({
-          peerId: peer.user.peerId,
-          name: peer.user.name,
-          color: peer.user.color,
-          boxes: selectionBoxes(root, peer.selection!),
-        })),
-    );
-  }, [peers, frameId, version, tick]);
-
-  return (
-    <div ref={anchor} className="pointer-events-none absolute inset-0" aria-hidden="true">
-      {boxes.map((peer) =>
-        peer.boxes.map((box, index) => (
-          <div
-            key={`${peer.peerId}:${index}`}
-            className="absolute mix-blend-multiply dark:mix-blend-screen"
-            style={{
-              ...box,
-              backgroundColor: `${peer.color}40`,
-              borderBottom: `2px solid ${peer.color}`,
-            }}
-          >
-            {index === 0 && (
-              <span
-                className="absolute -top-4 left-0 rounded-sm px-1 text-[10px] font-semibold whitespace-nowrap"
-                style={{ backgroundColor: peer.color, color: "oklch(0.2 0 0)" }}
-              >
-                {peer.name}
-              </span>
-            )}
-          </div>
-        )),
       )}
     </div>
   );
