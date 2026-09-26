@@ -32,6 +32,48 @@ export interface SessionMeta {
   readonly status: SessionStatus;
   /** The agent's own session id, used to resume the conversation next turn. */
   readonly acpSessionId?: string;
+  /**
+   * The agent's settings as it last reported them. Small enough to persist:
+   * shown while the agent is not connected, and re-applied when it reconnects.
+   */
+  readonly settings?: ReadonlyArray<AgentSetting>;
+}
+
+export type AgentConfigValue = string | boolean;
+
+/**
+ * One setting an agent offers for its session (an ACP session config option):
+ * model, reasoning effort, mode, … The agent decides which exist — they can
+ * change with the model — so clients render whatever arrives.
+ */
+export interface AgentConfigOption {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  /** ACP category, for placement only: `model`, `thought_level`, `model_config`, `mode`, … */
+  readonly category?: string;
+  readonly type: "select" | "boolean";
+  readonly value: AgentConfigValue;
+  /** The values of a `select` (empty for `boolean`). */
+  readonly choices: ReadonlyArray<AgentConfigChoice>;
+}
+
+export interface AgentConfigChoice {
+  readonly value: string;
+  readonly name: string;
+  readonly description?: string;
+  /** The agent's group heading, if it groups its values. */
+  readonly group?: string;
+}
+
+/** An option's current value, without the list of choices. */
+export interface AgentSetting {
+  readonly id: string;
+  readonly name: string;
+  readonly category?: string;
+  readonly value: AgentConfigValue;
+  /** Display name of `value`. */
+  readonly label: string;
 }
 
 export interface PermissionOption {
@@ -80,6 +122,8 @@ export type AgentEvent =
 export interface SessionSnapshot {
   readonly meta: SessionMeta;
   readonly events: ReadonlyArray<AgentEvent>;
+  /** The settings with their choices; absent until the agent has connected. */
+  readonly options?: ReadonlyArray<AgentConfigOption>;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +149,12 @@ export type ClientToServer =
       readonly author: Author;
     }
   | { readonly t: "agent-cancel"; readonly sessionId: string }
+  | {
+      readonly t: "agent-config";
+      readonly sessionId: string;
+      readonly configId: string;
+      readonly value: AgentConfigValue;
+    }
   | {
       readonly t: "agent-permission";
       readonly sessionId: string;
@@ -135,6 +185,7 @@ export type ServerToClient =
     }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
+  | AgentOptionsMessage
   | { readonly t: "file"; readonly path: string; readonly content: string | null }
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | { readonly t: "term-exit"; readonly id: string; readonly code: number | null }
@@ -166,6 +217,12 @@ export type GuestRequest =
   | { readonly t: "agent-create"; readonly frameId: string; readonly agent: AgentKind }
   | { readonly t: "agent-prompt"; readonly sessionId: string; readonly text: string }
   | { readonly t: "agent-cancel"; readonly sessionId: string }
+  | {
+      readonly t: "agent-config";
+      readonly sessionId: string;
+      readonly configId: string;
+      readonly value: AgentConfigValue;
+    }
   | { readonly t: "term-input"; readonly id: string; readonly data: string };
 
 export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly error: string };
@@ -175,4 +232,12 @@ export type HostBroadcast =
   | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionSnapshot> }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
+  | AgentOptionsMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string };
+
+/** A session's settings changed (or the agent connected and listed them). */
+export interface AgentOptionsMessage {
+  readonly t: "agent-options";
+  readonly sessionId: string;
+  readonly options: ReadonlyArray<AgentConfigOption>;
+}
