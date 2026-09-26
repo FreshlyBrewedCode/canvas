@@ -2,6 +2,7 @@ import type { FileContents, SelectedLineRange } from "@pierre/diffs";
 import { File, Virtualizer, type FileOptions } from "@pierre/diffs/react";
 import { useEffect, useMemo, useRef } from "react";
 
+import type { LineRange } from "@/lib/board";
 import type { Presence } from "@/lib/room";
 import { usePeers, useRoom } from "@/lib/room-context";
 
@@ -28,6 +29,11 @@ const STYLE = {
  */
 const CONTENT = { paddingBlock: 4 };
 
+/** One line in `scroll` mode: the font size times the line height above. */
+const LINE_PX = 12 * 1.6;
+/** Lines of context kept above a range scrolled to. */
+const CONTEXT_LINES = 3;
+
 /** Beyond this many lines a remote selection is drawn up to here. */
 const MAX_REMOTE_LINES = 2000;
 
@@ -38,17 +44,22 @@ const MAX_REMOTE_LINES = 2000;
  *
  * Selecting lines (click or drag the line numbers) is presence: everyone
  * else sees them in your colour, with your name on the first line.
+ *
+ * `lines` is the frame's own range (an agent pointed it there): highlighted
+ * for everyone and scrolled to whenever it, or the file, changes.
  */
 export function CodeView({
   frameId,
   path,
   text,
   wrap,
+  lines,
 }: {
   frameId: string;
   path: string;
   text: string;
   wrap: boolean;
+  lines?: LineRange | null;
 }) {
   const room = useRoom();
   const peers = usePeers();
@@ -57,7 +68,14 @@ export function CodeView({
   // Other people's lines, as CSS in a style element of our own inside the
   // view's shadow root: it matches whatever lines are rendered, so it holds
   // across virtualization without re-rendering the file.
-  const remote = useMemo(() => remoteLinesCss(peers, frameId, path), [peers, frameId, path]);
+  const start = lines?.start;
+  const end = lines?.end;
+  const remote = useMemo(
+    () =>
+      remoteLinesCss(peers, frameId, path) +
+      (start && end ? focusCss(start, Math.min(end, start + MAX_REMOTE_LINES)) : ""),
+    [peers, frameId, path, start, end],
+  );
   const css = useRef(remote);
   const style = useRef<HTMLStyleElement | null>(null);
   useEffect(() => {
@@ -99,11 +117,46 @@ export function CodeView({
     [room, frameId, path],
   );
 
+  // Scroll to the frame's range: roughly by line height first, so the
+  // virtualizer renders it, then exactly by the rendered line.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = box.current?.firstElementChild;
+    if (!start || !(scroller instanceof HTMLElement)) return;
+    const top = Math.max(0, start - 1 - CONTEXT_LINES);
+    scroller.scrollTop = CONTENT.paddingBlock + top * LINE_PX;
+    const raf = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const root = scroller.querySelector("diffs-container")?.shadowRoot;
+        const line = root?.querySelector(`[data-line="${start}"]`);
+        if (!line) return;
+        const offset = line.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        const scale = scroller.getBoundingClientRect().height / scroller.offsetHeight || 1;
+        scroller.scrollTop += offset / scale - CONTEXT_LINES * LINE_PX;
+      }),
+    );
+    return () => cancelAnimationFrame(raf);
+  }, [start, end, path, text.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <Virtualizer className="h-full overflow-auto" contentStyle={CONTENT}>
-      <File file={file} options={options} style={STYLE} />
-    </Virtualizer>
+    <div ref={box} className="h-full">
+      <Virtualizer className="h-full overflow-auto" contentStyle={CONTENT}>
+        <File file={file} options={options} style={STYLE} />
+      </Virtualizer>
+    </div>
   );
+}
+
+/** The frame's own range: a quiet highlight, the same for everyone. */
+function focusCss(start: number, end: number): string {
+  const lines = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  return `
+    :is(${lines.map((n) => `[data-line="${n}"]`).join(",")}) {
+      background-color: color-mix(in srgb, var(--status-ready, #eab308) 14%, transparent);
+    }
+    :is(${lines.map((n) => `[data-column-number="${n}"]`).join(",")}) {
+      box-shadow: inset 3px 0 0 var(--status-ready, #eab308);
+    }`;
 }
 
 function remoteLinesCss(peers: Presence[], frameId: string, path: string): string {
