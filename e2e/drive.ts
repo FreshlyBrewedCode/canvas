@@ -732,4 +732,209 @@ if (step === "layout") {
   await new Promise((r) => setTimeout(r, 400));
   await shot(guest, "43-guest-final");
 }
+// Frame focus: who occupies a frame drives its scroll for everyone following.
+// Needs a long file and a long markdown file: LONG (default src/big.ts), MD
+// (default docs/notes.md).
+if (step === "focus") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 700) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const a = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  const b = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  await place(host, a, { path: process.env.LONG ?? "src/big.ts", title: "big.ts", x: 0, y: 0, w: 640, h: 480 });
+  await place(host, b, { path: process.env.MD ?? "docs/notes.md", title: "notes.md", x: 700, y: 0, w: 640, h: 480 });
+  for (const page of [host, guest]) {
+    await page.locator(`[data-frame="${a}"] diffs-container`).waitFor({ timeout: 10000 });
+    await page.locator(`[data-frame="${b}"] .prose-canvas`).waitFor({ timeout: 10000 });
+    await page.locator("[data-hud]").getByTitle("Fit board to view").click();
+  }
+  await settle();
+
+  const frame = (page: Page, id: string) => page.locator(`[data-frame="${id}"]`);
+  const state = (page: Page, id: string) =>
+    frame(page, id).evaluate((el) => ({
+      occupant: el.getAttribute("data-occupant"),
+      following: el.hasAttribute("data-following"),
+    }));
+  /** The frame's main scroller: the code view's virtualizer, or the preview. */
+  const scroller = (page: Page, id: string) =>
+    frame(page, id).evaluate((el) => {
+      const code = el.querySelector("diffs-container")?.closest(".overflow-auto");
+      const node = (code ?? el.querySelector(".overflow-auto")) as HTMLElement;
+      return Math.round(node.scrollTop);
+    });
+  const body = async (page: Page, id: string) => {
+    const box = (await frame(page, id).boundingBox())!;
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+  const press = async (page: Page, id: string) => {
+    const at = await body(page, id);
+    await page.mouse.click(at.x, at.y);
+  };
+  const wheel = async (page: Page, id: string, dy: number) => {
+    const at = await body(page, id);
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.wheel(0, dy);
+  };
+
+  // Host presses A: it's theirs; the guest sees them there and follows.
+  await press(host, a);
+  await settle();
+  let h = await state(host, a);
+  let g = await state(guest, a);
+  check(h.occupant === "Karl" && !h.following, `host occupies A (${JSON.stringify(h)})`);
+  check(g.occupant === "Karl" && g.following, `guest sees Karl in A, following (${JSON.stringify(g)})`);
+  await shot(host, "50-focus-host-occupies");
+  await shot(guest, "50-focus-guest-follows");
+
+  // Host scrolls A: the guest's A goes along.
+  await wheel(host, a, 1600);
+  await settle(1000);
+  let [hs, gs] = [await scroller(host, a), await scroller(guest, a)];
+  check(hs > 0 && Math.abs(hs - gs) <= 2, `guest follows host's scroll in A (host ${hs}, guest ${gs})`);
+
+  // Guest presses A: it stays Karl's. The guest scrolls: detached, just for them.
+  await press(guest, a);
+  await wheel(guest, a, -600);
+  await settle();
+  g = await state(guest, a);
+  h = await state(host, a);
+  check(g.occupant === "Karl" && !g.following, `guest scrolled away from Karl in A (${JSON.stringify(g)})`);
+  check(h.occupant === "Karl", "host still occupies A");
+  const guestOwn = await scroller(guest, a);
+  await wheel(host, a, 1600);
+  await settle(1000);
+  [hs, gs] = [await scroller(host, a), await scroller(guest, a)];
+  check(gs === guestOwn && hs !== gs, `detached guest keeps its own scroll (host ${hs}, guest ${gs})`);
+  await shot(guest, "51-focus-guest-detached");
+
+  // Guest clicks Karl's badge: following again.
+  await frame(guest, a).locator("[data-occupant-badge]").click();
+  await settle(1000);
+  g = await state(guest, a);
+  [hs, gs] = [await scroller(host, a), await scroller(guest, a)];
+  check(g.following && Math.abs(hs - gs) <= 2, `badge click follows again (host ${hs}, guest ${gs})`);
+
+  // Guest presses B: theirs now; the host follows their scroll in the preview.
+  await press(guest, b);
+  await settle();
+  check((await state(host, b)).occupant === "Ada", "host sees Ada in B");
+  await wheel(guest, b, 900);
+  await settle(1000);
+  [hs, gs] = [await scroller(host, b), await scroller(guest, b)];
+  check(gs > 0 && Math.abs(hs - gs) <= 2, `host follows Ada's scroll in B (host ${hs}, guest ${gs})`);
+  await shot(host, "52-focus-two-occupants");
+
+  // Host presses B (taken): they hold nothing now, so A is free.
+  await press(host, b);
+  await settle();
+  check((await state(guest, a)).occupant === null, "host pressing occupied B frees A");
+  check((await state(guest, b)).occupant === "Ada", "B stays Ada's");
+
+  // Guest presses the empty board: B is free.
+  const boardBox = (await guest.locator("[data-board]").boundingBox())!;
+  await guest.mouse.click(boardBox.x + 30, boardBox.y + boardBox.height - 30);
+  await settle();
+  check((await state(host, b)).occupant === null, "guest pressing the board frees B");
+
+  // An agent occupies A (as the host does for a board tool call); a person takes over.
+  await host.evaluate(([frameId]) => (window as any).room.claimForAgent("agent-x", frameId), [a]);
+  await settle();
+  g = await state(guest, a);
+  check(g.occupant === "agent" && g.following, `guest sees the agent in A (${JSON.stringify(g)})`);
+  await frame(guest, a).screenshot({ path: `${out}/53-focus-agent.png` });
+  await press(guest, a);
+  await settle();
+  const agents = await host.evaluate(() => (window as any).room.awareness.getLocalState().agents);
+  check((await state(host, a)).occupant === "Ada", "guest takes A over from the agent");
+  check(agents.length === 0, `the agent's claim is dropped (${JSON.stringify(agents)})`);
+  await host.evaluate(() => (window as any).room.claimForAgent("agent-x", "nope"));
+  await host.evaluate(() => (window as any).room.releaseAgent("agent-x"));
+
+  // A terminal: scrollback lines follow the occupant.
+  const t = (await (await addFrame(host, "Terminal")).getAttribute("data-frame"))!;
+  await place(host, t, { x: 0, y: 540, w: 640, h: 360 });
+  for (const page of [host, guest]) await page.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(1500);
+  await press(host, t);
+  await host.keyboard.type("seq 1 400\n");
+  await settle(1500);
+  const firstRow = (page: Page) =>
+    frame(page, t).locator(".xterm-rows > div").first().innerText();
+  const bottom = await firstRow(host);
+  for (let i = 0; i < 10; i++) await wheel(host, t, -150);
+  await settle(1000);
+  const [ht, gt] = [await firstRow(host), await firstRow(guest)];
+  check(
+    ht !== bottom && ht === gt,
+    `guest's terminal follows host's scrollback (bottom "${bottom}", host "${ht}", guest "${gt}")`,
+  );
+  await shot(guest, "54-focus-terminal");
+}
+// A real agent occupies the frame it opens until its turn ends; its thread
+// scrolls with whoever occupies the agent frame.
+if (step === "focus-agent") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, process.env.AGENT ?? "claude");
+  const self = (await frame.getAttribute("data-frame"))!;
+  await place(host, self, { x: 0, y: 0, h: 560 });
+  await frame
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 30000 });
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type(
+    `Open ${process.env.LONG ?? "src/big.ts"} at lines 400-410 on the board, then explain those lines in about 300 words.`,
+  );
+  await host.keyboard.press("Control+Enter");
+  // While it works, the guest sees the agent in the frame it opened.
+  let seen: string | null = null;
+  const deadline = Date.now() + 240_000;
+  while (Date.now() < deadline) {
+    const allow = host.locator("[data-permission-kind=allow_once]").first();
+    if (await allow.isVisible().catch(() => false)) await allow.click();
+    const occupied = guest.locator("[data-frame-type=file][data-occupant]");
+    if (!seen && (await occupied.count())) {
+      seen = await occupied.first().getAttribute("data-occupant");
+      await shot(guest, "55-focus-agent-working");
+    }
+    if (await frame.getByText("idle", { exact: true }).isVisible()) break;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  await new Promise((r) => setTimeout(r, 1000));
+  const title = await frame.locator("input[aria-label='Frame title']").inputValue();
+  check(seen === title, `guest saw the agent (${seen}) in the file it opened (expected ${title})`);
+  check(
+    (await guest.locator("[data-frame-type=file][data-occupant]").count()) === 0,
+    "the agent left the frame when its turn ended",
+  );
+
+  // The host occupies the agent frame and scrolls its thread up; the guest follows.
+  for (const page of [host, guest]) await page.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await new Promise((r) => setTimeout(r, 800));
+  const thread = (page: Page) => page.locator(`[data-frame="${self}"] [data-frame-body]`).first();
+  const box = (await thread(host).boundingBox())!;
+  await host.mouse.click(box.x + box.width / 2, box.y + 20);
+  await host.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let i = 0; i < 4; i++) await host.mouse.wheel(0, -120);
+  await new Promise((r) => setTimeout(r, 1000));
+  const top = (page: Page) => thread(page).evaluate((el) => Math.round(el.scrollTop));
+  const [ht, gt] = [await top(host), await top(guest)];
+  const max = await thread(host).evaluate((el) => el.scrollHeight - el.clientHeight);
+  check(ht < max - 40 && Math.abs(ht - gt) <= 2, `guest follows the thread (host ${ht}, guest ${gt}, end ${max})`);
+  await shot(guest, "56-focus-thread-follow");
+}
 await browser.close();
