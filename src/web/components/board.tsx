@@ -217,22 +217,51 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
   );
 }
 
-/** Where the frame being dragged lands if dropped now. */
+/**
+ * Where the frame being dragged lands if dropped now: its outline, or, going
+ * in between two frames or rows, a dotted line along the gap.
+ */
 function SnapGhost() {
-  const box = useSnapPreview();
-  if (!box) return null;
+  const preview = useSnapPreview();
+  if (!preview) return null;
+  const hint = (
+    <span
+      className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
+      style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
+    >
+      {preview.kind === "insert" ? "Insert here · " : ""}Alt: place freely · Shift: move the cluster
+    </span>
+  );
+  if (preview.kind === "place") {
+    const { box } = preview;
+    return (
+      <div
+        data-snap-preview="place"
+        className="border-primary/70 bg-primary/5 pointer-events-none absolute z-[99999] border-2 border-dashed"
+        style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+      >
+        {hint}
+      </div>
+    );
+  }
+  const { line } = preview;
+  const width = "calc(4px / var(--board-scale, 1))";
+  const vertical = line.w === 0;
   return (
     <div
-      data-snap-preview=""
-      className="border-primary/70 bg-primary/5 pointer-events-none absolute z-[99999] border-2 border-dashed"
-      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+      data-snap-preview="insert"
+      className="border-primary pointer-events-none absolute z-[99999] border-0 border-dotted"
+      style={{
+        left: line.x,
+        top: line.y,
+        width: line.w,
+        height: line.h,
+        ...(vertical
+          ? { borderLeftWidth: width, transform: "translateX(-50%)" }
+          : { borderTopWidth: width, transform: "translateY(-50%)" }),
+      }}
     >
-      <span
-        className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
-        style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
-      >
-        Hold Alt to place freely
-      </span>
+      {hint}
     </div>
   );
 }

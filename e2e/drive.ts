@@ -737,6 +737,134 @@ if (step === "layout") {
   await new Promise((r) => setTimeout(r, 400));
   await shot(guest, "43-guest-final");
 }
+// Arranging frames: inserting between frames shows a line, a frame leaving
+// (moved or removed) closes its gap, Shift drags a cluster, the title field
+// is only as wide as the title.
+if (step === "arrange") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const add = async (x: number, y: number) => {
+    const id = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+    await place(host, id, { x, y, w: 600, h: 400 });
+    return id;
+  };
+  const [a, b, c, d] = [await add(0, 0), await add(624, 0), await add(1248, 0), await add(0, 424)];
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(500);
+  const frame = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
+  const at = async (...ids: string[]) =>
+    Promise.all(ids.map(async (id) => `${(await frame(id)).x},${(await frame(id)).y}`));
+  const scale = async () =>
+    (await host.locator(`[data-frame="${a}"]`).boundingBox())!.width / (await frame(a)).w;
+
+  /** Drag a frame by its header so its top-left lands at board (x, y); the preview seen before letting go. */
+  const drag = async (id: string, x: number, y: number, name: string, key?: "Shift") => {
+    const f = await frame(id);
+    const k = await scale();
+    const box = (await host.locator(`[data-frame="${id}"]`).boundingBox())!;
+    const from = { x: box.x + 14 * k, y: box.y + 18 * k };
+    await host.mouse.move(from.x, from.y);
+    await host.mouse.down();
+    if (key) await host.keyboard.down(key);
+    await host.mouse.move(from.x + ((x - f.x) * k) / 2, from.y + ((y - f.y) * k) / 2, { steps: 5 });
+    await host.mouse.move(from.x + (x - f.x) * k, from.y + (y - f.y) * k, { steps: 5 });
+    await settle(300);
+    const ghost = host.locator("[data-snap-preview]");
+    const preview = (await ghost.isVisible()) ? await ghost.getAttribute("data-snap-preview") : null;
+    const line = preview === "insert" ? await ghost.boundingBox() : null;
+    await shot(host, `50-${name}`);
+    await host.mouse.up();
+    if (key) await host.keyboard.up(key);
+    await settle();
+    return { preview, line };
+  };
+
+  // D (alone in the second row) between A and B: a vertical line, then A D B C, no second row.
+  let seen = await drag(d, 330, 10, "insert-in-row");
+  check(
+    seen.preview === "insert" && seen.line!.height > seen.line!.width,
+    `between A and B: ${seen.preview} line ${JSON.stringify(seen.line)}`,
+  );
+  check(
+    (await at(a, d, b, c)).join(" ") === "0,0 624,0 1248,0 1872,0",
+    `row reads A D B C: ${await at(a, d, b, c)}`,
+  );
+
+  // D dropped just right of C, the row's end: the outline, not a line.
+  seen = await drag(d, 1872 + 40, 20, "append-to-row");
+  check(seen.preview === "place", `end of the row: ${seen.preview}`);
+  check(
+    (await at(a, b, c, d)).join(" ") === "0,0 624,0 1248,0 1872,0",
+    `D left its place, B and C closed up: ${await at(a, b, c, d)}`,
+  );
+
+  // A new row under A, then D between the rows: a horizontal line.
+  const e = await add(0, 424);
+  seen = await drag(d, 20, 250, "insert-between-rows");
+  check(
+    seen.preview === "insert" && seen.line!.width > seen.line!.height,
+    `between the rows: ${seen.preview} line ${JSON.stringify(seen.line)}`,
+  );
+  check(
+    (await at(a, b, c, d, e)).join(" ") === "0,0 624,0 1248,0 0,424 0,848",
+    `D a row of its own between, E pushed down: ${await at(a, b, c, d, e)}`,
+  );
+
+  // Removing B closes the row; removing D, alone in its row, pulls E up.
+  await host.locator(`[data-frame="${b}"]`).getByTitle("Remove frame").click();
+  await settle();
+  check((await at(c)).join() === "624,0", `B removed, C moved into its place: ${await at(c)}`);
+  await host.locator(`[data-frame="${d}"]`).getByTitle("Remove frame").click();
+  await settle();
+  check((await at(e)).join() === "0,424", `D removed, E's row moved up: ${await at(e)}`);
+
+  // A snapped next to a frame far away: C closes the gap it leaves.
+  const far = await add(4000, 0);
+  await drag(a, 4000 + 600 + 30, 10, "move-to-other-cluster");
+  check(
+    (await at(a, c)).join(" ") === "4624,0 0,0",
+    `A next to the far frame, C at the row's start: ${await at(a, c)}`,
+  );
+
+  // Shift: C drags E along, keeping their offsets, no snap preview.
+  seen = await drag(c, 200, 1500, "shift-cluster", "Shift");
+  check(seen.preview === null, `no preview with Shift: ${seen.preview}`);
+  check(
+    (await at(c, e, far)).join(" ") === "200,1500 200,1924 4000,0",
+    `the cluster moved as one, the far one stayed: ${await at(c, e, far)}`,
+  );
+
+  // The title field is as wide as the title; the header beside it drags.
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle();
+  const header = host.locator(`[data-frame="${c}"] > div`).first();
+  const input = host.locator(`[data-frame="${c}"]`).getByLabel("Frame title");
+  const [hb, ib] = [(await header.boundingBox())!, (await input.boundingBox())!];
+  check(ib.width < hb.width / 3, `title ${Math.round(ib.width)}px of a ${Math.round(hb.width)}px header`);
+  const before = await frame(c);
+  const grab = { x: ib.x + ib.width + (hb.width - ib.width) / 3, y: hb.y + hb.height / 2 };
+  await host.mouse.move(grab.x, grab.y);
+  await host.mouse.down();
+  await host.mouse.move(grab.x, grab.y - 60, { steps: 5 });
+  await host.mouse.up();
+  await settle();
+  check(
+    (await frame(c)).y !== before.y,
+    `dragged by the header's empty part: y ${before.y} → ${(await frame(c)).y}`,
+  );
+  await input.click();
+  check(await input.evaluate((el) => el === document.activeElement), "clicking the title edits it");
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle();
+  await shot(host, "51-final");
+}
 // Frame focus: who occupies a frame drives its scroll for everyone following.
 // Needs a long file and a long markdown file: LONG (default src/big.ts), MD
 // (default docs/notes.md).

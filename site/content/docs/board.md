@@ -25,7 +25,7 @@ The viewport is yours alone; it is kept per board in your browser.
 
 - **Add** a frame from the toolbar: **Agent**, **Files**, **Browser**, **Terminal**.
 - **Move** it by its header, **resize** it from its bottom-right corner.
-- **Rename** it by editing its title in the header.
+- **Rename** it by clicking its title in the header.
 - **Remove** it with the **×** in its header.
 
 ## Layout
@@ -35,9 +35,13 @@ each other's neighbours. Inside a cluster, frames whose top edges line up form a
 frames of a row share a height.
 
 - **Dropping** a frame near another snaps it into that row, or into a new row above or below. A
-  dashed outline shows where it lands.
+  dashed outline shows where it lands. Dropped **between** two frames of a row, or between two
+  rows, it goes in between and the others make room: a dotted line marks the gap it goes into.
+- **Moving or removing** a frame closes the gap it leaves: the frames after it in its row move
+  left, or, if it was alone in its row, the rows below move up.
 - **Resizing** a frame's height resizes its row, and moves the rows below.
 - **Hold Alt** while dragging or resizing to place a frame freely.
+- **Hold Shift** while dragging to move the frame's whole cluster, as it is.
 
 ![Dragging a frame near another: the dashed outline shows where it snaps](./screenshots/snap.webp)
 
