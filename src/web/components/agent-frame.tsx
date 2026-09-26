@@ -308,7 +308,7 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
               className="bg-muted/60 max-h-60 overflow-auto p-2 font-mono text-[11px] whitespace-pre-wrap"
             >
               {row.args}
-              {row.result !== undefined && `\n\n→ ${row.result.slice(0, 4000)}`}
+              {row.result !== undefined && `\n\n→ ${row.result}`}
             </pre>
           </Disclosure>
           {row.permissions.map((permission) => (
