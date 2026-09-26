@@ -43,3 +43,49 @@ section "Open questions" with one question to the write-up at <its path>."_
 - opencode found Claude's files through `view_board` and rewrote them instead of creating
   `-2` copies: reuse across agents works without being asked.
 - Claude's browser-frame detour: the error for a non-http URL now points at file frames.
+
+## File lists
+
+### What was built
+
+- File frames carry `files`: `{display, path, lines?}` entries (`web/lib/board.ts`).
+  `web/lib/file-list.ts` checks display paths (no empty, `.` or `..` segments; unique; none a
+  folder of another), orders the tree by the list (a folder sorts at its first entry), and finds
+  the entry a frame shows from its path and lines.
+- `open_frame` / `update_frame` take `files`. `canvas serve` checks each entry's path against the
+  shared set and turns entry `content` into scratch files (a name from the display path if none
+  is given). The browser stores the list, and shows its first entry unless told otherwise. A new
+  list moves the frame off a file no longer on it; `[]` removes the list. `view_board` spells each
+  list out, display → real path.
+- `FileTree` shows either the shared set or a list: the agent's order, all folders open, lines and
+  "scratch" as row badges, read-only for `view` guests (a click snaps back). The frame's
+  "all files" toggle is per viewer and selects the real path. Picking a list entry keeps the
+  frame's title.
+- `@pierre/trees` finds `initialExpandedPaths` by binary search in its default order, so under a
+  custom `sort` it misses folders. A list's folders are expanded through their handles after
+  every reset.
+
+### Evidence (`STEP=lists`, all 18 checks pass for both agents)
+
+Prompt: _"Show us everything about login in this project in one file frame we can click
+through: a short write-up first, then the relevant source files grouped in folders by layer, at
+the relevant lines, and a small HTML visualisation of the flow last."_
+
+- **One call, one frame.** Both agents made a single `open_frame` with the whole list, write-up
+  content inline, and opened no frame per file.
+- **opencode** (with `IDLE_MS`: it first sent an explore subagent, which took over 4 min):
+  `1 Write-up.md`, `2 HTTP routes/{login,products}.ts`, `3 Auth/{session,password}.ts`,
+  `4 Data/db.ts`, `5 Flow diagram.html`, every repo file with lines. It overwrote its earlier
+  scratch copies instead of adding a fourth.
+- **Claude Code** (Haiku 4.5), three runs: `📋 Login Overview`, `Routes/HTTP`,
+  `Auth/{Sessions,Password}`, `🎨 Flow Diagram`, with lines, in two runs; once a flat list without
+  lines. Display names without extensions lose their file icons (the tree picks icons by name).
+- Host and guest see the list in the agent's order; lines show as badges ("L5–15"). A list with
+  folders written straight into the board opens every folder, in the list's order.
+- The guest picks an entry → the frame shows the real file at the entry's lines for everyone,
+  the host's list selects it too, and the title stays.
+- The guest switches to all files → `src/routes/login.ts` is selected where it lives; the host
+  still sees the list.
+- Access `view` → the guest still sees the list; clicking another entry changes nothing and the
+  selection snaps back; no all-files toggle.
+- The project stays clean throughout.
