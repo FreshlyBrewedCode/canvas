@@ -41,13 +41,18 @@ export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
 export const promptText = (doc: Y.Doc, frameId: string) => doc.getText(`prompt:${frameId}`);
 
+/**
+ * In a stable order, not by `z`: frames stack by their z-index. Reordering
+ * them would move a raised frame's DOM node between pointer down and up —
+ * which loses the click that raised it, and reloads a browser frame.
+ */
 function readFrames(doc: Y.Doc): Frame[] {
   const frames: Frame[] = [];
   framesOf(doc).forEach((map, id) => {
     const value = map.toJSON() as Omit<Frame, "id">;
     frames.push({ ...value, id } as Frame);
   });
-  return frames.sort((a, b) => a.z - b.z);
+  return frames.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /** An immutable frames snapshot per doc, rebuilt only when the frames map changes. */
