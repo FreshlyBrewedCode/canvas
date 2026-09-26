@@ -1,0 +1,32 @@
+---
+/*
+ * Someone's pointer, as the board draws it: the arrow filled in their colour,
+ * their name on a label of the same colour with dark text. The host's is
+ * marked. Positioned by whoever places it; `class` carries the animation.
+ */
+import MousePointer2 from "@lucide/astro/icons/mouse-pointer-2";
+
+interface Props {
+  name: string;
+  color: string;
+  host?: boolean;
+  class?: string;
+  style?: string;
+}
+
+const { name, color, host = false, class: className, style } = Astro.props;
+---
+
+<div
+  class:list={["cursor pointer-events-none absolute z-20", className]}
+  style={`color:${color};${style ?? ""}`}
+  aria-hidden="true"
+>
+  <MousePointer2 class="size-5 -translate-x-0.5 -translate-y-0.5" style="fill: currentColor" />
+  <span
+    class="ml-3 inline-block rounded-sm px-1.5 py-0.5 text-[11px] leading-tight font-semibold whitespace-nowrap shadow-sm"
+    style={`background-color:${color};color:oklch(0.2 0 0)`}
+  >
+    {name}{host && " · host"}
+  </span>
+</div>

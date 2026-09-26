@@ -1,0 +1,51 @@
+---
+/*
+ * A few lines of TypeScript, coloured by a deliberately small tokenizer:
+ * keywords, strings, numbers, calls, punctuation. Enough for a snippet on the
+ * landing page; the real files frame uses Shiki. `highlight` is the line range
+ * the agent asked for, marked in the gutter like the app marks it.
+ */
+interface Props {
+  code: string;
+  highlight?: [number, number];
+  class?: string;
+}
+
+const { code, highlight, class: className } = Astro.props;
+
+const KEYWORDS = new Set([
+  "import", "from", "export", "async", "function", "const", "await", "if", "return", "new", "null",
+]);
+
+type Token = { kind: string; text: string };
+
+function tokenize(line: string): Token[] {
+  const out: Token[] = [];
+  const re = /("[^"]*"|`[^`]*`)|(\b\d+\b)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line))) {
+    if (m[1]) out.push({ kind: "str", text: m[1] });
+    else if (m[2]) out.push({ kind: "num", text: m[2] });
+    else if (m[3]) {
+      const next = line[re.lastIndex];
+      const kind = KEYWORDS.has(m[3]) ? "kw" : next === "(" ? "fn" : "id";
+      out.push({ kind, text: m[3] });
+    } else if (m[4]) out.push({ kind: "ws", text: m[4] });
+    else out.push({ kind: "pn", text: m[5]! });
+  }
+  return out;
+}
+
+const lines = code.replace(/^\n/, "").split("\n").map((line, i) => ({
+  n: i + 1,
+  tokens: tokenize(line),
+  hit: highlight ? i + 1 >= highlight[0] && i + 1 <= highlight[1] : false,
+}));
+---
+
+<pre
+  class:list={["code m-0 overflow-hidden font-mono text-[11.5px] leading-[1.6]", className]}
+><code>{lines.map((line) => (
+  <span class:list={["line", line.hit && "hit"]}><span class="n">{line.n}</span>{line.tokens.map((t) => <span class={t.kind}>{t.text}</span>)}
+</span>
+))}</code></pre>

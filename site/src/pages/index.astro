@@ -1,170 +1,445 @@
 ---
-import { Image } from "astro:assets";
-import TriangleAlert from "@lucide/astro/icons/triangle-alert";
-import board from "../../content/docs/screenshots/board.webp";
+import Check from "@lucide/astro/icons/check";
+import Copy from "@lucide/astro/icons/copy";
+import Link from "@lucide/astro/icons/link";
+import Approval from "../components/landing/Approval.astro";
+import Avatar from "../components/landing/Avatar.astro";
+import Code from "../components/landing/Code.astro";
+import Composer from "../components/landing/Composer.astro";
+import Cursor from "../components/landing/Cursor.astro";
+import FileTree from "../components/landing/FileTree.astro";
+import Frame from "../components/landing/Frame.astro";
+import Shop from "../components/landing/Shop.astro";
+import Terminal from "../components/landing/Terminal.astro";
+import Thread from "../components/landing/Thread.astro";
 import Base from "../layouts/Base.astro";
+import "../styles/landing.css";
 
-const features = [
-  {
-    title: "Agent frames",
-    body: "Claude Code or opencode sessions running on the host's machine. Everyone reads the thread and writes the prompt together.",
-    href: "/docs/agent",
-  },
-  {
-    title: "Board tools",
-    body: "Agents open files at the relevant lines, terminals and previews next to their own frame.",
-    href: "/docs/board-tools",
-  },
-  {
-    title: "Files frames",
-    body: "Project files, read-only and live, with a file tree, markdown preview and shared selections.",
-    href: "/docs/files",
-  },
-  {
-    title: "Terminal and browser frames",
-    body: "Shells on the host's machine mirrored to everyone, and previews of any URL.",
-    href: "/docs/terminal",
-  },
-  {
-    title: "Guest access",
-    body: "View, edit or trusted. With edit, the host approves every prompt before it runs.",
-    href: "/docs/guests",
-  },
-  {
-    title: "Focus",
-    body: "See who is in which frame, and scroll with them.",
-    href: "/docs/focus",
-  },
-];
+/*
+ * The landing page is a board. The hero is the board itself, with frames
+ * peeking in from its edges and people's pointers walking across it; the
+ * beats below tell one session with the frames rebuilt in HTML, so they
+ * follow the colour scheme like the app does; the end is the board again.
+ *
+ * People: Karl hosts (orange), Ada is a guest (blue), Lynx too (green). The
+ * colours are the app's presence hues, the only saturated colour on the page
+ * besides amber, which marks the one thing to press.
+ */
+const KARL = "#f97316";
+const ADA = "#3b82f6";
+const LYNX = "#22c55e";
+
+const command = "bunx @frebreco/canvas serve";
+
+const login = `
+import { createSession, destroySession, readSession } from "../auth/session";
+import { verifyPassword } from "../auth/password";
+import { db } from "../db";
+
+export async function login(req: Request) {
+  const { email, password } = await req.json();
+  const user = await db.users.byEmail(email);
+  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    return new Response("invalid credentials", { status: 401 });
+  }
+  const session = await createSession(user.id);
+  return new Response(null, { status: 204, headers: { "set-cookie": "sid=" + session } });
+}
+
+export async function logout(req: Request) {
+  const session = await readSession(req);
+  if (session) await destroySession(session.id);
+  return new Response(null, { status: 204 });
+}`;
+
+const prompt =
+  "Show me the code that handles login on the board, at the relevant lines. Then explain in two sentences how a password is checked.";
 
 const steps = [
-  { command: "bunx @frebreco/canvas serve", body: "in your project. It prints the host link." },
-  { command: "Open the host link", body: "in your browser. You are the host." },
-  { command: "Copy guest link", body: "from the top bar, and send it to the people you work with." },
+  {
+    head: "Serve a project.",
+    body: `Run ${command} in the project directory. It prints the host link: keep that one to yourself.`,
+  },
+  {
+    head: "Open the host link.",
+    body: "In a browser on the same machine. You are the host, and agents, terminals and files live with you.",
+  },
+  {
+    head: "Copy the guest link.",
+    body: "From the top bar, and send it to the people you work with. They need nothing but a browser.",
+  },
 ];
 ---
 
 <Base title="canvas — a multiplayer board for coding agents">
-  <main class="mx-auto max-w-6xl px-6">
-    <section class="pt-20 pb-12 text-center">
-      <h1 class="font-mono text-6xl font-semibold tracking-tighter sm:text-7xl">canvas</h1>
-      <p class="mx-auto mt-5 max-w-2xl text-lg text-muted-foreground text-balance">
-        A multiplayer board whose frames are coding agents, project files, terminals and browser
-        previews. The agents run on one person's machine; everyone else joins from their browser,
-        peer to peer.
-      </p>
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a
-          href="/docs"
-          class="inline-flex h-10 items-center rounded-md bg-primary px-5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+  <main class="overflow-x-clip">
+    {/* ---- the board ------------------------------------------------------ */}
+    <section class="board board-fade-bottom sm:min-h-[46rem] lg:min-h-[52rem]">
+      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+
+        <div
+          data-depth="0.25"
+          class="settle absolute top-14 left-[calc(50%-50rem)] hidden w-[22rem] sm:block"
+          style="--settle-delay: 80ms"
         >
-          Read the docs
-        </a>
-        <code
-          class="inline-flex h-10 items-center rounded-md border border-border bg-card px-4 font-mono text-sm"
+          <Frame type="agent" title="claude-1" class="h-[26rem]">
+            <Fragment slot="meta">
+              <span class="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px]">Claude Code</span>
+              <span class="flex items-center gap-1 font-mono text-[10px]"><span class="size-1.5 rounded-full bg-[#22c55e]"></span>idle</span>
+              <Avatar name="Karl" color={KARL} />
+            </Fragment>
+            <div class="flex h-full flex-col">
+              <Thread author="Ada" color={ADA} prompt={prompt} class="flex-1">
+                <p>The login code is now on the board. On line 8, <code class="rounded-sm bg-muted px-1 font-mono text-[11px]">verifyPassword()</code> hashes the submitted password and compares it to the stored hash.</p>
+              </Thread>
+            </div>
+          </Frame>
+        </div>
+
+        <div
+          data-depth="0.12"
+          class="settle absolute top-8 right-[calc(50%-52rem)] hidden w-[28rem] md:block"
+          style="--settle-delay: 160ms"
         >
-          bunx @frebreco/canvas serve
-        </code>
+          <Frame type="file" title="login.ts" ring={ADA} class="h-[24rem]">
+            <Fragment slot="meta">
+              <span class="font-mono text-[10px]">src/routes/login.ts</span>
+              <Avatar name="Ada" color={ADA} />
+            </Fragment>
+            <div class="flex h-full">
+              <FileTree />
+              <Code code={login} highlight={[5, 13]} class="flex-1 pt-2" />
+            </div>
+          </Frame>
+        </div>
+
+        <div
+          data-depth="0.35"
+          class="settle absolute -bottom-6 left-[calc(50%-40rem)] hidden w-[24rem] sm:block"
+          style="--settle-delay: 240ms"
+        >
+          <Frame type="terminal" title="shell-1" class="h-[13rem]">
+            <Terminal>karl@dev:~/shop <span class="dim">$</span> bun run dev
+<span class="dim">$</span> bun src/server.ts
+shop on <span class="ok">http://localhost:5199</span>
+<span class="dim">▮</span></Terminal>
+          </Frame>
+        </div>
+
+        <div
+          data-depth="0.2"
+          class="settle absolute -bottom-16 right-[calc(50%-45rem)] hidden w-[26rem] md:block"
+          style="--settle-delay: 320ms"
+        >
+          <Frame type="browser" title="shop" class="h-[17rem]">
+            <Fragment slot="meta"><Avatar name="Karl" color={KARL} /></Fragment>
+            <Shop />
+          </Frame>
+        </div>
+
+        {/* Phones: one file frame behind one agent frame, under the headline. */}
+        <div class="settle absolute right-[-3rem] bottom-[3.5rem] w-[17rem] sm:hidden" style="--settle-delay: 160ms">
+          <Frame type="file" title="login.ts" ring={ADA} class="h-[14rem]">
+            <Fragment slot="meta"><Avatar name="Ada" color={ADA} /></Fragment>
+            <Code code={login} highlight={[5, 13]} class="pt-2" />
+          </Frame>
+        </div>
+        <div class="settle absolute -bottom-4 left-[-1rem] w-[17rem] sm:hidden" style="--settle-delay: 240ms">
+          <Frame type="agent" title="claude-1" class="h-[13rem]">
+            <Fragment slot="meta"><Avatar name="Karl" color={KARL} /></Fragment>
+            <Thread author="Ada" color={ADA} prompt={prompt} />
+          </Frame>
+        </div>
+
+        <Cursor name="Ada" color={ADA} class="walk-ada top-[18%] right-[calc(50%-38rem)] hidden md:block" />
+        <Cursor name="Lynx" color={LYNX} class="walk-lynx bottom-[30%] left-[calc(50%-24rem)] max-sm:left-[8%] max-sm:bottom-[34%]" />
+        <Cursor name="Karl" color={KARL} host class="walk-karl top-[58%] left-[calc(50%-36rem)] hidden sm:block" />
       </div>
-    </section>
 
-    <aside
-      class="mx-auto flex max-w-3xl gap-3 rounded-lg border border-l-[3px] border-l-primary bg-card p-4 text-sm"
-    >
-      <TriangleAlert class="mt-0.5 size-4 shrink-0 text-primary" />
-      <p class="leading-relaxed">
-        <strong>A prototype.</strong> canvas runs agents and shells on the host's machine and lets
-        other people reach them. Don't use it for critical work, or where security is an absolute
-        requirement.{" "}<a class="underline underline-offset-3" href="/docs/security">Security</a
-        >{" · "}<a
-          class="underline underline-offset-3"
-          href="/docs/limits">Limits</a
-        >
-      </p>
-    </aside>
-
-    <figure class="mt-12">
-      <Image
-        src={board}
-        alt="A board: an agent frame, the file it opened at the relevant lines, a markdown plan, a terminal and a browser frame"
-        widths={[1000, 1600, 2000]}
-        sizes="(min-width: 72rem) 72rem, 100vw"
-        class="w-full rounded-lg border border-border shadow-sm"
-        loading="eager"
-      />
-      <figcaption class="mt-3 text-center text-sm text-muted-foreground">
-        An agent opened the login code at the relevant lines. Ada, a guest, points at the plan.
-      </figcaption>
-    </figure>
-
-    <section class="mt-20">
-      <h2 class="font-mono text-xl font-semibold">What's on the board</h2>
-      <div class="mt-6 grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
-        {
-          features.map((feature) => (
-            <a href={feature.href} class="group bg-card p-5 hover:bg-accent">
-              <h3 class="font-medium">{feature.title}</h3>
-              <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{feature.body}</p>
+      <div class="relative mx-auto flex max-w-6xl items-center px-6 pb-72 sm:min-h-[46rem] sm:pb-0 lg:min-h-[52rem]">
+        <div class="headline-pool mx-auto max-w-5xl px-4 py-14 text-center sm:px-20 sm:py-20">
+          <h1 class="text-[2.75rem] leading-[1.04] font-semibold tracking-[-0.03em] sm:text-6xl lg:text-[3.5rem]">
+            <span class="sm:whitespace-nowrap">A canvas for coding agents</span><br class="hidden sm:block" /> and humans
+          </h1>
+          <p class="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground text-pretty">
+            A multiplayer board whose frames are coding agents, your project's files, terminals and
+            previews. Serve it, send a link, work on it together. Free and open source. No account
+            needed.
+          </p>
+          <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              data-copy={command}
+              aria-label="Copy the command"
+              class="group inline-flex h-11 items-center gap-3 border border-border bg-card pr-2 pl-4 font-mono text-sm shadow-sm hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {command}
+              <span
+                class="inline-grid size-7 place-items-center rounded-md bg-muted text-muted-foreground group-hover:text-foreground"
+              >
+                <Copy class="size-3.5 group-data-copied:hidden" /><Check class="hidden size-3.5 group-data-copied:block" />
+              </span>
+            </button>
+            <a
+              href="/docs"
+              class="inline-flex h-11 items-center rounded-md bg-primary px-5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              Read the docs
             </a>
-          ))
-        }
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="mt-20">
-      <h2 class="font-mono text-xl font-semibold">Start</h2>
-      <ol class="mt-6 grid gap-4 sm:grid-cols-3">
-        {
-          steps.map((step, i) => (
-            <li class="rounded-lg border border-border bg-card p-5">
-              <span class="font-mono text-xs text-muted-foreground">{i + 1}</span>
-              <p class="mt-2 font-mono text-sm font-medium">{step.command}</p>
-              <p class="mt-1 text-sm text-muted-foreground">{step.body}</p>
-            </li>
-          ))
-        }
-      </ol>
-      <p class="mt-6 text-sm text-muted-foreground">
-        Needs{" "}<a class="underline underline-offset-3 hover:text-foreground" href="https://bun.sh"
-          >Bun</a
-        >{" "}and Claude Code or opencode on the host's machine. Guests need a browser.{" "}<a
-          class="underline underline-offset-3 hover:text-foreground"
-          href="/docs/quick-start">Quick start</a
-        >
-      </p>
-    </section>
+    {/* ---- one session, in four beats ------------------------------------ */}
+    <div class="mx-auto max-w-6xl px-6 pt-12 lg:pt-24">
+      <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[minmax(0,24rem)_1fr] lg:gap-20 lg:py-48">
+        <div>
+          <h2 class="text-3xl font-semibold tracking-tight text-balance">Write the prompt together.</h2>
+          <p class="mt-4 leading-relaxed text-muted-foreground">
+            An agent frame has one prompt draft, and everyone with edit access writes it at once,
+            each with their own caret. Ada asks the question, Karl adds the follow-up, and whoever
+            sends it signs it with their name.
+          </p>
+          <p class="mt-4 text-sm">
+            <a class="underline underline-offset-3 hover:text-primary" href="/docs/agent">Agent frames and prompt drafts</a>
+          </p>
+        </div>
+        <div class="relative min-h-[16rem] lg:min-h-[24rem]">
+          <div data-depth="0.18" class="back absolute top-0 right-[-6%] hidden w-[24rem] lg:block">
+            <Frame type="terminal" title="shell-1" class="h-[15rem]">
+              <Terminal>karl@dev:~/shop <span class="dim">$</span> bun test
+<span class="ok">✓</span> login › rejects a wrong password
+<span class="ok">✓</span> login › sets the session cookie
+<span class="ok">✓</span> products › lists the storefront
 
-    <section class="mt-20">
-      <h2 class="font-mono text-xl font-semibold">How it stays on your machine</h2>
-      <ul class="mt-6 grid gap-4 text-sm leading-relaxed sm:grid-cols-3">
-        <li class="rounded-lg border border-border bg-card p-5">
-          <p class="font-medium">One door</p>
-          <p class="mt-1 text-muted-foreground">
-            Only the host's browser talks to <code class="font-mono">canvas serve</code>, with a
-            token guests never see.
+ 12 pass, 0 fail  <span class="dim">[0.4 s]</span></Terminal>
+            </Frame>
+          </div>
+          <div data-depth="0.12" class="lg:absolute lg:top-1/2 lg:left-0 lg:w-[34rem] lg:-translate-y-1/2">
+            <Frame type="agent" title="claude-1" class="w-full max-w-[34rem]">
+              <Fragment slot="meta">
+                <span class="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px]">Claude Code</span>
+                <Avatar name="Ada" color={ADA} />
+                <Avatar name="Karl" color={KARL} class="-ml-3.5 ring-2 ring-card" />
+              </Fragment>
+              <div class="space-y-2 p-3 text-[12px] leading-relaxed text-muted-foreground">
+                <div class="border-l-2 bg-muted/60 px-2.5 py-1.5" style={`border-color:${KARL}`}>
+                  <div class="text-[10px] font-semibold tracking-wide uppercase" style={`color:${KARL}`}>Karl</div>
+                  Run the tests and tell me the result in one sentence.
+                </div>
+                <p>All 12 tests pass, in 0.4 s.</p>
+              </div>
+              <Composer />
+            </Frame>
+            <Cursor name="Karl" color={KARL} host class="top-[68%] left-[54%]" />
+          </div>
+        </div>
+      </section>
+
+      <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[1fr_minmax(0,24rem)] lg:gap-20 lg:py-48">
+        <div class="lg:order-2">
+          <h2 class="text-3xl font-semibold tracking-tight text-balance">The agent answers on the board.</h2>
+          <p class="mt-4 leading-relaxed text-muted-foreground">
+            Ask for the code that handles login and the agent doesn't paste it into its reply. It
+            opens the file next to itself, at the relevant lines. Agents open files, terminals,
+            previews and other agents through the board tools, and lay them out by the same rules
+            people use.
           </p>
-        </li>
-        <li class="rounded-lg border border-border bg-card p-5">
-          <p class="font-medium">Host decides</p>
-          <p class="mt-1 text-muted-foreground">
-            Guests' prompts wait for the host's approval. Agents' permission requests are the host's
-            alone.
+          <p class="mt-4 text-sm">
+            <a class="underline underline-offset-3 hover:text-primary" href="/docs/board-tools">Board tools</a>
           </p>
-        </li>
-        <li class="rounded-lg border border-border bg-card p-5">
-          <p class="font-medium">Files read-only</p>
-          <p class="mt-1 text-muted-foreground">
-            Guests see only files git tracks or would track, never <code class="font-mono">.env</code>,
-            keys or <code class="font-mono">.git</code>.
+        </div>
+        <div class="relative min-h-[22rem] lg:order-1 lg:min-h-[30rem]">
+          <div data-depth="0.18" class="back absolute top-[-6%] left-[-10%] hidden w-[24rem] lg:block">
+            <Frame type="browser" title="shop" class="h-[15rem]">
+              <Shop />
+            </Frame>
+          </div>
+          <div data-depth="0.12" class="flex items-start gap-3 lg:absolute lg:top-1/2 lg:right-0 lg:-translate-y-1/2">
+            <Frame type="agent" title="claude-1" class="hidden w-[19rem] shrink-0 sm:block">
+              <Fragment slot="meta"><Avatar name="Karl" color={KARL} /></Fragment>
+              <Thread author="Ada" color={ADA} prompt={prompt} />
+            </Frame>
+            <div class="arrives w-full max-w-[26rem] shrink-0 lg:w-[26rem]">
+              <Frame type="file" title="login.ts" class="h-[22rem]">
+                <Fragment slot="meta">
+                  <span class="font-mono text-[10px]">src/routes/login.ts</span>
+                  <Avatar name="claude-1" color="#a855f7" />
+                </Fragment>
+                <div class="flex h-full">
+                  <FileTree />
+                  <Code code={login} highlight={[5, 13]} class="flex-1 pt-2" />
+                </div>
+              </Frame>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[minmax(0,24rem)_1fr] lg:gap-20 lg:py-48">
+        <div>
+          <h2 class="text-3xl font-semibold tracking-tight text-balance">Look at the same thing.</h2>
+          <p class="mt-4 leading-relaxed text-muted-foreground">
+            Press a frame and it's yours: your avatar sits in its header, and everyone following you
+            sees it ringed in your colour. When you scroll, they scroll. "Look at this" needs no
+            line numbers. Pointers and text selections show in everyone's colour too.
           </p>
-        </li>
-      </ul>
-      <p class="mt-6 text-sm">
-        <a class="underline underline-offset-3" href="/docs/architecture">Architecture</a>{" · "}<a
-          class="underline underline-offset-3"
-          href="/docs/security">Security</a
-        >
-      </p>
+          <p class="mt-4 text-sm">
+            <a class="underline underline-offset-3 hover:text-primary" href="/docs/focus">Focus and following</a>
+          </p>
+        </div>
+        <div class="relative min-h-[18rem] lg:min-h-[26rem]">
+          <div data-depth="0.18" class="back absolute top-0 right-[-6%] hidden w-[22rem] lg:block">
+            <Frame type="agent" title="claude-1" class="h-[20rem]">
+              <Fragment slot="meta"><Avatar name="Karl" color={KARL} /></Fragment>
+              <Thread author="Ada" color={ADA} prompt={prompt} />
+            </Frame>
+          </div>
+          <div data-depth="0.12" class="lg:absolute lg:top-1/2 lg:left-0 lg:-translate-y-1/2">
+            <Frame type="file" title="login.ts" ring={ADA} class="h-[18rem] w-full max-w-[30rem]">
+              <Fragment slot="meta">
+                <span class="font-mono text-[10px]">src/routes/login.ts</span>
+                <Avatar name="Ada" color={ADA} />
+              </Fragment>
+              <div class="h-full overflow-hidden">
+                <Code code={login} highlight={[5, 13]} class="follow-scroll pt-2" />
+              </div>
+            </Frame>
+            <Cursor name="Ada" color={ADA} class="walk-follow top-[30%] left-[45%]" />
+          </div>
+        </div>
+      </section>
+
+      <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[1fr_minmax(0,24rem)] lg:gap-20 lg:py-48">
+        <div class="lg:order-2">
+          <h2 class="text-3xl font-semibold tracking-tight text-balance">Your machine stays yours.</h2>
+          <p class="mt-4 leading-relaxed text-muted-foreground">
+            Guests connect straight to the host's browser, and the host's browser is the only thing
+            that talks to <code class="font-mono text-[0.9em]">canvas serve</code>. With the default
+            guest access, every prompt a guest sends waits for the host's approval, and an agent's
+            permission requests are the host's alone to answer.
+          </p>
+          <p class="mt-3 leading-relaxed text-muted-foreground">
+            Files reach guests read-only, from a set <code class="font-mono text-[0.9em]">canvas serve</code>{" "}
+            fixes: what git tracks or would track. Never <code class="font-mono text-[0.9em]">.env</code>,
+            keys or <code class="font-mono text-[0.9em]">.git</code>.
+          </p>
+          <p class="mt-4 space-x-4 text-sm">
+            <a class="underline underline-offset-3 hover:text-primary" href="/docs/guests">Guest access</a>
+            <a class="underline underline-offset-3 hover:text-primary" href="/docs/security">Security</a>
+          </p>
+        </div>
+        <div class="relative min-h-[12rem] lg:order-1 lg:min-h-[24rem]">
+          <div data-depth="0.18" class="back absolute top-0 left-[-8%] hidden w-[22rem] lg:block">
+            <Frame type="agent" title="claude-1" class="h-[15rem]">
+              <Fragment slot="meta">
+                <span class="flex items-center gap-1 font-mono text-[10px]"><span class="size-1.5 rounded-full bg-[#22c55e]"></span>idle</span>
+                <Avatar name="Ada" color={ADA} />
+              </Fragment>
+              <div class="p-3 text-[12px] leading-relaxed">
+                <div class="border-l-2 bg-muted/60 px-2.5 py-2" style={`border-color:${ADA}`}>
+                  <div class="mb-0.5 text-[10px] font-semibold tracking-wide uppercase" style={`color:${ADA}`}>Ada</div>
+                  {prompt}
+                </div>
+                <p class="mt-2 text-muted-foreground">waiting for the host to approve…</p>
+              </div>
+            </Frame>
+          </div>
+          <div data-depth="0.12" class="lg:absolute lg:top-1/2 lg:left-[26%] lg:-translate-y-1/2">
+            <div class="mb-3 inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-[13px] shadow-sm">
+              <span class="text-muted-foreground">Guests:</span> edit, I approve runs
+              <span class="mx-1 h-4 w-px bg-border"></span>
+              <span class="inline-flex items-center gap-1.5 font-medium"><Link class="size-3.5" /> Copy guest link</span>
+            </div>
+            <Approval />
+            <Cursor name="Karl" color={KARL} host class="top-[84%] left-[74%]" />
+          </div>
+        </div>
+      </section>
+    </div>
+
+    {/* ---- back on the board -------------------------------------------- */}
+    <section class="board board-fade-top relative mt-24 overflow-hidden lg:mt-40">
+      <div class="pointer-events-none absolute inset-0 hidden lg:block" aria-hidden="true">
+        <div data-depth="0.24" class="back absolute top-[46%] right-[calc(50%-38rem)] w-[20rem]">
+          <Frame type="agent" title="agent-1" class="h-[12rem]">
+            <div class="p-3 text-[12px]">
+              <p class="text-muted-foreground">Which agent runs this frame?</p>
+              <div class="mt-2 space-y-1.5">
+                <div class="flex items-center justify-between border border-border px-2.5 py-1.5"><span class="font-medium">Claude Code</span><span class="font-mono text-[10px] text-muted-foreground">claude</span></div>
+                <div class="flex items-center justify-between border border-border px-2.5 py-1.5"><span class="font-medium">opencode</span><span class="font-mono text-[10px] text-muted-foreground">opencode acp</span></div>
+              </div>
+            </div>
+          </Frame>
+        </div>
+        <div data-depth="0.18" class="absolute top-16 right-[calc(50%-46rem)] w-[30rem]">
+          <Frame type="terminal" title="shell-1" class="h-[15rem]">
+            <Terminal>karl@dev:~/shop <span class="dim">$</span> bunx @frebreco/canvas serve
+canvas serving /home/karl/shop
+
+  open the board as host:
+  <span class="warn">https://ui.canvas.frebreco.de/?room=LEXuANji…</span>
+
+  keep this link to yourself — it controls agents on this machine.
+  share the guest link from the board instead.</Terminal>
+          </Frame>
+        </div>
+        <Cursor name="Lynx" color={LYNX} class="walk-lynx top-[70%] right-[calc(50%-30rem)]" />
+        <Cursor name="Ada" color={ADA} class="walk-ada top-[62%] left-[calc(50%+8rem)]" />
+      </div>
+
+      <div class="relative mx-auto max-w-6xl px-6 py-24 lg:py-32">
+        <div class="max-w-xl">
+          <h2 class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Start a board.</h2>
+          <ol class="mt-8 space-y-5">
+            {
+              steps.map((step, i) => (
+                <li class="flex gap-4">
+                  <span class="mt-0.5 inline-grid size-6 shrink-0 place-items-center rounded-full bg-card font-mono text-xs font-medium ring-1 ring-border">
+                    {i + 1}
+                  </span>
+                  <p class="leading-relaxed">
+                    <strong class="font-medium">{step.head}</strong>{" "}
+                    <span class="text-muted-foreground">{step.body}</span>
+                  </p>
+                </li>
+              ))
+            }
+          </ol>
+          <p class="mt-8 leading-relaxed text-muted-foreground">
+            That's it. No account needed. All traffic is peer to peer by default and never passes
+            through external servers.
+          </p>
+          <div class="mt-10 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+            <button
+              type="button"
+              data-copy={command}
+              aria-label="Copy the command"
+              class="group inline-flex h-11 items-center gap-3 border border-border bg-card pr-2 pl-4 font-mono text-sm shadow-sm hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {command}
+              <span
+                class="inline-grid size-7 place-items-center rounded-md bg-muted text-muted-foreground group-hover:text-foreground"
+              >
+                <Copy class="size-3.5 group-data-copied:hidden" /><Check class="hidden size-3.5 group-data-copied:block" />
+              </span>
+            </button>
+            <a
+              href="/docs/quick-start"
+              class="inline-flex h-11 items-center rounded-md bg-primary px-5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              Quick start
+            </a>
+          </div>
+          <p class="mt-6 text-sm text-muted-foreground">
+            Needs{" "}<a class="underline underline-offset-3 hover:text-foreground" href="https://bun.sh">Bun</a>{" "}
+            and Claude Code or opencode on the host's machine. Developed and tested in Chromium.
+          </p>
+        </div>
+      </div>
     </section>
   </main>
 </Base>
+
+<script src="../scripts/landing.ts"></script>

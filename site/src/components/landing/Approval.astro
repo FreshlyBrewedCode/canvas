@@ -1,0 +1,26 @@
+---
+/*
+ * The approval card the host sees when a guest with edit access wants to run
+ * something on their machine, from `guests.md`.
+ */
+import Check from "@lucide/astro/icons/check";
+---
+
+<div
+  class="approval w-[22rem] max-w-full border border-border border-l-[3px] border-l-[#3b82f6] bg-card p-3 text-[13px] shadow-sm"
+  aria-hidden="true"
+>
+  <p><span class="font-semibold text-[#3b82f6]">Ada</span> wants to send a prompt</p>
+  <p class="mt-2 bg-muted/60 px-2.5 py-2 text-[12px] leading-relaxed">
+    Show me the code that handles login on the board, at the relevant lines. Then explain in two
+    sentences how a password is checked.
+  </p>
+  <div class="mt-3 flex items-center justify-end gap-3">
+    <span class="px-2 text-[12px] font-medium">Decline</span>
+    <span
+      class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground"
+    >
+      <Check class="size-3.5" /> Run on my machine
+    </span>
+  </div>
+</div>
