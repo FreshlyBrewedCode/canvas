@@ -146,6 +146,74 @@ describe("update_frame", () => {
   });
 });
 
+describe("file lists", () => {
+  const list = [
+    { display: "1 Overview.md", path: "canvas:scratch/auth.md" },
+    { display: "Auth/session.ts", path: "src/auth/session.ts", start_line: 5, end_line: 9 },
+    { display: "Auth/password.ts", path: "src/auth/password.ts" },
+  ];
+
+  test("open_frame with a list shows its first entry, and keeps the list", () => {
+    const { run, newest } = board(agent(0, 0));
+    run("open_frame", { type: "file", files: list, title: "Auth" });
+    expect(newest()).toMatchObject({
+      type: "file",
+      title: "Auth",
+      path: "canvas:scratch/auth.md",
+      lines: null,
+      files: [
+        { display: "1 Overview.md", path: "canvas:scratch/auth.md" },
+        { display: "Auth/session.ts", path: "src/auth/session.ts", lines: { start: 5, end: 9 } },
+        { display: "Auth/password.ts", path: "src/auth/password.ts" },
+      ],
+    });
+  });
+
+  test("a path picks what the frame shows first", () => {
+    const { run, newest } = board(agent(0, 0));
+    run("open_frame", { type: "file", files: list, path: "src/auth/password.ts" });
+    expect(newest()).toMatchObject({ path: "src/auth/password.ts", files: { length: 3 } });
+  });
+
+  test("view_board spells the list out, display → real path", () => {
+    const { run } = board(agent(0, 0));
+    run("open_frame", { type: "file", files: list, title: "Auth" });
+    expect(run("view_board")).toContain(
+      'list of 3: ["1 Overview.md" → canvas:scratch/auth.md, "Auth/session.ts" → src/auth/session.ts L5-9',
+    );
+  });
+
+  test("update_frame replaces the list, moving off a file no longer on it; [] removes it", () => {
+    const { run, frame, ids } = board(agent(0, 0), file(484, 0, "src/auth/password.ts"));
+    run("update_frame", { frame: ids[1], files: list });
+    expect(frame(ids[1]!)).toMatchObject({ path: "src/auth/password.ts", files: { length: 3 } });
+    run("update_frame", { frame: ids[1], files: [{ display: "x.ts", path: "src/x.ts" }] });
+    expect(frame(ids[1]!)).toMatchObject({ path: "src/x.ts", files: [{ display: "x.ts" }] });
+    run("update_frame", { frame: ids[1], files: [] });
+    expect(frame(ids[1]!)).toMatchObject({ path: "src/x.ts", files: null });
+  });
+
+  test("refuses lists the tree can't show", () => {
+    const { run } = board(agent(0, 0));
+    const open = (files: unknown) => () => run("open_frame", { type: "file", files });
+    expect(
+      open([
+        { display: "a", path: "a.ts" },
+        { display: "a", path: "b.ts" },
+      ]),
+    ).toThrow("twice");
+    expect(
+      open([
+        { display: "A", path: "a.ts" },
+        { display: "A/b", path: "b.ts" },
+      ]),
+    ).toThrow("a file and a folder");
+    expect(open([{ display: "../a", path: "a.ts" }])).toThrow("not a display path");
+    expect(open([{ display: "a" }])).toThrow("needs a path");
+    expect(open("a.ts")).toThrow("list of entries");
+  });
+});
+
 describe("the frame a call works on", () => {
   test("is the one opened or changed; looking and closing touch none", () => {
     const { touched, newest, ids } = board(

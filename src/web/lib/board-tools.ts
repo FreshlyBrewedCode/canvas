@@ -14,6 +14,7 @@ import type * as Y from "yjs";
 
 import type {
   CloseFrameArgs,
+  FileListEntry,
   OpenFrameArgs,
   UpdateFrameArgs,
   ViewBoardArgs,
@@ -37,10 +38,12 @@ import {
   promptText,
   removeFrame,
   updateFrame,
+  type FileEntry,
   type Frame,
   type LineRange,
   type NewFrame,
 } from "./board";
+import { checkDisplays, displayPath } from "./file-list";
 
 export interface BoardToolContext {
   readonly doc: Y.Doc;
@@ -122,6 +125,8 @@ function describe(ctx: BoardToolContext, frame: Frame): string {
       parts.push("file", JSON.stringify(frame.title), frame.path || "(no file picked)");
       if (frame.lines) parts.push(`L${frame.lines.start}-${frame.lines.end}`);
       if (frame.view) parts.push(`(${frame.view})`);
+      if (frame.files?.length)
+        parts.push(`list of ${frame.files.length}: [${frame.files.map(describeEntry).join(", ")}]`);
       break;
     case "browser":
       parts.push("browser", JSON.stringify(frame.title), frame.url);
@@ -153,8 +158,12 @@ function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs):
   let frame: Content;
   switch (args.type) {
     case "file": {
-      const path = filePath(args.path);
-      frame = { type: "file", path, title: basename(path), lines: lineRange(args) ?? null };
+      const files = fileList(args.files);
+      const first = files?.[0];
+      const path = args.path === undefined && first ? first.path : filePath(args.path);
+      const lines = args.path === undefined && first ? (first.lines ?? null) : lineRange(args);
+      frame = { type: "file", path, title: basename(path), lines: lines ?? null };
+      if (files) frame = { ...frame, files };
       break;
     }
     case "browser": {
@@ -196,9 +205,10 @@ function changeFrame(
 ): BoardToolResult {
   const frame = known(frames, args.frame);
   const patch: Record<string, unknown> = {};
-  const wantsFile = args.path !== undefined || args.start_line !== undefined || args.view;
+  const wantsFile =
+    args.path !== undefined || args.start_line !== undefined || args.view || args.files;
   if (wantsFile && frame.type !== "file")
-    throw new Error("path, lines and view only apply to file frames");
+    throw new Error("path, lines, view and files only apply to file frames");
   if (args.url !== undefined && frame.type !== "browser")
     throw new Error("url only applies to browser frames");
 
@@ -210,6 +220,14 @@ function changeFrame(
       if (defaultTitle) patch.title = basename(path);
     } else if (args.start_line !== undefined) patch.lines = lineRange(args);
     if (args.view) patch.view = args.view;
+    if (args.files !== undefined) {
+      const files = fileList(args.files);
+      patch.files = files;
+      // A new list shows its first entry, unless the frame is told what to show.
+      const first = files?.[0];
+      if (first && args.path === undefined && !files.some((e) => e.path === frame.path))
+        Object.assign(patch, { path: first.path, lines: first.lines ?? null, view: null });
+    }
   }
   if (frame.type === "browser" && args.url !== undefined) patch.url = webUrl(args.url);
   if (args.title) patch.title = args.title;
@@ -261,6 +279,29 @@ function lineRange(args: { start_line?: number; end_line?: number }): LineRange 
   if (!(start >= 1)) throw new Error("start_line must be a line number from 1");
   const end = Math.max(start, Math.floor(Number(args.end_line ?? start)) || start);
   return { start, end };
+}
+
+/** A list as the agent gave it (`canvas serve` turned content into paths); null for none. */
+function fileList(value: unknown): FileEntry[] | null | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) throw new Error("files must be a list of entries");
+  if (!value.length) return null;
+  const entries = value.map((item: FileListEntry): FileEntry => {
+    const display = displayPath(item?.display);
+    if (typeof item.path !== "string") throw new Error(`list entry ${display} needs a path`);
+    const path = filePath(item.path);
+    const lines = lineRange(item);
+    return lines ? { display, path, lines } : { display, path };
+  });
+  checkDisplays(entries.map((entry) => entry.display));
+  return entries;
+}
+
+function describeEntry(entry: FileEntry): string {
+  const lines = entry.lines ? ` L${entry.lines.start}-${entry.lines.end}` : "";
+  return entry.display === entry.path
+    ? `${entry.path}${lines}`
+    : `${JSON.stringify(entry.display)} → ${entry.path}${lines}`;
 }
 
 function webUrl(value: unknown): string {

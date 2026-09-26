@@ -45,9 +45,10 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|resume|focus|focus-agent|preview|scratch`; `files` wants the scratch repo of
-    finding 05, `tools`/`lines`/`scratch` the one of finding 07, `focus`/`focus-agent` a long file
-    and a long markdown file, finding 08, `preview` an HTML file and a loopback server, finding 09)
+    layout|arrange|resume|focus|focus-agent|preview|scratch|lists`; `files` wants the scratch
+    repo of finding 05, `tools`/`lines`/`scratch`/`lists` the one of finding 07,
+    `focus`/`focus-agent` a long file and a long markdown file, finding 08, `preview` an HTML file
+    and a loopback server, finding 09; `IDLE_MS` gives slow agents longer than 4 min per prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
     semantic-release reads. Every merge to `main` publishes `@frebreco/canvas@next` and deploys its

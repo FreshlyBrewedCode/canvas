@@ -1,6 +1,6 @@
-import { Code, Eye, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Code, Eye, FolderTree, ListTree, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { Root } from "hast";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -16,13 +16,15 @@ import {
   addFrame,
   allFrames,
   updateFrame,
+  type FileEntry,
   type FileView,
   type Frame,
   type LineRange,
 } from "@/lib/board";
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import { placeNew } from "../../shared/layout";
-import { useFile, useRoom } from "@/lib/room-context";
+import { entryFor } from "@/lib/file-list";
+import { useFile, useRoom, useTree } from "@/lib/room-context";
 import type { FileContent } from "../../shared/protocol";
 
 type FileFrameData = Extract<Frame, { type: "file" }>;
@@ -37,18 +39,38 @@ const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
  * A file of the host's working dir, read-only (ADR 0002). Which file and how
  * it is shown (markdown and HTML: rendered or source) are shared; the tree panel is
  * each viewer's own. Changes on disk — typically an agent's — flow in live.
+ *
+ * An agent may give the frame a list of files (ADR 0005): the tree then shows
+ * the list, at its display paths, and each viewer can switch to all files,
+ * where the file shown is selected at its real path.
  */
 export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly: boolean }) {
   const room = useRoom();
   const file = useFile(frame.path);
+  const allPaths = useTree();
   const previewable = hasPreview(frame.path);
   const scratch = frame.path.startsWith(SCRATCH_PREFIX);
   // Lines only show in the source; a range asked for means the source.
   const view: FileView = frame.view ?? (previewable && !frame.lines ? "preview" : "source");
-  // `view` guests don't get the tree (ADR 0002).
+  // `view` guests don't get the tree (ADR 0002), only a list.
   const canBrowse = !readOnly;
-  const [treeOpen, setTreeOpen] = useState(canBrowse && !frame.path);
+  // Every board change makes new frame objects: key the list by its content.
+  const listKey = frame.files?.length ? JSON.stringify(frame.files) : "";
+  const list = useMemo<FileEntry[] | null>(() => (listKey ? JSON.parse(listKey) : null), [listKey]);
+  const [allFiles, setAllFiles] = useState(false);
+  const showList = !!list && (!allFiles || !canBrowse);
+  const [treeOpen, setTreeOpen] = useState((canBrowse && !frame.path) || !!list);
   const tree = useRef<PanelImperativeHandle>(null);
+
+  // An agent gave the frame a list: show it.
+  const hadList = useRef(!!list);
+  useEffect(() => {
+    if (list && !hadList.current) {
+      setAllFiles(false);
+      tree.current?.expand();
+    }
+    hadList.current = !!list;
+  }, [list]);
 
   const toggleTree = () => {
     if (tree.current?.isCollapsed()) tree.current.expand();
@@ -60,9 +82,9 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   useEffect(() => {
     latest.current = frame;
   });
-  const open = useCallback(
-    (path: string, newFrame: boolean) => {
-      const { id, w, h } = latest.current;
+  const show = useCallback(
+    (path: string, lines: LineRange | null, title: string, newFrame: boolean) => {
+      const { id, w, h, files } = latest.current;
       if (newFrame) {
         const { rect, patches } = placeNew(
           allFrames(room.doc),
@@ -72,11 +94,46 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
             h,
           },
         );
-        addFrame(room.doc, { type: "file", path, title: basename(path), ...rect }, patches);
-      } else updateFrame(room.doc, id, { path, title: basename(path), view: null, lines: null });
+        addFrame(room.doc, { type: "file", path, title, lines, ...rect }, patches);
+      } else
+        updateFrame(room.doc, id, {
+          path,
+          view: null,
+          lines,
+          // A list's frame keeps the title its agent gave it.
+          ...(!files?.length && { title }),
+        });
     },
     [room.doc],
   );
+  const open = useCallback(
+    (path: string, newFrame: boolean) => show(path, null, basename(path), newFrame),
+    [show],
+  );
+  const openEntry = useCallback(
+    (display: string, newFrame: boolean) => {
+      const entry = latest.current.files?.find((e) => e.display === display);
+      if (entry) show(entry.path, entry.lines ?? null, basename(display), newFrame);
+    },
+    [show],
+  );
+  const listPaths = useMemo(() => list?.map((entry) => entry.display), [list]);
+  const badge = useCallback(
+    (display: string) => {
+      const entry = list?.find((e) => e.display === display);
+      if (!entry) return null;
+      const badges = [
+        entry.lines &&
+          (entry.lines.start === entry.lines.end
+            ? `L${entry.lines.start}`
+            : `L${entry.lines.start}–${entry.lines.end}`),
+        entry.path.startsWith(SCRATCH_PREFIX) && "scratch",
+      ].filter(Boolean);
+      return badges.join(" · ") || null;
+    },
+    [list],
+  );
+  const selectedEntry = list ? (entryFor(list, frame.path, frame.lines)?.display ?? "") : "";
 
   const body = (
     <FileBody
@@ -124,7 +181,22 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
               {view === "preview" ? <Code /> : <Eye />}
             </Button>
           )}
-          {canBrowse && (
+          {list && canBrowse && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="size-6"
+              title={showList ? "Show all files" : "Show the list"}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => {
+                setAllFiles(showList);
+                tree.current?.expand();
+              }}
+            >
+              {showList ? <FolderTree /> : <ListTree />}
+            </Button>
+          )}
+          {(canBrowse || list) && (
             <Button
               size="icon-sm"
               variant="ghost"
@@ -139,7 +211,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
         </>
       }
     >
-      {canBrowse ? (
+      {canBrowse || list ? (
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel
             panelRef={tree}
@@ -152,7 +224,20 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
             className="bg-muted/30"
           >
             {/* Collapsed panels keep their content laid out; don't let it leak. */}
-            {treeOpen && <FileTree path={frame.path} onOpen={open} />}
+            {treeOpen &&
+              (showList ? (
+                <FileTree
+                  key="list"
+                  paths={listPaths!}
+                  selected={selectedEntry}
+                  onOpen={openEntry}
+                  order={listPaths}
+                  badge={badge}
+                  readOnly={readOnly}
+                />
+              ) : (
+                <FileTree key="all" paths={allPaths} selected={frame.path} onOpen={open} />
+              ))}
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel minSize="30">{body}</ResizablePanel>

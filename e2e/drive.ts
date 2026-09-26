@@ -47,7 +47,7 @@ console.log("guest sees host");
 /** The host answers every tool permission the agent asks for until it goes idle. */
 async function approveUntilIdle(host: Page, guest: Page) {
   let shots = 0;
-  const deadline = Date.now() + 240_000;
+  const deadline = Date.now() + Number(process.env.IDLE_MS ?? 240_000);
   // The status flips to running a moment after sending.
   await new Promise((r) => setTimeout(r, 2000));
   while (Date.now() < deadline) {
@@ -1035,7 +1035,7 @@ if (step === "focus-agent") {
   await host.keyboard.press("Control+Enter");
   // While it works, the guest sees the agent in the frame it opened.
   let seen: string | null = null;
-  const deadline = Date.now() + 240_000;
+  const deadline = Date.now() + Number(process.env.IDLE_MS ?? 240_000);
   while (Date.now() < deadline) {
     const allow = host.locator("[data-permission-kind=allow_once]").first();
     if (await allow.isVisible().catch(() => false)) await allow.click();
@@ -1239,5 +1239,146 @@ if (step === "scratch") {
     await shot(guest, `71-${kind}-scratch-rewritten`);
   }
   await frame.screenshot({ path: `${out}/72-${kind}-scratch-thread.png` });
+}
+// An agent gathers a topic in one file frame with a list (ADR 0005): its
+// write-up, repo files at display paths and lines, a visualisation. People
+// click through it; each can switch to all files. Same project as `scratch`.
+if (step === "lists") {
+  const dir = process.env.DIR ?? "/tmp/canvas-scratch-demo";
+  const kind = process.env.AGENT ?? "claude";
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const wait = (ms = 800) => new Promise((r) => setTimeout(r, ms));
+  const gitStatus = () =>
+    Bun.spawnSync(["git", "status", "--porcelain"], { cwd: dir }).stdout.toString().trim();
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, kind);
+  const self = (await frame.getAttribute("data-frame"))!;
+  await place(host, self, { x: 0, y: 0 });
+  await frame
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 30000 });
+  const before = gitStatus();
+
+  await ask(
+    frame,
+    "Show us everything about login in this project in one file frame we can click through: a " +
+      "short write-up first, then the relevant source files grouped in folders by layer, at the " +
+      "relevant lines, and a small HTML visualisation of the flow last. Keep your reply short.",
+  );
+  let frames = await framesOf(host);
+  console.log("board:\n  " + frames.map(brief).join("\n  "));
+  const listed = frames.filter((f) => f.type === "file" && f.files?.length);
+  check(listed.length === 1, `one file frame with a list (${listed.length})`);
+  const target = listed[0]!;
+  const list: Array<{ display: string; path: string; lines?: { start: number; end: number } }> =
+    target.files;
+  console.log(
+    "list:\n  " +
+      list
+        .map((e) => `${e.display} → ${e.path}${e.lines ? ` L${e.lines.start}-${e.lines.end}` : ""}`)
+        .join("\n  "),
+  );
+  check(
+    frames.filter((f) => f.type === "file" && f.origin === self).length === 1,
+    "no frame per file",
+  );
+  check(list.some((e) => e.path.startsWith("canvas:scratch/")), "the list mixes in scratch files");
+  check(list.some((e) => !e.path.startsWith("canvas:scratch/")), "and project files");
+  check(gitStatus() === before, `the project is untouched (${gitStatus() || "clean"})`);
+
+  const frameOf = (p: Page) => p.locator(`[data-frame="${target.id}"]`);
+  const rows = (p: Page) =>
+    frameOf(p)
+      .locator("[role=treeitem][data-item-type=file]")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-item-path")));
+  const selectedRow = (p: Page) =>
+    frameOf(p).locator("[role=treeitem][aria-selected=true]").getAttribute("data-item-path");
+  for (const [p, who] of [[host, "host"], [guest, "guest"]] as const) {
+    await frameOf(p).locator("[role=treeitem]").first().waitFor({ timeout: 10000 });
+    const shown = await rows(p);
+    check(
+      JSON.stringify(shown) === JSON.stringify(list.map((e) => e.display)),
+      `${who}: the tree is the list, in the agent's order (${shown.join(" | ")})`,
+    );
+  }
+  // Whatever the agent built: a list with folders opens all of them, in the list's order.
+  const fixed = [
+    { display: "Zeta/b.ts", path: "src/auth/session.ts" },
+    { display: "Alpha/a.ts", path: "src/auth/password.ts", lines: { start: 2, end: 4 } },
+    { display: "Zeta/a.ts", path: "src/routes/login.ts" },
+    { display: "top.md", path: "README.md" },
+  ];
+  await place(host, target.id, { files: fixed });
+  await wait();
+  const fixedRows = await rows(guest);
+  // A folder sorts where its first entry is: Zeta's two files stay together.
+  const expected = ["Zeta/b.ts", "Zeta/a.ts", "Alpha/a.ts", "top.md"];
+  check(
+    JSON.stringify(fixedRows) === JSON.stringify(expected),
+    `folders all open, in the list's order (${fixedRows.join(" | ")})`,
+  );
+  await place(host, target.id, { files: list });
+  await wait();
+
+  const lined = list.find((e) => e.lines && !e.path.startsWith("canvas:scratch/"));
+  if (lined) {
+    const text = await frameOf(guest)
+      .locator(`[role=treeitem][data-item-path="${lined.display}"]`)
+      .innerText();
+    check(text.includes(`L${lined.lines!.start}`), `the lines show as a badge (${text.replace(/\s+/g, " ")})`);
+  }
+  for (const p of [host, guest]) await p.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await wait(1500);
+  await shot(host, `80-${kind}-list-host`);
+  await shot(guest, `80-${kind}-list-guest`);
+
+  // The guest clicks through: the frame follows for everyone, at the entry's lines.
+  const pick = lined ?? list[1]!;
+  await frameOf(guest).locator(`[role=treeitem][data-item-path="${pick.display}"]`).click();
+  await wait();
+  frames = await framesOf(host);
+  const now = frames.find((f) => f.id === target.id)!;
+  check(
+    now.path === pick.path && JSON.stringify(now.lines ?? null) === JSON.stringify(pick.lines ?? null),
+    `guest picks ${pick.display}: the frame shows ${now.path} ${JSON.stringify(now.lines)}`,
+  );
+  check(now.title === target.title, `the list keeps its title (${now.title})`);
+  check((await selectedRow(host)) === pick.display, "the host's list selects it too");
+  await frameOf(host).screenshot({ path: `${out}/81-${kind}-list-picked.png` });
+
+  // All files, for one viewer: the file shown is selected where it lives.
+  await frameOf(guest).getByTitle("Show all files").click();
+  await wait();
+  check((await selectedRow(guest)) === pick.path, `guest's full tree selects ${pick.path}`);
+  check(
+    (await rows(host)).length === list.length,
+    "the host still sees the list (the toggle is per viewer)",
+  );
+  await frameOf(guest).screenshot({ path: `${out}/82-${kind}-all-files.png` });
+  await frameOf(guest).getByTitle("Show the list").click();
+  await wait();
+
+  // A view guest sees the list, can't click through it, and gets no full tree.
+  await host.getByLabel("Guest access").selectOption("view");
+  await wait(1500);
+  const other = list.find((e) => e.display !== pick.display)!;
+  check((await rows(guest)).length === list.length, "view guest: sees the list");
+  await frameOf(guest).locator(`[role=treeitem][data-item-path="${other.display}"]`).click();
+  await wait();
+  check(
+    (await framesOf(host)).find((f) => f.id === target.id)!.path === pick.path,
+    "view guest: a click doesn't change the frame",
+  );
+  check((await selectedRow(guest)) === pick.display, "view guest: the selection snaps back");
+  check((await frameOf(guest).getByTitle("Show all files").count()) === 0, "view guest: no full tree");
+  await frameOf(guest).screenshot({ path: `${out}/83-${kind}-view-guest-list.png` });
+  await host.getByLabel("Guest access").selectOption("edit");
 }
 await browser.close();

@@ -47,7 +47,19 @@ interface ScratchContent {
   readonly content?: string;
 }
 
-export interface OpenFrameArgs extends Placement, FileTarget, ScratchContent {
+/** One entry of a file frame's list (ADR 0005): a file at a display path. */
+export interface FileListEntry extends ScratchContent {
+  readonly display: string;
+  readonly path?: string;
+  readonly start_line?: number;
+  readonly end_line?: number;
+}
+
+interface FileList {
+  readonly files?: ReadonlyArray<FileListEntry>;
+}
+
+export interface OpenFrameArgs extends Placement, FileTarget, ScratchContent, FileList {
   readonly type: FrameKind;
   readonly title?: string;
   readonly url?: string;
@@ -55,7 +67,7 @@ export interface OpenFrameArgs extends Placement, FileTarget, ScratchContent {
   readonly draft?: string;
 }
 
-export interface UpdateFrameArgs extends Placement, FileTarget, ScratchContent {
+export interface UpdateFrameArgs extends Placement, FileTarget, ScratchContent, FileList {
   readonly frame: string;
   readonly title?: string;
   readonly url?: string;
@@ -116,6 +128,37 @@ const scratchContent = {
   },
 };
 
+const fileList = {
+  files: {
+    type: "array",
+    description:
+      "file: a list of files for the frame's tree, for people to click through at their pace — " +
+      "e.g. the files of one feature, with a write-up first. Each entry is a project file or a " +
+      "scratch file at a display path you choose: make folders, rename, order it (a folder sorts " +
+      "where its first entry is; no folders for a flat list). The frame shows path, else the " +
+      "first entry. update_frame replaces the list; [] removes it.",
+    items: {
+      type: "object",
+      properties: {
+        display: {
+          type: "string",
+          description:
+            'Where it shows in the tree, e.g. "1 Overview.md" or "Auth/session.ts". Unique.',
+        },
+        path: { type: "string", description: "A project file or canvas:scratch/<name>." },
+        ...scratchContent,
+        start_line: {
+          type: "integer",
+          minimum: 1,
+          description: "Lines to open it at, shown as a badge.",
+        },
+        end_line: { type: "integer", minimum: 1 },
+      },
+      required: ["display"],
+    },
+  },
+};
+
 export const BOARD_TOOLS: ReadonlyArray<{
   readonly name: BoardToolName;
   readonly description: string;
@@ -142,7 +185,8 @@ export const BOARD_TOOLS: ReadonlyArray<{
     description:
       "Open a new frame on the board, in your own cluster unless placed next to another frame. " +
       "file: a project file (read-only, live), optionally at a line range which gets highlighted, " +
-      "or a scratch file: content you pass, kept by canvas outside the project. " +
+      "or a scratch file: content you pass, kept by canvas outside the project. A file frame can " +
+      "also carry a list of files (files): one frame to click through, instead of many. " +
       "browser: a URL, loaded by each viewer's own browser. terminal: an idle shell people can " +
       "type into. agent: another agent session; `draft` pre-fills its prompt, a person sends it.",
     inputSchema: {
@@ -151,6 +195,7 @@ export const BOARD_TOOLS: ReadonlyArray<{
         type: { type: "string", enum: ["file", "browser", "terminal", "agent"] },
         ...fileTarget,
         ...scratchContent,
+        ...fileList,
         url: { type: "string", description: "browser: an http(s) URL." },
         agent: { type: "string", description: "agent: which agent runs it (see view_board)." },
         draft: { type: "string", description: "agent: a prompt draft for people to send." },
@@ -164,7 +209,7 @@ export const BOARD_TOOLS: ReadonlyArray<{
     name: "update_frame",
     description:
       "Change a frame: point a file frame at another file, line range or new scratch file " +
-      "(content), switch a markdown " +
+      "(content), give it a list of files or replace it (files), switch a markdown " +
       "or HTML file between preview and source, change a browser frame's URL, rename a frame, or move " +
       "it next to another frame.",
     inputSchema: {
@@ -173,6 +218,7 @@ export const BOARD_TOOLS: ReadonlyArray<{
         frame: { type: "string", description: "Id of the frame to change." },
         ...fileTarget,
         ...scratchContent,
+        ...fileList,
         view: { type: "string", enum: ["preview", "source"] },
         url: { type: "string" },
         title: { type: "string" },
@@ -226,7 +272,7 @@ export function boardInstructions(frameId: string): string {
 
 Frames that sit close together form a cluster: people keep related work together that way, and your own cluster is your workspace. Within a cluster frames sit in rows; frames in a row share a height.
 
-The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NAMES.join(", ")}. Use them when showing something on the board helps the people you work with — e.g. asked to show the files relevant to a topic, open them as file frames at the relevant lines instead of pasting code. Don't use them when a plain answer is enough.
+The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NAMES.join(", ")}. Use them when showing something on the board helps the people you work with — e.g. asked to show the files relevant to a topic, show them on the board (one file, or a list of them) at the relevant lines instead of pasting code. Don't use them when a plain answer is enough.
 
 - Look first (view_board). Reuse or retarget a frame (update_frame) rather than open a duplicate.
 - New frames go into your cluster by default; that is almost always right. Keep it to a handful per request.
@@ -237,5 +283,6 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - A browser frame loads its URL in each viewer's own browser, so localhost means their machine, not this one: only the host sees a localhost URL, guests get a notice.
 - Scratch files hold what exists only to be shown on this board: a write-up, a diagram, an HTML visualisation. Pass the text as \`content\` (with a \`name\`) to open_frame or update_frame, or use write_board_file; canvas keeps them outside the project, as canvas:scratch/<name>. Don't write such files into the project for the board. Anything else — a temp file for your own work, a script, test data — goes wherever it would without canvas.
 - Any agent may read (read_board_file) and overwrite (write_board_file) any scratch file; view_board lists them.
+- To show several files for one topic, prefer one file frame with a list (files) over a frame per file: people click through it at their own pace. You decide the tree: display paths, folders, order, line ranges. A write-up (a scratch file) at the top and a visualisation at the bottom fit in the same list.
 - Markdown and HTML files render. HTML runs its scripts, but relative links and assets (CSS, images, other scripts) don't load, so inline them.`;
 }

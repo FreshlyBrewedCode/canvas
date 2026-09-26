@@ -21,6 +21,19 @@ The tree lists the [shared set](/docs/security#the-shared-set): the files `canva
 Anything outside it cannot be opened. It also lists the [scratch files](/docs/board-tools#scratch-files)
 agents wrote for the board, under `canvas:scratch`.
 
+## Lists
+
+An agent can give a files frame a **list**: the files of one topic, for you to click through at
+your own pace instead of one frame per file. The agent decides what the tree shows: its own
+folders and names, the order, and a line range per file, shown as a badge. A list can mix project
+files with [scratch files](/docs/board-tools#scratch-files), such as a write-up at the top and a
+visualisation at the bottom.
+
+- Picking a file in the list shows it for everyone, at its lines.
+- The **all files** button switches your tree between the list and all files. In all files, the
+  file shown is selected where it really lives. The switch is yours alone.
+- The status bar always shows the file's real path.
+
 ## Views
 
 - **Source**: syntax-highlighted, for any text file. Long files are virtualized.
@@ -50,4 +63,5 @@ sees the selection in your colour, labelled with your name.
 ## Guest access
 
 - **edit** and **trusted** guests open files and browse the tree, without approval.
-- **view** guests see the files others open, but get no tree and cannot open files.
+- **view** guests see the files others open, but get no tree and cannot open files. They see a
+  frame's list, but can't pick from it.

@@ -12,8 +12,8 @@ instead of pasting code into its reply.
 | Tool           | Does                                                                     |
 | -------------- | ------------------------------------------------------------------------ |
 | `view_board`   | Lists the agent's own cluster row by row, and summarises the others      |
-| `open_frame`   | Opens a frame: a file (optionally at a line range), a new scratch file, a browser, a terminal, an agent |
-| `update_frame` | Points a files frame at another file, lines or a new scratch file, switches preview/source (markdown, HTML), changes a URL, renames, moves |
+| `open_frame`   | Opens a frame: a file (optionally at a line range), a new scratch file, a list of files, a browser, a terminal, an agent |
+| `update_frame` | Points a files frame at another file, lines or a new scratch file, replaces its list, switches preview/source (markdown, HTML), changes a URL, renames, moves |
 | `close_frame`  | Removes a frame                                                          |
 | `read_board_file` | Reads a scratch file                                                  |
 | `write_board_file` | Creates a scratch file, or overwrites one                            |
@@ -46,6 +46,13 @@ project. `canvas serve` keeps it in `.canvas/scratch/`, and the frame shows it a
 
 Agents are told to use scratch files only for the board. Temp files for their own work go wherever
 they would without canvas.
+
+## Lists
+
+Asked for the files of one feature, an agent can put them in a single files frame as a
+[list](/docs/files#lists), instead of opening a frame per file. Each entry is a project file or a
+scratch file at a display path the agent picks, optionally with lines. So one frame can hold a
+write-up, the code at the relevant lines, and a visualisation.
 
 ## Placement
 

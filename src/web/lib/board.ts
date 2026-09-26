@@ -40,6 +40,8 @@ export type Frame = FrameBase &
         readonly view?: FileView | null;
         /** Lines to show and highlight (1-based, inclusive); null for none. */
         readonly lines?: LineRange | null;
+        /** An agent's list of files for the tree (ADR 0005); null for none. */
+        readonly files?: ReadonlyArray<FileEntry> | null;
       }
     | { readonly type: "browser"; readonly url: string }
     | { readonly type: "terminal" }
@@ -48,6 +50,15 @@ export type Frame = FrameBase &
 export interface LineRange {
   readonly start: number;
   readonly end: number;
+}
+
+/** One file of a list: shown in the tree at `display`, reading `path`. */
+export interface FileEntry {
+  readonly display: string;
+  /** A file of the shared set, or a scratch file (`canvas:scratch/…`). */
+  readonly path: string;
+  /** Lines to open it at, badged in the tree. */
+  readonly lines?: LineRange | null;
 }
 
 export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
