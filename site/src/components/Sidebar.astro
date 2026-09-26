@@ -1,0 +1,44 @@
+---
+import { SECTIONS, sortedDocs } from "../lib/docs";
+
+interface Props {
+  current: string;
+}
+
+const { current } = Astro.props;
+const entries = await sortedDocs();
+const groups = SECTIONS.map((section) => ({
+  section,
+  entries: entries.filter((entry) => entry.data.section === section),
+})).filter((group) => group.entries.length > 0);
+---
+
+<nav aria-label="Docs" class="text-sm space-y-7">
+  {
+    groups.map((group) => (
+      <div>
+        <p class="font-sans text-[11px] font-semibold tracking-wide uppercase text-muted-foreground mb-3">
+          {group.section}
+        </p>
+        <ul class="space-y-px border-l border-border">
+          {group.entries.map((entry) => (
+            <li>
+              <a
+                href={`/docs/${entry.id}`}
+                aria-current={entry.id === current ? "page" : undefined}
+                class:list={[
+                  "block -ml-px border-l py-1.5 pl-3 hover:text-foreground hover:border-border-strong",
+                  entry.id === current
+                    ? "border-primary text-foreground font-medium"
+                    : "border-transparent text-muted-foreground",
+                ]}
+              >
+                {entry.data.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))
+  }
+</nav>
