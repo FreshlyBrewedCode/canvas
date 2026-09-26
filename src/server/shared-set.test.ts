@@ -71,19 +71,19 @@ describe("SharedSet in a git repo", () => {
       expect(() => shared.resolve(path), path).toThrow();
   });
 
-  // Symlinks are listed by name; opening one checks where it points.
-  test("lists tracked and untracked files git does not ignore, minus secrets", () => {
-    expect(shared.list()).toEqual([
+  test("lists files git does not ignore, minus secrets and links out of the set", () => {
+    const expected = [
       ".env.example",
       ".github/workflows/ci.yml",
       ".gitignore",
       "README.md",
       "app-link.ts",
-      "dangling.md",
-      "env-link.md",
-      "etc-link",
       "src/app.ts",
-    ]);
+    ];
+    expect(shared.list()).toEqual(expected);
+    // Tracked links are told apart by git, untracked ones by lstat.
+    Bun.spawnSync(["git", "add", "-A"], { cwd: shared.dir });
+    expect(shared.list()).toEqual(expected);
   });
 });
 

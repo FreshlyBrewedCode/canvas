@@ -102,7 +102,12 @@ export class SharedSet {
       throw new Error(`${path} is not shared: in a hidden or dependency dir`);
   }
 
-  /** Every shared file, as working-dir-relative paths with `/` separators. */
+  /**
+   * Every shared file, as working-dir-relative paths with `/` separators.
+   * Symlinks are listed only if what they point at is shared too. Git knows
+   * which tracked files are links; only untracked ones need an lstat (one
+   * per file costs ~280 ms on a 21k-file repo, too slow for every change).
+   */
   list(): string[] {
     if (!this.git) return this.walk();
     const git = (...args: string[]) =>
@@ -110,10 +115,30 @@ export class SharedSet {
         .stdout.toString()
         .split("\0")
         .filter(Boolean);
-    const deleted = new Set(git("--deleted"));
-    return [...new Set(git("--cached", "--others", "--exclude-standard"))]
-      .filter((path) => !deleted.has(path) && !refusal(path))
+    const links: string[] = [];
+    // `<mode> <object> <stage>\t<path>`; 120000 is a symlink.
+    const tracked = git("--stage").map((entry) => {
+      const path = entry.slice(entry.indexOf("\t") + 1);
+      if (entry.startsWith("120000")) links.push(path);
+      return path;
+    });
+    const untracked = git("--others", "--exclude-standard");
+    for (const path of untracked)
+      if (lstatSync(join(this.dir, path), { throwIfNoEntry: false })?.isSymbolicLink())
+        links.push(path);
+    const hidden = new Set([...git("--deleted"), ...links.filter((path) => !this.shares(path))]);
+    return [...new Set([...tracked, ...untracked])]
+      .filter((path) => !hidden.has(path) && !refusal(path))
       .sort();
+  }
+
+  private shares(path: string): boolean {
+    try {
+      this.resolve(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private walk(): string[] {
@@ -127,7 +152,7 @@ export class SharedSet {
           visit(path);
         } else if (entry.isFile() || entry.isSymbolicLink()) {
           const rel = relative(this.dir, path).split(sep).join("/");
-          if (!refusal(rel)) paths.push(rel);
+          if (!refusal(rel) && (entry.isFile() || this.shares(rel))) paths.push(rel);
         }
       }
     };
