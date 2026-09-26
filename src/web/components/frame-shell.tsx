@@ -83,14 +83,21 @@ export function FrameShell({
         mode="move"
       >
         <Icon className="text-muted-foreground size-3.5 shrink-0" />
-        <input
-          aria-label="Frame title"
-          className="min-w-0 flex-1 truncate bg-transparent font-mono text-[13px] font-medium outline-none"
-          value={frame.title}
-          readOnly={readOnly}
-          onPointerDown={(event) => event.stopPropagation()}
-          onChange={(event) => updateFrame(room.doc, frame.id, { title: event.target.value })}
-        />
+        {/* As wide as the title, which the hidden copy sizes: the rest of the header drags. */}
+        <span className="grid min-w-0 grid-cols-[minmax(0,max-content)] font-mono text-[13px] font-medium">
+          <span aria-hidden className="invisible col-start-1 row-start-1 truncate whitespace-pre">
+            {frame.title}
+          </span>
+          <input
+            aria-label="Frame title"
+            className="col-start-1 row-start-1 w-full min-w-[4ch] truncate bg-transparent outline-none"
+            value={frame.title}
+            readOnly={readOnly}
+            onPointerDown={(event) => event.stopPropagation()}
+            onChange={(event) => updateFrame(room.doc, frame.id, { title: event.target.value })}
+          />
+        </span>
+        <span className="min-w-12 flex-1" />
         {status}
         {focus.occupant && <OccupantBadge frameId={frame.id} focus={focus} />}
         {actions}
