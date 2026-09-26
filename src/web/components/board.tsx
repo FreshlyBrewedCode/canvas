@@ -40,7 +40,10 @@ export function Board() {
   const { wrapRef, canvasRef, scale, ...viewport } = useBoardViewport(
     `canvas.viewport.${room.link.roomId}`,
   );
-  const readOnly = !room.isHost && room.roomState?.access === "view";
+  // A host tab another tab took over reaches no one until it takes the board back.
+  const readOnly = room.isHost
+    ? room.serverStatus === "replaced"
+    : room.roomState?.access === "view";
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
   useEffect(() => {
@@ -118,6 +121,7 @@ export function Board() {
 
         {!readOnly && <Toolbar onCreate={create} />}
         <Approvals />
+        <HostElsewhere />
         {frames.length === 0 && <EmptyBoard readOnly={readOnly} />}
 
         <div
@@ -301,6 +305,27 @@ function Pointers() {
   );
 }
 
+/** Host: another tab took over the board; this one waits until it is asked back. */
+function HostElsewhere() {
+  const room = useRoomState();
+  if (room.serverStatus !== "replaced") return null;
+  return (
+    <div
+      data-hud=""
+      data-host-elsewhere=""
+      data-status="blocked"
+      className="bg-card border-status-blocked/45 absolute top-3 left-1/2 flex w-[28rem] -translate-x-1/2 items-center gap-3 border border-l-[3px] border-l-[var(--status)] p-3 shadow-md"
+    >
+      <p className="text-xs leading-relaxed">
+        This board is open as host in another tab. Agents, terminals and files follow that tab.
+      </p>
+      <Button size="sm" onClick={() => room.takeOver()}>
+        Use here
+      </Button>
+    </div>
+  );
+}
+
 function Approvals() {
   const approvals = useApprovals();
   if (!approvals.length) return null;
@@ -381,7 +406,9 @@ function TopBar() {
   const connection = room.isHost
     ? room.serverStatus === "open"
       ? { label: "connected to canvas serve", tone: "complete" }
-      : { label: `canvas serve ${room.serverStatus ?? "…"}`, tone: "blocked" }
+      : room.serverStatus === "replaced"
+        ? { label: "host in another tab", tone: "blocked" }
+        : { label: `canvas serve ${room.serverStatus ?? "…"}`, tone: "blocked" }
     : room.hostOnline
       ? { label: "host online", tone: "complete" }
       : { label: "waiting for host…", tone: "ready" };

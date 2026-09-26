@@ -189,6 +189,7 @@ export class Room {
         (message) => this.onServer(message),
         (status) => {
           this.serverStatus = status;
+          if (status === "replaced") this.stepDown();
           if (status !== "open") {
             this.watched.clear();
             this.treeWatched = false;
@@ -864,6 +865,25 @@ export class Room {
       this.approvals = [...this.approvals, approval];
       this.emit("approvals");
     });
+  }
+
+  /** Host: be the host again after another tab took over (it steps down in turn). */
+  takeOver() {
+    this.server?.takeOver();
+  }
+
+  /**
+   * Host: another tab took over. Leave the room, so guests only hear the tab
+   * that has `canvas serve`; the next welcome joins it again.
+   */
+  private stepDown() {
+    void this.trystero?.leave();
+    this.trystero = null;
+    this.actions = null;
+    const clients = [...this.peerClients.values()].flatMap((ids) => [...ids]);
+    removeAwarenessStates(this.awareness, clients, "leave");
+    this.peerClients.clear();
+    for (const approval of [...this.approvals]) approval.resolve(false);
   }
 
   /** Host only: answer a tool-call permission the agent asked for. */

@@ -11,7 +11,8 @@ canvas is a prototype. These are known, and not bugs to report.
 
 - **The host's browser must be open.** It is the only way to `canvas serve`: without it nothing
   runs, board tools are unavailable, and board edits between guests wait.
-- **With several host tabs**, the first one connected runs the board tools.
+- **One host tab at a time.** Opening the host link again moves the board to the new tab; the
+  old one turns read-only until you press **Use here** there.
 - **Peer discovery uses public Nostr relays.** Some are down at any time; discovery usually
   succeeds through the others.
 

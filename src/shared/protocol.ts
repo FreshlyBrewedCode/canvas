@@ -157,6 +157,13 @@ export interface RoomSecrets {
   readonly hostPrivateKey: JsonWebKey;
 }
 
+/**
+ * Close code of a host browser's WebSocket when another one connected: one
+ * host tab at a time, and the replaced one must not reconnect by itself, or
+ * two tabs would take the connection from each other forever.
+ */
+export const HOST_REPLACED = 4001;
+
 export type ClientToServer =
   | { readonly t: "board-save"; readonly state: string }
   | { readonly t: "agent-create"; readonly id: string; readonly agent: AgentKind }
