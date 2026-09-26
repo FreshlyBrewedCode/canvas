@@ -73,9 +73,15 @@ and the `title` and `description` are reinstated as an H1 and a lead paragraph.
 `/docs/index.md` lists every page in sidebar order with its description, each linking to its `.md`
 source — fetch one URL to learn what exists, then fetch what you need. It is unlisted: not a
 collection entry, so the sidebar never shows it, and Pagefind only indexes HTML, so search ignores
-it. Its links are absolute, built from `site` in `astro.config.mjs` — **that value is currently the
-placeholder `https://docs.canvas.frebreco.de`**, so set it to the real domain before deploying or the
-index will point at nothing.
+it. Its links are absolute, built from `site` in `astro.config.mjs` (`https://canvas.frebreco.de`),
+so change that and `public/CNAME` together if the site ever moves.
+
+## Deploying
+
+`.github/workflows/site.yml` builds this package and deploys `dist/` to the canvas repo's GitHub
+Pages on every push to `main` that touches `site/**`, or by hand from the Actions tab. The custom
+domain comes from `public/CNAME`. The web app is not part of this site: it is served from
+`ui.canvas.frebreco.de` by the release workflow.
 
 ## Things that will bite you
 
