@@ -23,12 +23,15 @@ const SEGMENTED_MAX = 8;
 export function AgentSettings({
   settings,
   options,
+  known,
   disabled,
   onChange,
 }: {
   /** Last reported values — shown while the agent is not connected. */
   settings: ReadonlyArray<AgentSetting> | undefined;
   options: ReadonlyArray<AgentConfigOption> | undefined;
+  /** The session is known here; until then nothing says whether its agent is starting. */
+  known: boolean;
   disabled: boolean;
   onChange: (configId: string, value: AgentConfigValue) => Promise<void>;
 }) {
@@ -80,7 +83,8 @@ export function AgentSettings({
             <span className="truncate">settings</span>
           ) : (
             <>
-              <LoaderCircle className="size-3 animate-spin" /> starting agent…
+              <LoaderCircle className="size-3 animate-spin" />{" "}
+              {known ? "starting agent…" : "loading…"}
             </>
           )}
           {pending ? (
@@ -93,8 +97,8 @@ export function AgentSettings({
       <PopoverContent className="w-80 p-0" data-agent-settings-popover="">
         {!options ? (
           <p className="text-muted-foreground flex items-center gap-2 p-3 text-xs">
-            <LoaderCircle className="size-3.5 animate-spin" /> Starting the agent to list its
-            settings…
+            <LoaderCircle className="size-3.5 animate-spin" />
+            {known ? "Starting the agent to list its settings…" : "Loading the agent's settings…"}
           </p>
         ) : sorted.length === 0 ? (
           <p className="text-muted-foreground p-3 text-xs">This agent offers no settings.</p>

@@ -1,4 +1,12 @@
-import { Bot, ChevronRight, CircleStop, SendHorizontal, ShieldAlert, Wrench } from "lucide-react";
+import {
+  Bot,
+  ChevronRight,
+  CircleStop,
+  LoaderCircle,
+  SendHorizontal,
+  ShieldAlert,
+  Wrench,
+} from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -130,7 +138,12 @@ function AgentThread({
       }
     >
       <div className="flex h-full flex-col">
-        <Thread frameId={frame.id} events={session?.events ?? []} version={session?.version ?? 0} />
+        <Thread
+          frameId={frame.id}
+          events={session?.events ?? []}
+          version={session?.version ?? 0}
+          loading={room.hostOnline && (session ? session.loading : !room.isHost)}
+        />
         <div className="border-t">
           <CollabEditor
             text={text}
@@ -143,6 +156,7 @@ function AgentThread({
             <AgentSettings
               settings={session?.meta.settings}
               options={session?.options}
+              known={room.isHost || !!session}
               disabled={readOnly || !room.hostOnline}
               onChange={(configId, value) =>
                 room.act({ t: "agent-config", sessionId: frame.id, configId, value })
@@ -185,10 +199,13 @@ function Thread({
   frameId,
   events,
   version,
+  loading,
 }: {
   frameId: string;
   events: Parameters<typeof foldThread>[0];
   version: number;
+  /** The host has not sent the conversation yet. */
+  loading: boolean;
 }) {
   // `events` is appended in place; `version` is what changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,10 +236,16 @@ function Thread({
       }}
     >
       <div data-sel-root={frameId} className="relative space-y-4 p-3 select-text">
-        {turns.length === 0 && (
-          <p className="text-muted-foreground py-8 text-center text-xs">
-            No messages yet. Write a prompt below — the agent runs on the host's machine.
+        {loading ? (
+          <p className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-xs">
+            <LoaderCircle className="size-3.5 animate-spin" /> Loading the conversation…
           </p>
+        ) : (
+          turns.length === 0 && (
+            <p className="text-muted-foreground py-8 text-center text-xs">
+              No messages yet. Write a prompt below — the agent runs on the host's machine.
+            </p>
+          )
         )}
         {turns.map((turn) => (
           <TurnView key={turn.id} turn={turn} frameId={frameId} />
