@@ -92,8 +92,11 @@ function beats(a: Occupant, b: Occupant): boolean {
   return a.since < b.since || (a.since === b.since && a.clientId < b.clientId);
 }
 
-/** Agents' colours: the presence hues again, picked by session id. */
-const AGENT_COLORS = ["#14b8a6", "#a855f7", "#eab308", "#22c55e", "#ec4899", "#3b82f6"];
+/**
+ * Agents' colours: presence hues, picked by session id. Not yellow: that is
+ * the highlight of the lines an agent points a file frame at.
+ */
+const AGENT_COLORS = ["#14b8a6", "#a855f7", "#22c55e", "#ec4899", "#3b82f6"];
 
 export function agentColor(sessionId: string): string {
   let hash = 0;
