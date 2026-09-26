@@ -45,4 +45,6 @@ canvas
     the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file, finding 08)
   - conventional commits; spike → prototype → validate → harden
 
-- docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence
+- docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence; `site/` the public
+  landing page and user docs (Astro, own package, see `site/README.md`). A user-visible change
+  updates the page in `site/content/docs/` that describes it, in the terms of its Glossary
