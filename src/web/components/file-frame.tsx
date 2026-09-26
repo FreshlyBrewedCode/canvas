@@ -20,6 +20,7 @@ import {
   type Frame,
   type LineRange,
 } from "@/lib/board";
+import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import { placeNew } from "../../shared/layout";
 import { useFile, useRoom } from "@/lib/room-context";
 import type { FileContent } from "../../shared/protocol";
@@ -41,6 +42,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   const room = useRoom();
   const file = useFile(frame.path);
   const previewable = hasPreview(frame.path);
+  const scratch = frame.path.startsWith(SCRATCH_PREFIX);
   // Lines only show in the source; a range asked for means the source.
   const view: FileView = frame.view ?? (previewable && !frame.lines ? "preview" : "source");
   // `view` guests don't get the tree (ADR 0002).
@@ -94,7 +96,11 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
       status={
         <span
           className="text-muted-foreground max-w-[45%] truncate font-mono text-[11px]"
-          title={frame.path}
+          title={
+            scratch
+              ? `${frame.path}: written by an agent for the board, kept by canvas outside the project`
+              : frame.path
+          }
         >
           {frame.path}
         </span>

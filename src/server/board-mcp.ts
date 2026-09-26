@@ -12,12 +12,18 @@
  * paths are checked against the shared set here first (ADR 0002), so the
  * agent hears why a file can't be shown. It listens on loopback only: agents
  * run on this machine.
+ *
+ * Scratch files (ADR 0005) never reach the browser as content: a call's
+ * `content` becomes a file in `.canvas/scratch/` here, and the call goes on
+ * with its path. Reading and writing them needs no board, so those tools are
+ * answered here.
  */
 
 import { randomBytes } from "node:crypto";
 import type { McpServer } from "@agentclientprotocol/sdk";
 import { BOARD_SERVER_NAME, BOARD_TOOLS, boardInstructions } from "../shared/board-tools";
 import type { FileContent } from "../shared/protocol";
+import type { Scratch } from "./scratch";
 
 export interface BoardCall {
   readonly callId: string;
@@ -29,6 +35,7 @@ export interface BoardCall {
 export interface BoardMcpOptions {
   /** A file as the shared set lets it out. */
   readonly read: (path: string) => FileContent;
+  readonly scratch: Pick<Scratch, "create" | "write" | "read" | "list" | "remove">;
   /** Send a call to the host's browser; false if none is connected. */
   readonly relay: (call: BoardCall) => boolean;
   readonly timeoutMs?: number;
@@ -151,22 +158,57 @@ export class BoardMcp {
   private async call(
     sessionId: string,
     tool: string,
-    args: Record<string, unknown>,
+    input: Record<string, unknown>,
   ): Promise<ToolResult> {
     if (!BOARD_TOOLS.some((t) => t.name === tool)) return failed(`no tool ${tool}`);
-    let note = "";
-    if (typeof args.path === "string" && args.path.trim()) {
-      const path = args.path.trim().replace(/^(\.\/)+/, "");
-      const file = this.options.read(path);
-      if (file.kind === "denied") return failed(file.reason);
-      if (file.kind === "missing")
-        note = `\n(${path} doesn't exist yet; the frame shows it as soon as it is written.)`;
-      if (file.kind === "text" && typeof args.start_line === "number") {
-        const lines = file.text.split("\n").length - (file.text.endsWith("\n") ? 1 : 0);
-        if (args.start_line > lines) return failed(`${path} has ${lines} lines`);
+    const args = { ...input };
+    const notes: string[] = [];
+    // Content becomes a scratch file; the board only ever sees its path.
+    const created: string[] = [];
+    const undo = () => created.forEach((path) => this.options.scratch.remove(path));
+    try {
+      switch (tool) {
+        case "read_board_file":
+          return done(this.readScratch(args.path));
+        case "write_board_file":
+          return done(this.writeScratch(args));
       }
+      if (args.content !== undefined) {
+        if (args.path !== undefined) throw new Error("give either path or content, not both");
+        args.path = this.createScratch(args.name, args.content, created, notes);
+        delete args.content;
+        delete args.name;
+      } else if (typeof args.path === "string" && args.path.trim()) {
+        const path = args.path.trim().replace(/^(\.\/)+/, "");
+        const file = this.options.read(path);
+        if (file.kind === "denied") throw new Error(file.reason);
+        if (file.kind === "missing")
+          notes.push(`(${path} doesn't exist yet; the frame shows it as soon as it is written.)`);
+        if (file.kind === "text" && typeof args.start_line === "number") {
+          const lines = file.text.split("\n").length - (file.text.endsWith("\n") ? 1 : 0);
+          if (args.start_line > lines) throw new Error(`${path} has ${lines} lines`);
+        }
+      }
+    } catch (error) {
+      undo();
+      return failed((error as Error).message);
+    }
+    if (tool === "view_board") {
+      const scratch = this.options.scratch.list();
+      notes.push(
+        scratch.length ? `Scratch files: ${scratch.join(", ")}.` : "No scratch files yet.",
+      );
     }
 
+    const answer = await this.relay(sessionId, tool, args);
+    if (answer.isError) {
+      undo();
+      return answer;
+    }
+    return notes.length ? done([answer.content[0]!.text, ...notes].join("\n")) : answer;
+  }
+
+  private relay(sessionId: string, tool: string, args: Record<string, unknown>) {
     const callId = crypto.randomUUID();
     const result = new Promise<ToolResult>((resolve) => {
       const timer = setTimeout(
@@ -182,8 +224,41 @@ export class BoardMcp {
         "the board isn't open right now: it lives in the host's browser, which is not connected",
       );
     }
-    const answer = await result;
-    return note && !answer.isError ? done(answer.content[0]!.text + note) : answer;
+    return result;
+  }
+
+  /** A new scratch file for `content`; its path. Says so in `notes`. */
+  private createScratch(name: unknown, content: unknown, created: string[], notes: string[]) {
+    if (typeof content !== "string") throw new Error("content must be text");
+    if (typeof name !== "string" || !name.trim())
+      throw new Error("content needs a name for its scratch file, e.g. overview.md");
+    const path = this.options.scratch.create(name.trim(), content);
+    created.push(path);
+    const taken = !path.endsWith(`/${name.trim()}`);
+    notes.push(`Wrote scratch file ${path}${taken ? ` (${name.trim()} was taken)` : ""}.`);
+    return path;
+  }
+
+  private readScratch(path: unknown): string {
+    if (typeof path !== "string") throw new Error("path must be a canvas:scratch/… path");
+    const file = this.options.scratch.read(path.trim());
+    if (file.kind === "text") return file.text;
+    if (file.kind === "denied") throw new Error(file.reason);
+    if (file.kind === "missing")
+      throw new Error(`${path} doesn't exist; view_board lists the scratch files`);
+    throw new Error(`${path} can't be read`);
+  }
+
+  private writeScratch(args: Record<string, unknown>): string {
+    if (typeof args.path === "string" && args.path.trim()) {
+      if (args.name !== undefined) throw new Error("give either path (overwrite) or name (create)");
+      if (typeof args.content !== "string") throw new Error("content must be text");
+      this.options.scratch.write(args.path.trim(), args.content);
+      return `Wrote ${args.path.trim()}; frames showing it update.`;
+    }
+    const notes: string[] = [];
+    this.createScratch(args.name, args.content, [], notes);
+    return notes[0]!;
   }
 }
 

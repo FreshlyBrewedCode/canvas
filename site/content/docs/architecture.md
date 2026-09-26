@@ -61,6 +61,8 @@ browser folds the same log with the same code, so everyone renders an identical 
 
 When an agent calls a board tool, `canvas serve` relays the call to the host's browser, which runs
 it against the board document like a local edit. Paths are checked against the shared set first.
+Content for a scratch file stays with `canvas serve`: it writes the file and relays only its path, so
+the board document never holds file content.
 Layout rules (clusters, rows, placement) are pure geometry over frame positions, shared by the
 tools and the mouse.
 
@@ -73,6 +75,7 @@ Everything `canvas serve` keeps lives in `<project>/.canvas/`:
 | `room.json`             | Room id, room key, the host's key pair, the host token (mode `0600`) |
 | `board.bin`             | The latest state of the board                                 |
 | `sessions/<id>.ndjson`  | One agent session: its settings and its events                |
+| `scratch/<name>`        | Scratch files agents wrote for the board                      |
 
 Keeping `room.json` keeps the links valid across restarts. Delete `.canvas/` to start over with
 new links and an empty board.

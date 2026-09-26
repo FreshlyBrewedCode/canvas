@@ -11,6 +11,7 @@ import type { ClientToServer, ServerToClient } from "../shared/protocol";
 import { AgentManager, detectAgents } from "./agents";
 import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
+import { Scratch } from "./scratch";
 import { Store } from "./store";
 import { Terminals } from "./terminals";
 
@@ -31,15 +32,19 @@ export async function serve(options: ServeOptions) {
     for (const ws of clients) ws.send(text);
   };
 
+  // Scratch files are written by agents' board tools; `files` mirrors them.
+  const scratch = new Scratch(options.dir, (path) => files.scratchChanged(path));
   const files = new Files(
     options.dir,
     (path, file) => broadcast({ t: "file", path, file }),
     (paths) => broadcast({ t: "tree", paths }),
+    scratch,
   );
   process.on("exit", () => files.stop());
   // Board tools: an agent's call goes to one host browser (the board is there).
   const boardMcp = new BoardMcp({
     read: (path) => files.read(path),
+    scratch,
     relay: (call) => {
       const [ws] = clients;
       if (!ws) return false;

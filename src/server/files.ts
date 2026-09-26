@@ -8,11 +8,15 @@
  * One recursive watcher covers the working dir: editors and agents often
  * replace files rather than write them in place, and a frame may wait for a
  * file (or its directory) that does not exist yet.
+ *
+ * Scratch files (`canvas:scratch/…`, ADR 0005) are read and listed alongside;
+ * the watcher skips `.canvas/`, so `Scratch` reports its writes itself.
  */
 
 import { readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import { sep } from "node:path";
 import type { FileContent } from "../shared/protocol";
+import { isScratchPath, Scratch } from "./scratch";
 import { SharedSet } from "./shared-set";
 
 export const MAX_FILE_BYTES = 1024 * 1024;
@@ -35,11 +39,13 @@ export class Files {
     dir: string,
     private readonly onFile: (path: string, file: FileContent) => void,
     private readonly onTree: (paths: ReadonlyArray<string>) => void,
+    private readonly scratch: Scratch = new Scratch(dir),
   ) {
     this.shared = new SharedSet(dir);
   }
 
   read(path: string): FileContent {
+    if (isScratchPath(path)) return this.scratch.read(path);
     let absolute: string;
     try {
       absolute = this.shared.resolve(path);
@@ -83,6 +89,12 @@ export class Files {
     this.ensureWatcher();
   }
 
+  /** A scratch file was written: re-send it, and the tree if it is new. */
+  scratchChanged(path: string): void {
+    if (this.subscribers.has(path)) this.send(path);
+    if (this.treeWatched) this.sendTree();
+  }
+
   stop(): void {
     this.watcher?.close();
     if (this.timer) clearTimeout(this.timer);
@@ -97,7 +109,7 @@ export class Files {
   }
 
   private sendTree() {
-    const paths = this.shared.list();
+    const paths = [...this.shared.list(), ...this.scratch.list()];
     const key = paths.join("\0");
     if (key === this.lastTree) return;
     this.lastTree = key;

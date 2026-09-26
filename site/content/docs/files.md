@@ -18,7 +18,8 @@ for example because an agent edited it, everyone sees the new content.
   shown is shared.
 
 The tree lists the [shared set](/docs/security#the-shared-set): the files `canvas serve` lets out.
-Anything outside it cannot be opened.
+Anything outside it cannot be opened. It also lists the [scratch files](/docs/board-tools#scratch-files)
+agents wrote for the board, under `canvas:scratch`.
 
 ## Views
 
