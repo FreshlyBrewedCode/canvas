@@ -67,11 +67,18 @@ async function approveUntilIdle(host: Page, guest: Page) {
   throw new Error("agent never went idle");
 }
 
+/** Add an agent frame from the toolbar and pick which agent runs it. */
+async function newAgent(page: Page, kind: string) {
+  await page.locator("[data-hud]").getByRole("button", { name: "Agent" }).click();
+  const frame = page.locator("[data-frame-type=agent]").last();
+  await frame.locator(`[data-pick-agent=${kind}]`).click();
+  return frame;
+}
+
 const step = process.env.STEP ?? "basic";
 if (step === "approve") await approveUntilIdle(host, guest);
 if (step === "basic") {
-  await host.getByRole("button", { name: "opencode" }).click();
-  await host.locator("[data-frame-type=agent]").first().waitFor();
+  await newAgent(host, "opencode");
   await guest.locator("[data-frame-type=agent]").last().waitFor({ timeout: 10000 });
   console.log("guest sees agent frame");
   // Both write into the same prompt draft.
@@ -105,9 +112,7 @@ if (step === "basic") {
 }
 
 if (step === "claude") {
-  await host.getByRole("button", { name: "Claude Code" }).click();
-  const frame = host.locator("[data-frame-type=agent]").last();
-  await frame.waitFor();
+  const frame = await newAgent(host, "claude");
   const id = await frame.getAttribute("data-frame");
   await host.evaluate(
     ([frameId]) => {
@@ -241,5 +246,85 @@ if (step === "extras") {
   await new Promise((r) => setTimeout(r, 500));
   await shot(host, "05-host-board");
   await shot(guest, "05-guest-board");
+}
+if (step === "config") {
+  // Host: an agent frame starts with the agent picker.
+  await host.locator("[data-hud]").getByRole("button", { name: "Agent" }).click();
+  const frame = host.locator("[data-frame-type=agent]").last();
+  await frame.locator("[data-pick-agent]").first().waitFor();
+  await shot(host, "10-host-agent-picker");
+  await frame.locator("[data-pick-agent=claude]").click();
+  const id = await frame.getAttribute("data-frame");
+  const chip = frame.locator("[data-agent-settings]");
+  const guestChip = guest.locator(`[data-frame="${id}"] [data-agent-settings]`);
+  // The agent comes up on its own and reports its model.
+  const t0 = Date.now();
+  await chip.getByText("starting agent…").waitFor({ state: "detached", timeout: 30000 });
+  console.log(`settings listed after ${Date.now() - t0} ms:`, await chip.innerText());
+
+  // Host picks a model, then an effort the new model offers.
+  await chip.click();
+  const popover = host.locator("[data-agent-settings-popover]");
+  await popover.waitFor();
+  await shot(host, "11-host-settings-open");
+  await popover.locator("[data-choice=sonnet]").click();
+  await popover.locator("[data-setting=effort]").waitFor({ timeout: 10000 });
+  await popover
+    .locator("[data-setting=effort]")
+    .getByRole("button", { name: "High", exact: true })
+    .click();
+  await chip.getByText("High").waitFor({ timeout: 10000 });
+  await shot(host, "12-host-settings-changed");
+  await host.keyboard.press("Escape");
+  await guestChip
+    .getByText("Sonnet 5 · High")
+    .waitFor({ timeout: 10000 })
+    .catch(async (error: unknown) => {
+      console.log("guest chip:", await guestChip.innerText().catch(() => "(none)"));
+      await shot(guest, "12-guest-failed");
+      throw error;
+    });
+  console.log("guest sees:", await guestChip.innerText());
+
+  // Guest (edit access) asks for another effort; the host approves it.
+  await guestChip.click();
+  await guest
+    .locator("[data-agent-settings-popover] [data-setting=effort]")
+    .getByRole("button", { name: "Low", exact: true })
+    .click();
+  const approve = host.getByRole("button", { name: "Run on my machine" });
+  await approve.waitFor({ timeout: 10000 });
+  console.log("approval:", await host.locator("[data-status=ready] p").first().innerText());
+  await shot(host, "13-host-config-approval");
+  await approve.click();
+  await chip.getByText("Sonnet 5 · Low").waitFor({ timeout: 10000 });
+  await guest.keyboard.press("Escape");
+  console.log("after approval host sees:", await chip.innerText());
+
+  // The next prompt runs on the chosen model.
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type("Which Claude model are you? Answer in five words or fewer.");
+  await host.keyboard.press("Control+Enter");
+  await approveUntilIdle(host, guest);
+  console.log(
+    "reply:",
+    await frame.locator(".prose-canvas").last().innerText({ timeout: 10000 }),
+  );
+  await shot(guest, "14-guest-after-turn");
+
+  // opencode: hundreds of models, so the model list is searchable.
+  const oc = await newAgent(host, "opencode");
+  const ocChip = oc.locator("[data-agent-settings]");
+  await ocChip.getByText("starting agent…").waitFor({ state: "detached", timeout: 30000 });
+  await ocChip.click();
+  await host.locator("[data-agent-settings-popover] input[aria-label=Search]").fill("glm 5.3");
+  await shot(host, "15-host-opencode-search");
+  await host
+    .locator("[data-agent-settings-popover] [data-choice='opencode-go/glm-5.3']")
+    .click();
+  await host.locator("[data-agent-settings-popover] [data-setting=effort]").waitFor();
+  await shot(host, "16-host-opencode-effort");
+  await host.keyboard.press("Escape");
+  console.log("opencode chip:", await ocChip.innerText());
 }
 await browser.close();

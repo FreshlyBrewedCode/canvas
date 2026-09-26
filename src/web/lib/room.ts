@@ -28,6 +28,7 @@ import {
   removeAwarenessStates,
 } from "y-protocols/awareness";
 import type {
+  AgentConfigOption,
   AgentEvent,
   GuestAccess,
   GuestReply,
@@ -88,10 +89,7 @@ export class Room {
   peerList: Presence[] = [];
   error: string | null = null;
 
-  private readonly sessions = new Map<
-    string,
-    { meta: SessionMeta; events: AgentEvent[]; version: number }
-  >();
+  private readonly sessions = new Map<string, MirroredSession>();
   private readonly terminals = new Map<string, string>();
   private readonly listeners = new Map<Topic, Set<() => void>>();
   private readonly peerClients = new Map<string, Set<number>>();
@@ -101,6 +99,7 @@ export class Room {
   private actions: ReturnType<Room["makeActions"]> | null = null;
   private access: GuestAccess = "edit";
   private readonly watched = new Set<string>();
+  /** Terminals opened and agent sessions ensured since the server link came up. */
   private readonly opened = new Set<string>();
   private readonly writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -307,7 +306,11 @@ export class Room {
   }
 
   private sendSnapshot(peerId: string) {
-    const sessions = [...this.sessions.values()].map(({ meta, events }) => ({ meta, events }));
+    const sessions = [...this.sessions.values()].map(({ meta, events, options }) => ({
+      meta,
+      events,
+      ...(options && { options }),
+    }));
     void this.actions?.broadcast.send(json({ t: "sessions", sessions } satisfies HostBroadcast), {
       target: peerId,
     });
@@ -349,6 +352,8 @@ export class Room {
         return this.putMeta(message.meta);
       case "agent-event":
         return this.pushEvent(message.sessionId, message.event);
+      case "agent-options":
+        return this.putOptions(message.sessionId, message.options);
       case "term-data":
         return this.pushTerm(message.id, message.data);
     }
@@ -361,6 +366,7 @@ export class Room {
     this.sessions.set(snapshot.meta.id, {
       meta: snapshot.meta,
       events: [...snapshot.events],
+      options: snapshot.options,
       version: Date.now(),
     });
     this.emit(`session:${snapshot.meta.id}`);
@@ -371,8 +377,16 @@ export class Room {
     if (session) {
       session.meta = meta;
       session.version++;
-    } else this.sessions.set(meta.id, { meta, events: [], version: 0 });
+    } else this.sessions.set(meta.id, { meta, events: [], options: undefined, version: 0 });
     this.emit(`session:${meta.id}`);
+  }
+
+  private putOptions(sessionId: string, options: ReadonlyArray<AgentConfigOption>) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.options = options;
+    session.version++;
+    this.emit(`session:${sessionId}`);
   }
 
   private pushEvent(sessionId: string, event: AgentEvent) {
@@ -423,6 +437,9 @@ export class Room {
       case "agent-event":
         this.pushEvent(message.sessionId, message.event);
         return this.hostcast(message);
+      case "agent-options":
+        this.putOptions(message.sessionId, message.options);
+        return this.hostcast(message);
       case "term-data":
         this.pushTerm(message.id, message.data);
         return this.hostcast(message);
@@ -456,7 +473,11 @@ export class Room {
     return frames;
   }
 
-  /** Host: make sure every markdown frame is watched and every terminal is running. */
+  /**
+   * Host: make sure every markdown frame is watched, every terminal is
+   * running and every agent frame that has its agent picked has a session
+   * (which also brings up the agent, so its settings can be listed).
+   */
   private syncResources() {
     if (!this.isHost || this.server?.status !== "open") return;
     for (const frame of this.frames()) {
@@ -468,6 +489,10 @@ export class Room {
         this.watched.add(`${frame.id}:${frame.path}`);
         this.observeMarkdown(frame.id);
         this.server.send({ t: "file-watch", path: frame.path });
+      }
+      if (frame.type === "agent" && frame.agent && !this.opened.has(frame.id)) {
+        this.opened.add(frame.id);
+        this.server.send({ t: "agent-create", id: frame.id, agent: frame.agent });
       }
       if (frame.type === "terminal" && !this.opened.has(frame.id)) {
         this.opened.add(frame.id);
@@ -550,6 +575,9 @@ export class Room {
       }
       case "agent-cancel":
         this.server.send({ t: "agent-cancel", sessionId: request.sessionId });
+        return;
+      case "agent-config":
+        this.server.send({ ...request, t: "agent-config" });
         return;
       case "term-input":
         this.server.send({ t: "term-input", id: request.id, data: request.data });
@@ -634,6 +662,13 @@ export class Room {
     void this.trystero?.leave();
     this.awareness.destroy();
   }
+}
+
+interface MirroredSession {
+  meta: SessionMeta;
+  events: AgentEvent[];
+  options: ReadonlyArray<AgentConfigOption> | undefined;
+  version: number;
 }
 
 interface Hello {
