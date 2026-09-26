@@ -44,6 +44,7 @@ export async function serve(options: ServeOptions) {
   // Board tools: an agent's call goes to one host browser (the board is there).
   const boardMcp = new BoardMcp({
     read: (path) => files.read(path),
+    scratch,
     relay: (call) => {
       const [ws] = clients;
       if (!ws) return false;

@@ -14,6 +14,8 @@ export const BOARD_TOOL_NAMES = [
   "open_frame",
   "update_frame",
   "close_frame",
+  "read_board_file",
+  "write_board_file",
 ] as const;
 export type BoardToolName = (typeof BOARD_TOOL_NAMES)[number];
 
@@ -39,7 +41,13 @@ interface FileTarget {
   readonly end_line?: number;
 }
 
-export interface OpenFrameArgs extends Placement, FileTarget {
+/** A new scratch file to show (ADR 0005); `canvas serve` turns it into a `path`. */
+interface ScratchContent {
+  readonly name?: string;
+  readonly content?: string;
+}
+
+export interface OpenFrameArgs extends Placement, FileTarget, ScratchContent {
   readonly type: FrameKind;
   readonly title?: string;
   readonly url?: string;
@@ -47,7 +55,7 @@ export interface OpenFrameArgs extends Placement, FileTarget {
   readonly draft?: string;
 }
 
-export interface UpdateFrameArgs extends Placement, FileTarget {
+export interface UpdateFrameArgs extends Placement, FileTarget, ScratchContent {
   readonly frame: string;
   readonly title?: string;
   readonly url?: string;
@@ -56,6 +64,14 @@ export interface UpdateFrameArgs extends Placement, FileTarget {
 
 export interface CloseFrameArgs {
   readonly frame: string;
+}
+
+export interface ReadBoardFileArgs {
+  readonly path: string;
+}
+
+export interface WriteBoardFileArgs extends ScratchContent {
+  readonly path?: string;
 }
 
 /** Where scratch files live, as board paths name them. */
@@ -77,10 +93,27 @@ const placement = {
 const fileTarget = {
   path: {
     type: "string",
-    description: "File path relative to the project root, e.g. src/auth/session.ts.",
+    description:
+      "File path relative to the project root, e.g. src/auth/session.ts, or a scratch file: " +
+      "canvas:scratch/<name>.",
   },
   start_line: { type: "integer", minimum: 1, description: "First line to show and highlight." },
   end_line: { type: "integer", minimum: 1, description: "Last highlighted line (inclusive)." },
+};
+
+const scratchContent = {
+  content: {
+    type: "string",
+    description:
+      "Instead of path: the text of a new scratch file to show — content for this board only, " +
+      "like a write-up or an HTML visualisation. canvas keeps it outside the project.",
+  },
+  name: {
+    type: "string",
+    description:
+      "With content: the scratch file's name, e.g. auth-overview.md; its extension decides how " +
+      "it shows. A taken name gets a suffix; the result says which path you got.",
+  },
 };
 
 export const BOARD_TOOLS: ReadonlyArray<{
@@ -108,7 +141,8 @@ export const BOARD_TOOLS: ReadonlyArray<{
     name: "open_frame",
     description:
       "Open a new frame on the board, in your own cluster unless placed next to another frame. " +
-      "file: a project file (read-only, live), optionally at a line range which gets highlighted. " +
+      "file: a project file (read-only, live), optionally at a line range which gets highlighted, " +
+      "or a scratch file: content you pass, kept by canvas outside the project. " +
       "browser: a URL, loaded by each viewer's own browser. terminal: an idle shell people can " +
       "type into. agent: another agent session; `draft` pre-fills its prompt, a person sends it.",
     inputSchema: {
@@ -116,6 +150,7 @@ export const BOARD_TOOLS: ReadonlyArray<{
       properties: {
         type: { type: "string", enum: ["file", "browser", "terminal", "agent"] },
         ...fileTarget,
+        ...scratchContent,
         url: { type: "string", description: "browser: an http(s) URL." },
         agent: { type: "string", description: "agent: which agent runs it (see view_board)." },
         draft: { type: "string", description: "agent: a prompt draft for people to send." },
@@ -128,7 +163,8 @@ export const BOARD_TOOLS: ReadonlyArray<{
   {
     name: "update_frame",
     description:
-      "Change a frame: point a file frame at another file or line range, switch a markdown " +
+      "Change a frame: point a file frame at another file, line range or new scratch file " +
+      "(content), switch a markdown " +
       "or HTML file between preview and source, change a browser frame's URL, rename a frame, or move " +
       "it next to another frame.",
     inputSchema: {
@@ -136,6 +172,7 @@ export const BOARD_TOOLS: ReadonlyArray<{
       properties: {
         frame: { type: "string", description: "Id of the frame to change." },
         ...fileTarget,
+        ...scratchContent,
         view: { type: "string", enum: ["preview", "source"] },
         url: { type: "string" },
         title: { type: "string" },
@@ -152,6 +189,33 @@ export const BOARD_TOOLS: ReadonlyArray<{
       type: "object",
       properties: { frame: { type: "string", description: "Id of the frame to close." } },
       required: ["frame"],
+    },
+  },
+  {
+    name: "read_board_file",
+    description:
+      "Read a scratch file (canvas:scratch/<name>), e.g. one another agent wrote. view_board " +
+      "lists them.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "canvas:scratch/<name>" } },
+      required: ["path"],
+    },
+  },
+  {
+    name: "write_board_file",
+    description:
+      "Write a scratch file without opening a frame. With name: a new one. With path: overwrite " +
+      "an existing one (any agent's); every frame showing it updates. Show a new one with " +
+      "open_frame (path).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "canvas:scratch/<name> to overwrite." },
+        name: scratchContent.name,
+        content: { type: "string", description: "The file's full text." },
+      },
+      required: ["content"],
     },
   },
 ];
@@ -171,5 +235,7 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - A terminal frame is an idle shell for people; you cannot type into it. Run commands with your own tools.
 - An agent frame starts another agent. You can leave a draft prompt in it; only a person can send it.
 - A browser frame loads its URL in each viewer's own browser, so localhost means their machine, not this one: only the host sees a localhost URL, guests get a notice.
-- To show a page you wrote to everyone, open the HTML file as a file frame: it renders, scripts included, but relative links and assets (CSS, images, other scripts) don't load, so inline them.`;
+- Scratch files hold what exists only to be shown on this board: a write-up, a diagram, an HTML visualisation. Pass the text as \`content\` (with a \`name\`) to open_frame or update_frame, or use write_board_file; canvas keeps them outside the project, as canvas:scratch/<name>. Don't write such files into the project for the board. Anything else — a temp file for your own work, a script, test data — goes wherever it would without canvas.
+- Any agent may read (read_board_file) and overwrite (write_board_file) any scratch file; view_board lists them.
+- Markdown and HTML files render. HTML runs its scripts, but relative links and assets (CSS, images, other scripts) don't load, so inline them.`;
 }

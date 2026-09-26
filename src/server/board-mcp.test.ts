@@ -1,7 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { FileContent } from "../shared/protocol";
 import { BoardMcp, type BoardCall } from "./board-mcp";
+import { isScratchPath, Scratch } from "./scratch";
 
 describe("BoardMcp", () => {
   const calls: BoardCall[] = [];
@@ -10,13 +14,17 @@ describe("BoardMcp", () => {
     "src/auth.ts": { kind: "text", text: "a\nb\nc\n" },
     ".env": { kind: "denied", reason: ".env is not shared: looks like a secret" },
   };
+  const scratch = new Scratch(mkdtempSync(join(tmpdir(), "canvas-mcp-")));
   const mcp = new BoardMcp({
-    read: (path) => files[path] ?? { kind: "missing" },
+    read: (path) =>
+      isScratchPath(path) ? scratch.read(path) : (files[path] ?? { kind: "missing" }),
+    scratch,
     relay: (call) => {
       if (!online) return false;
       calls.push(call);
-      // The host's browser answers a moment later.
-      setTimeout(() => mcp.result(call.callId, call.tool !== "close_frame", `ran ${call.tool}`), 5);
+      // The host's browser answers a moment later; it refuses frame "gone".
+      const ok = call.tool !== "close_frame" && (call.args as { frame?: string }).frame !== "gone";
+      setTimeout(() => mcp.result(call.callId, ok, `ran ${call.tool}`), 5);
       return true;
     },
     timeoutMs: 200,
@@ -60,12 +68,14 @@ describe("BoardMcp", () => {
       "open_frame",
       "update_frame",
       "close_frame",
+      "read_board_file",
+      "write_board_file",
     ]);
   });
 
   test("relays a call to the host's browser, for the calling session", async () => {
     const result = await call("view_board", {});
-    expect(result).toEqual({ content: [{ type: "text", text: "ran view_board" }] });
+    expect(result.content[0]!.text).toStartWith("ran view_board");
     expect(calls.at(-1)).toMatchObject({ sessionId: "frame1", tool: "view_board", args: {} });
   });
 
@@ -86,6 +96,74 @@ describe("BoardMcp", () => {
     const missing = await call("update_frame", { frame: "f", path: "docs/new.md" });
     expect(missing.content[0]!.text).toContain("doesn't exist yet");
     expect(calls.length).toBe(before + 1);
+  });
+
+  test("content becomes a scratch file; the board only sees its path", async () => {
+    const opened = await call("open_frame", {
+      type: "file",
+      name: "overview.md",
+      content: "# Auth\n",
+      title: "Auth",
+    });
+    expect(opened.isError).toBeUndefined();
+    expect(opened.content[0]!.text).toContain("Wrote scratch file canvas:scratch/overview.md");
+    expect(calls.at(-1)!.args).toEqual({
+      type: "file",
+      path: "canvas:scratch/overview.md",
+      title: "Auth",
+    });
+    expect(scratch.read("canvas:scratch/overview.md")).toEqual({ kind: "text", text: "# Auth\n" });
+
+    const again = await call("update_frame", { frame: "f", name: "overview.md", content: "# 2" });
+    expect(again.content[0]!.text).toContain(
+      "canvas:scratch/overview-2.md (overview.md was taken)",
+    );
+    expect(calls.at(-1)!.args).toMatchObject({ path: "canvas:scratch/overview-2.md" });
+  });
+
+  test("a scratch file is removed again when the board refuses the call", async () => {
+    const refused = await call("update_frame", { frame: "gone", name: "orphan.md", content: "x" });
+    expect(refused.isError).toBe(true);
+    expect(scratch.list()).not.toContain("canvas:scratch/orphan.md");
+  });
+
+  test("content needs a name, and can't come with a path", async () => {
+    const before = calls.length;
+    expect((await call("open_frame", { type: "file", content: "x" })).content[0]!.text).toContain(
+      "needs a name",
+    );
+    const both = await call("open_frame", {
+      type: "file",
+      path: "a.md",
+      name: "a.md",
+      content: "x",
+    });
+    expect(both.content[0]!.text).toContain("not both");
+    expect(calls.length).toBe(before);
+  });
+
+  test("read_board_file and write_board_file need no board", async () => {
+    const before = calls.length;
+    online = false;
+    const created = await call("write_board_file", { name: "flow.html", content: "<p>1</p>" });
+    expect(created.content[0]!.text).toContain("canvas:scratch/flow.html");
+    await call("write_board_file", { path: "canvas:scratch/flow.html", content: "<p>2</p>" });
+    expect((await call("read_board_file", { path: "canvas:scratch/flow.html" })).content).toEqual([
+      { type: "text", text: "<p>2</p>" },
+    ]);
+    const missing = await call("read_board_file", { path: "canvas:scratch/nope.md" });
+    expect(missing.isError).toBe(true);
+    const repo = await call("read_board_file", { path: "src/auth.ts" });
+    expect(repo.content[0]!.text).toContain("not a scratch file");
+    const overwrite = await call("write_board_file", { path: "canvas:scratch/x.md", content: "" });
+    expect(overwrite.content[0]!.text).toContain("doesn't exist");
+    online = true;
+    expect(calls.length).toBe(before);
+  });
+
+  test("view_board lists the scratch files", async () => {
+    const text = (await call("view_board", {})).content[0]!.text;
+    expect(text).toContain("Scratch files: canvas:scratch/flow.html, canvas:scratch/overview-2.md");
   });
 
   test("says so when the board isn't open", async () => {

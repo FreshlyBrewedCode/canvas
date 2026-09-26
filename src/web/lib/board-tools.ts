@@ -265,7 +265,10 @@ function lineRange(args: { start_line?: number; end_line?: number }): LineRange 
 
 function webUrl(value: unknown): string {
   if (typeof value !== "string" || !/^https?:\/\/[^\s]+$/i.test(value.trim()))
-    throw new Error("a browser frame needs an http(s) URL");
+    throw new Error(
+      "a browser frame needs an http(s) URL; an HTML file of the project or a scratch file " +
+        "renders in a file frame (type file, path)",
+    );
   return value.trim();
 }
 

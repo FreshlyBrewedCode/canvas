@@ -78,6 +78,17 @@ describe("open_frame", () => {
     expect(text).toContain("(opened by you)");
   });
 
+  test("a scratch file opens like any file; content never lands in the board", () => {
+    const { run, newest } = board(agent(0, 0));
+    run("open_frame", { type: "file", path: "canvas:scratch/flow.html", content: "<p>x</p>" });
+    expect(newest()).toMatchObject({
+      type: "file",
+      path: "canvas:scratch/flow.html",
+      title: "flow.html",
+    });
+    expect(JSON.stringify(newest())).not.toContain("<p>x</p>");
+  });
+
   test("next to another frame, on the side asked", () => {
     const { run, newest, ids } = board(agent(0, 0));
     run("open_frame", { type: "terminal", next_to: ids[0], side: "below" });
