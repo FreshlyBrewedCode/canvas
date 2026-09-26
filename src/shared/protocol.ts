@@ -126,6 +126,9 @@ export interface SessionSnapshot {
   readonly options?: ReadonlyArray<AgentConfigOption>;
 }
 
+/** A session without its event log: what a guest sees before the history arrives. */
+export type SessionHead = Omit<SessionSnapshot, "events">;
+
 // ---------------------------------------------------------------------------
 // Files
 
@@ -268,9 +271,18 @@ export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly 
 /**
  * Host → guests: the mirrored agent sessions, terminals and open files, and
  * the file tree (not to `view` guests).
+ *
+ * A joining guest gets `sessions` first — every session on the board, without
+ * its log — then one `session-history` per session, shortest first, so a long
+ * thread holds up nobody else's.
  */
 export type HostBroadcast =
-  | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionSnapshot> }
+  | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionHead> }
+  | {
+      readonly t: "session-history";
+      readonly sessionId: string;
+      readonly events: ReadonlyArray<AgentEvent>;
+    }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage

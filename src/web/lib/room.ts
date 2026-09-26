@@ -38,8 +38,8 @@ import type {
   HostBroadcast,
   RoomState,
   ServerToClient,
+  SessionHead,
   SessionMeta,
-  SessionSnapshot,
 } from "../../shared/protocol";
 import { allFrames, type Frame } from "./board";
 import {
@@ -456,7 +456,7 @@ export class Room {
       void actions.update.send(Y.encodeStateAsUpdate(this.doc, new Uint8Array(vector)), {
         target: peerId,
       });
-      if (this.isHost) this.sendSnapshot(peerId);
+      if (this.isHost) void this.sendSnapshot(peerId);
     };
 
     actions.update.onMessage = (update, { peerId }) => {
@@ -488,31 +488,40 @@ export class Room {
     await this.actions.hello.send(json(hello), { target: peerId });
   }
 
-  private sendSnapshot(peerId: string) {
-    const sessions = [...this.sessions.values()].map(({ meta, events, options }) => ({
-      meta,
-      events,
-      ...(options && { options }),
-    }));
-    void this.actions?.broadcast.send(json({ t: "sessions", sessions } satisfies HostBroadcast), {
-      target: peerId,
-    });
-    for (const [id, data] of this.terminals) {
-      void this.actions?.broadcast.send(
-        json({ t: "term-data", id, data } satisfies HostBroadcast),
-        { target: peerId },
-      );
+  /**
+   * Host: bring a guest up to date. Session heads go first, then each
+   * session's history, shortest first, then terminals, files and the tree —
+   * one message at a time, as messages sent together share the channel and
+   * all arrive late.
+   */
+  private async sendSnapshot(peerId: string) {
+    const actions = this.actions;
+    if (!actions) return;
+    // A closed frame's session stays with the host: nothing on the board shows it.
+    const onBoard = new Set(this.frames().flatMap((f) => (f.type === "agent" ? [f.id] : [])));
+    const sessions = [...this.sessions.values()].filter((s) => onBoard.has(s.meta.id));
+    // All taken now: what changes from here on reaches the guest live.
+    const messages: HostBroadcast[] = [
+      {
+        t: "sessions",
+        sessions: sessions.map(({ meta, options }) => ({ meta, ...(options && { options }) })),
+      },
+      ...sessions
+        .map((s) => ({ sessionId: s.meta.id, events: s.events.slice() }))
+        .sort((a, b) => a.events.length - b.events.length)
+        .map(({ sessionId, events }) => ({ t: "session-history" as const, sessionId, events })),
+      ...[...this.terminals].map(([id, data]) => ({ t: "term-data" as const, id, data })),
+      ...[...this.files].map(([path, file]) => ({ t: "file" as const, path, file })),
+      ...(this.treePaths && this.access !== "view"
+        ? [{ t: "tree" as const, paths: this.treePaths }]
+        : []),
+    ];
+    try {
+      for (const message of messages)
+        await actions.broadcast.send(json(message), { target: peerId });
+    } catch {
+      // The guest left; it gets a new snapshot when it is back.
     }
-    for (const [path, file] of this.files) {
-      void this.actions?.broadcast.send(json({ t: "file", path, file } satisfies HostBroadcast), {
-        target: peerId,
-      });
-    }
-    if (this.treePaths && this.access !== "view")
-      void this.actions?.broadcast.send(
-        json({ t: "tree", paths: this.treePaths } satisfies HostBroadcast),
-        { target: peerId },
-      );
   }
 
   private hostcast(message: HostBroadcast) {
@@ -539,8 +548,10 @@ export class Room {
     switch (message.t) {
       case "sessions":
         this.sessions.clear();
-        for (const snapshot of message.sessions) this.putSession(snapshot);
+        for (const head of message.sessions) this.putSession(head, null);
         return;
+      case "session-history":
+        return this.putHistory(message.sessionId, message.events);
       case "agent-meta":
         return this.putMeta(message.meta);
       case "agent-event":
@@ -559,14 +570,26 @@ export class Room {
   // -------------------------------------------------------------------------
   // sessions & terminals (local mirror)
 
-  private putSession(snapshot: SessionSnapshot) {
-    this.sessions.set(snapshot.meta.id, {
-      meta: snapshot.meta,
-      events: [...snapshot.events],
-      options: snapshot.options,
+  /** A session with its log, or (null) one whose history is still on its way. */
+  private putSession(head: SessionHead, events: ReadonlyArray<AgentEvent> | null) {
+    this.sessions.set(head.meta.id, {
+      meta: head.meta,
+      events: events ? [...events] : [],
+      pending: events ? null : [],
+      options: head.options,
       version: Date.now(),
     });
-    this.emit(`session:${snapshot.meta.id}`);
+    this.emit(`session:${head.meta.id}`);
+  }
+
+  /** A session's history arrived: it comes before what arrived live meanwhile. */
+  private putHistory(sessionId: string, events: ReadonlyArray<AgentEvent>) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.pending) return;
+    session.events = [...events, ...session.pending];
+    session.pending = null;
+    session.version++;
+    this.emit(`session:${sessionId}`);
   }
 
   private putMeta(meta: SessionMeta) {
@@ -574,7 +597,14 @@ export class Room {
     if (session) {
       session.meta = meta;
       session.version++;
-    } else this.sessions.set(meta.id, { meta, events: [], options: undefined, version: 0 });
+    } else
+      this.sessions.set(meta.id, {
+        meta,
+        events: [],
+        pending: null,
+        options: undefined,
+        version: 0,
+      });
     this.emit(`session:${meta.id}`);
   }
 
@@ -589,6 +619,7 @@ export class Room {
   private pushEvent(sessionId: string, event: AgentEvent) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+    if (session.pending) return void session.pending.push(event);
     session.events.push(event);
     session.version++;
     this.emit(`session:${sessionId}`);
@@ -623,7 +654,7 @@ export class Room {
             "server",
           );
         this.sessions.clear();
-        for (const snapshot of message.sessions) this.putSession(snapshot);
+        for (const snapshot of message.sessions) this.putSession(snapshot, snapshot.events);
         this.roomState = {
           hostPeerId: selfId,
           access: this.access,
@@ -635,7 +666,7 @@ export class Room {
         this.join();
         this.syncResources();
         for (const peerId of Object.keys(this.trystero?.getPeers() ?? {}))
-          this.sendSnapshot(peerId);
+          void this.sendSnapshot(peerId);
         return;
       }
       case "agent-meta":
@@ -880,6 +911,8 @@ export class Room {
 interface MirroredSession {
   meta: SessionMeta;
   events: AgentEvent[];
+  /** Guests: live events held back until the session's history arrives; null once it has. */
+  pending: AgentEvent[] | null;
   options: ReadonlyArray<AgentConfigOption> | undefined;
   version: number;
 }
