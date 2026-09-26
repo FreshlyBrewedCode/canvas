@@ -2,7 +2,7 @@
  * One board session in the browser: the Yjs doc, presence, the trystero room
  * and — for the host — the link to `canvas serve`.
  *
- * Topology. Presence (cursors, selections) is a full mesh: every peer
+ * Topology. Presence (cursors, selections, frame focus) is a full mesh: every peer
  * broadcasts to every other. Everything with authority is a star around the
  * host's browser:
  *
@@ -42,6 +42,13 @@ import type {
   SessionSnapshot,
 } from "../../shared/protocol";
 import { allFrames, type Frame } from "./board";
+import {
+  resolveOccupants,
+  type AgentClaim,
+  type Focus,
+  type FrameScroll,
+  type Occupant,
+} from "./focus";
 import { runBoardTool } from "./board-tools";
 import { signHost, verifyHost } from "./host-key";
 import type { BoardLink, Identity } from "./link";
@@ -63,7 +70,22 @@ export interface Presence {
   };
   readonly pointer: { readonly x: number; readonly y: number } | null;
   readonly selection: Selection | null;
+  /** The frame we occupy, or would if nobody else did (see `focus.ts`). */
+  readonly focus: Focus | null;
+  /** Host only: the frames agents are working on. */
+  readonly agents?: ReadonlyArray<AgentClaim>;
 }
+
+/** A frame's occupant as one peer sees it. */
+export interface FrameFocus {
+  readonly occupant: Occupant | null;
+  /** We occupy it. */
+  readonly mine: boolean;
+  /** Someone else does and we follow their scroll (we haven't scrolled away). */
+  readonly following: boolean;
+}
+
+const FREE: FrameFocus = { occupant: null, mine: false, following: false };
 
 export type Selection = TextSelection | LineSelection;
 
@@ -93,6 +115,7 @@ type Topic =
   | "room"
   | "approvals"
   | "peers"
+  | "focus"
   | "tree"
   | `session:${string}`
   | `term:${string}`
@@ -134,19 +157,26 @@ export class Room {
   /** Terminals opened and agent sessions ensured since the server link came up. */
   private readonly opened = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private occupants = new Map<string, Occupant>();
+  /** Frames we scrolled away from, with whom we stopped following there. */
+  private readonly detached = new Map<string, string>();
+  private readonly focusViews = new Map<string, FrameFocus>();
+  /** Host: which frame each agent works on, published as our presence. */
+  private agentClaims: AgentClaim[] = [];
 
   constructor(
     readonly link: BoardLink,
     readonly identity: Identity,
   ) {
     this.isHost = link.host !== null;
-    this.setPresence({ pointer: null, selection: null });
+    this.setPresence({ pointer: null, selection: null, focus: null });
     this.doc.on("update", (update: Uint8Array, origin: unknown) =>
       this.onDocUpdate(update, origin),
     );
     this.awareness.on("change", () => {
       this.peerList = this.peers();
       this.emit("peers");
+      this.onFocusChange();
     });
     this.awareness.on("update", ({ added, updated, removed }: AwarenessChange, origin: unknown) =>
       this.onAwareness([...added, ...updated, ...removed], added, origin),
@@ -222,6 +252,119 @@ export class Room {
   rename(identity: Identity) {
     Object.assign(this.identity, identity);
     this.setPresence({});
+  }
+
+  // -------------------------------------------------------------------------
+  // frame focus (see `focus.ts`)
+
+  /**
+   * Who occupies a frame, and whether we follow them there; the same object
+   * while that holds (its `occupant.scroll` goes stale: see `occupantScroll`).
+   */
+  frameFocus(frameId: string): FrameFocus {
+    return this.focusViews.get(frameId) ?? FREE;
+  }
+
+  /** The occupant's scroll, for following it. */
+  occupantScroll(frameId: string): FrameScroll | null {
+    return this.occupants.get(frameId)?.scroll ?? null;
+  }
+
+  /**
+   * Pressed on a frame (or, with null, on the board): claim it if nobody
+   * else is there; if someone is, follow them and hold no frame ourselves.
+   */
+  focusFrame(frameId: string | null) {
+    const mine = this.localFocus();
+    if (frameId && mine?.frameId === frameId) return;
+    const occupant = frameId ? this.occupants.get(frameId) : undefined;
+    const taken = occupant?.kind === "person" && occupant.clientId !== this.doc.clientID;
+    const focus = frameId && !taken ? { frameId, since: Date.now(), scroll: null } : null;
+    if (focus || mine) this.setPresence({ focus });
+  }
+
+  /** We occupy the frame: tell followers where we scrolled it. */
+  publishScroll(frameId: string, scroll: FrameScroll) {
+    const mine = this.localFocus();
+    if (mine?.frameId !== frameId) return;
+    const last = mine.scroll;
+    if (last?.key === scroll.key && last.top === scroll.top && !!last.end === !!scroll.end) return;
+    this.setPresence({ focus: { ...mine, scroll } });
+  }
+
+  /** We scrolled a frame someone else occupies: stop following them there. */
+  detach(frameId: string) {
+    const occupant = this.occupants.get(frameId);
+    if (!occupant || this.frameFocus(frameId).mine) return;
+    this.detached.set(frameId, occupant.key);
+    this.refreshFocus();
+  }
+
+  /** Back to following whoever occupies the frame. */
+  follow(frameId: string) {
+    this.detached.delete(frameId);
+    this.refreshFocus();
+  }
+
+  /** Host: an agent works on a frame now, unless a person occupies it. */
+  claimForAgent(sessionId: string, frameId: string) {
+    if (!this.isHost) return;
+    if (this.occupants.get(frameId)?.kind === "person") return this.releaseAgent(sessionId);
+    const others = this.agentClaims.filter((c) => c.sessionId !== sessionId);
+    this.agentClaims = [...others, { sessionId, frameId, since: Date.now() }];
+    this.setPresence({ agents: this.agentClaims });
+  }
+
+  /** Host: an agent is done (its turn ended, or it closed its frame). */
+  releaseAgent(sessionId: string) {
+    if (!this.agentClaims.some((c) => c.sessionId === sessionId)) return;
+    this.agentClaims = this.agentClaims.filter((c) => c.sessionId !== sessionId);
+    this.setPresence({ agents: this.agentClaims });
+  }
+
+  private localFocus(): Focus | null {
+    return (this.awareness.getLocalState() as Presence | null)?.focus ?? null;
+  }
+
+  private onFocusChange() {
+    const titles = new Map(this.frames().map((f) => [f.id, f.title]));
+    this.occupants = resolveOccupants(
+      this.awareness.getStates() as Map<number, Presence>,
+      (sessionId) => titles.get(sessionId),
+    );
+    this.refreshFocus();
+    // Settle claims that lost: ours to an earlier person, an agent's to any person.
+    const mine = this.localFocus();
+    const lost = mine && this.occupants.get(mine.frameId)?.clientId !== this.doc.clientID;
+    const bumped = this.agentClaims.filter((c) => this.occupants.get(c.frameId)?.kind === "person");
+    if (lost || bumped.length)
+      queueMicrotask(() => {
+        if (lost) this.setPresence({ focus: null });
+        for (const claim of bumped) this.releaseAgent(claim.sessionId);
+      });
+  }
+
+  private refreshFocus() {
+    const ids = new Set([...this.focusViews.keys(), ...this.occupants.keys()]);
+    for (const frameId of ids) {
+      const occupant = this.occupants.get(frameId) ?? null;
+      const mine = occupant?.kind === "person" && occupant.clientId === this.doc.clientID;
+      const following = !!occupant && !mine && this.detached.get(frameId) !== occupant.key;
+      const last = this.focusViews.get(frameId);
+      const same =
+        last &&
+        last.mine === mine &&
+        last.following === following &&
+        last.occupant?.key === occupant?.key &&
+        last.occupant?.name === occupant?.name &&
+        last.occupant?.color === occupant?.color;
+      // Kept as is while only the scroll moves: frames re-render on who, not where.
+      if (same) continue;
+      if (occupant) this.focusViews.set(frameId, { occupant, mine, following });
+      else this.focusViews.delete(frameId);
+    }
+    // Scroll changes go out too: followers read them (`occupantScroll`) on this topic.
+    this.emit("focus");
   }
 
   private onAwareness(changed: number[], added: number[], origin: unknown) {
@@ -497,6 +640,8 @@ export class Room {
       }
       case "agent-meta":
         this.putMeta(message.meta);
+        // Its turn is over: it leaves the frame it worked on.
+        if (message.meta.status === "idle") this.releaseAgent(message.meta.id);
         return this.hostcast(message);
       case "agent-event":
         this.pushEvent(message.sessionId, message.event);
@@ -547,7 +692,7 @@ export class Room {
     let ok = true;
     let text: string;
     try {
-      text = runBoardTool(
+      const result = runBoardTool(
         {
           doc: this.doc,
           self: message.sessionId,
@@ -557,6 +702,8 @@ export class Room {
         message.tool,
         message.args,
       );
+      text = result.text;
+      if (result.frame) this.claimForAgent(message.sessionId, result.frame);
     } catch (error) {
       ok = false;
       text = error instanceof Error ? error.message : String(error);

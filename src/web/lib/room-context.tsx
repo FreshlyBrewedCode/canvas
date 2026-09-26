@@ -82,3 +82,12 @@ export function usePeers(): Presence[] {
     () => room.peerList,
   );
 }
+
+/** Who occupies a frame, and whether we follow them (see `focus.ts`). */
+export function useFrameFocus(frameId: string) {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("focus", onChange),
+    () => room.frameFocus(frameId),
+  );
+}

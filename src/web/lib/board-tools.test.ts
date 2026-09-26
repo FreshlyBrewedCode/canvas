@@ -15,10 +15,12 @@ function board(...frames: NewFrame[]) {
   const ids = frames.map((frame) => addFrame(doc, frame));
   const self = ids[0]!;
   const run = (name: string, args: Record<string, unknown> = {}) =>
-    runBoardTool({ doc, self, agents: AGENTS }, name, args);
+    runBoardTool({ doc, self, agents: AGENTS }, name, args).text;
+  const touched = (name: string, args: Record<string, unknown> = {}) =>
+    runBoardTool({ doc, self, agents: AGENTS }, name, args).frame;
   const frame = (id: string) => allFrames(doc).find((f) => f.id === id);
   const newest = () => allFrames(doc).find((f) => !ids.includes(f.id)) as Frame;
-  return { doc, ids, self, run, frame, newest };
+  return { doc, ids, self, run, touched, frame, newest };
 }
 
 const agent = (x: number, y: number): NewFrame => ({
@@ -130,6 +132,20 @@ describe("update_frame", () => {
     });
     expect(() => run("update_frame", { frame: ids[1], path: "a.ts" })).toThrow(/file frames/);
     expect(() => run("update_frame", { frame: ids[1] })).toThrow(/nothing to change/);
+  });
+});
+
+describe("the frame a call works on", () => {
+  test("is the one opened or changed; looking and closing touch none", () => {
+    const { touched, newest, ids } = board(
+      agent(0, 0),
+      file(484, 0, "a.ts"),
+      file(3000, 0, "b.ts"),
+    );
+    expect(touched("open_frame", { type: "terminal" })).toBe(newest().id);
+    expect(touched("update_frame", { frame: ids[1], start_line: 3 })).toBe(ids[1]);
+    expect(touched("view_board")).toBeUndefined();
+    expect(touched("close_frame", { frame: ids[2] })).toBeUndefined();
   });
 });
 

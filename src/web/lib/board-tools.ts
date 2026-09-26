@@ -51,21 +51,28 @@ export interface BoardToolContext {
   readonly status?: (frameId: string) => string | undefined;
 }
 
+export interface BoardToolResult {
+  /** For the model, and people reading the thread. */
+  readonly text: string;
+  /** The frame the call opened or changed: the agent works on it now (`focus.ts`). */
+  readonly frame?: string;
+}
+
 /** Run one tool call; throws with a message for the agent when it can't. */
-export function runBoardTool(ctx: BoardToolContext, name: string, args: unknown): string {
+export function runBoardTool(ctx: BoardToolContext, name: string, args: unknown): BoardToolResult {
   const frames = allFrames(ctx.doc);
   const self = frames.find((f) => f.id === ctx.self);
   if (!self) throw new Error("your frame is no longer on the board");
   const input = (args ?? {}) as Record<string, unknown>;
   switch (name) {
     case "view_board":
-      return viewBoard(ctx, frames, input as ViewBoardArgs);
+      return { text: viewBoard(ctx, frames, input as ViewBoardArgs) };
     case "open_frame":
       return openFrame(ctx, frames, input as unknown as OpenFrameArgs);
     case "update_frame":
       return changeFrame(ctx, frames, input as unknown as UpdateFrameArgs);
     case "close_frame":
-      return closeFrame(ctx, frames, input as unknown as CloseFrameArgs);
+      return { text: closeFrame(ctx, frames, input as unknown as CloseFrameArgs) };
     default:
       throw new Error(`no tool ${name}`);
   }
@@ -140,7 +147,7 @@ const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 // ---------------------------------------------------------------------------
 
-function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs): string {
+function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs): BoardToolResult {
   const numbered = (prefix: string, type: Frame["type"]) =>
     `${prefix}-${frames.filter((f) => f.type === type).length + 1}`;
   let frame: Content;
@@ -179,10 +186,14 @@ function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs):
   );
   if (args.type === "agent" && args.draft) promptText(ctx.doc, id).insert(0, args.draft);
   const where = args.next_to ? `${side(args.side)} of [${args.next_to}]` : "in your cluster";
-  return `Opened ${describe(ctx, reread(ctx, id))}, ${where}.`;
+  return { text: `Opened ${describe(ctx, reread(ctx, id))}, ${where}.`, frame: id };
 }
 
-function changeFrame(ctx: BoardToolContext, frames: Frame[], args: UpdateFrameArgs): string {
+function changeFrame(
+  ctx: BoardToolContext,
+  frames: Frame[],
+  args: UpdateFrameArgs,
+): BoardToolResult {
   const frame = known(frames, args.frame);
   const patch: Record<string, unknown> = {};
   const wantsFile = args.path !== undefined || args.start_line !== undefined || args.view;
@@ -214,7 +225,7 @@ function changeFrame(ctx: BoardToolContext, frames: Frame[], args: UpdateFrameAr
     updateFrame(ctx.doc, frame.id, patch);
     applyPatches(ctx.doc, moves);
   });
-  return `Updated ${describe(ctx, reread(ctx, frame.id))}.`;
+  return { text: `Updated ${describe(ctx, reread(ctx, frame.id))}.`, frame: frame.id };
 }
 
 function closeFrame(ctx: BoardToolContext, frames: Frame[], args: CloseFrameArgs): string {
