@@ -15,6 +15,7 @@ order: 5
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
 | **cluster**       | Frames within 48 px of each other. [Board](/docs/board#layout)              |
+| **file list**     | Files an agent picked for a files frame's tree, at display paths it chose. [Files](/docs/files#lists) |
 | **files frame**   | A frame showing one project file, read-only and live. [Files](/docs/files)  |
 | **follow**        | Scrolling with a frame's occupant. [Focus](/docs/focus)                     |
 | **frame**         | One thing on the board: an agent, a file, a terminal or a browser           |
