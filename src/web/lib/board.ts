@@ -11,7 +11,10 @@
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
-export type FrameType = "agent" | "markdown" | "browser" | "terminal";
+export type FrameType = "agent" | "file" | "browser" | "terminal";
+
+/** How a file frame shows its file; null is the file's default (preview for markdown). */
+export type FileView = "preview" | "source";
 
 interface FrameBase {
   readonly id: string;
@@ -26,20 +29,31 @@ interface FrameBase {
 export type Frame = FrameBase &
   (
     | { readonly type: "agent"; readonly agent: string }
-    | { readonly type: "markdown"; readonly path: string }
+    | {
+        readonly type: "file";
+        /** Working-dir-relative; "" until someone picks a file. */
+        readonly path: string;
+        readonly view?: FileView | null;
+      }
     | { readonly type: "browser"; readonly url: string }
     | { readonly type: "terminal" }
   );
 
 export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
   agent: { w: 460, h: 620 },
-  markdown: { w: 480, h: 560 },
+  file: { w: 720, h: 560 },
   browser: { w: 720, h: 520 },
   terminal: { w: 640, h: 400 },
 };
 
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
 export const promptText = (doc: Y.Doc, frameId: string) => doc.getText(`prompt:${frameId}`);
+
+/** One stored frame. Boards from before the files frame have `markdown` frames: files now. */
+export function readFrame(map: Y.Map<unknown>, id: string): Frame {
+  const value = map.toJSON() as Omit<Frame, "id"> | { type: "markdown" };
+  return (value.type === "markdown" ? { ...value, type: "file", id } : { ...value, id }) as Frame;
+}
 
 /**
  * In a stable order, not by `z`: frames stack by their z-index. Reordering
@@ -48,10 +62,7 @@ export const promptText = (doc: Y.Doc, frameId: string) => doc.getText(`prompt:$
  */
 function readFrames(doc: Y.Doc): Frame[] {
   const frames: Frame[] = [];
-  framesOf(doc).forEach((map, id) => {
-    const value = map.toJSON() as Omit<Frame, "id">;
-    frames.push({ ...value, id } as Frame);
-  });
+  framesOf(doc).forEach((map, id) => frames.push(readFrame(map, id)));
   return frames.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
@@ -76,7 +87,14 @@ export function useFrames(doc: Y.Doc): Frame[] {
   return useSyncExternalStore(store.subscribe, store.get);
 }
 
-export function addFrame(doc: Y.Doc, frame: Omit<Frame, "id" | "z">): string {
+/** A frame to add: any kind, without the id and stacking the board assigns. */
+export type NewFrame = Frame extends infer F
+  ? F extends Frame
+    ? Omit<F, "id" | "z">
+    : never
+  : never;
+
+export function addFrame(doc: Y.Doc, frame: NewFrame): string {
   const id = crypto.randomUUID().slice(0, 8);
   const z = topZ(doc) + 1;
   doc.transact(() => {

@@ -41,7 +41,7 @@ import type {
   SessionMeta,
   SessionSnapshot,
 } from "../../shared/protocol";
-import { framesOf, type Frame } from "./board";
+import { framesOf, readFrame, type Frame } from "./board";
 import { signHost, verifyHost } from "./host-key";
 import type { BoardLink, Identity } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
@@ -520,7 +520,7 @@ export class Room {
 
   private frames(): Frame[] {
     const frames: Frame[] = [];
-    framesOf(this.doc).forEach((map, id) => frames.push({ ...(map.toJSON() as Frame), id }));
+    framesOf(this.doc).forEach((map, id) => frames.push(readFrame(map, id)));
     return frames;
   }
 
@@ -534,7 +534,7 @@ export class Room {
     if (!this.isHost || this.server?.status !== "open") return;
     const frames = this.frames();
     const paths = new Set(
-      frames.flatMap((frame) => (frame.type === "markdown" && frame.path ? [frame.path] : [])),
+      frames.flatMap((frame) => (frame.type === "file" && frame.path ? [frame.path] : [])),
     );
     for (const path of paths) {
       if (this.watched.has(path)) continue;
@@ -546,7 +546,7 @@ export class Room {
       this.watched.delete(path);
       this.server.send({ t: "file-close", path });
     }
-    if (frames.some((frame) => frame.type === "markdown") && !this.treeWatched) {
+    if (frames.some((frame) => frame.type === "file") && !this.treeWatched) {
       this.treeWatched = true;
       this.server.send({ t: "tree-watch" });
     }

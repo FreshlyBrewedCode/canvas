@@ -1,11 +1,11 @@
-import { Bot, FileText, Globe, SquareTerminal, X } from "lucide-react";
+import { Bot, FileCode, Globe, SquareTerminal, X } from "lucide-react";
 import { useRef } from "react";
 
 import { raiseFrame, removeFrame, updateFrame, type Frame } from "@/lib/board";
 import { useRoom } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
 
-const ICONS = { agent: Bot, markdown: FileText, browser: Globe, terminal: SquareTerminal };
+const ICONS = { agent: Bot, file: FileCode, browser: Globe, terminal: SquareTerminal };
 
 /**
  * The chrome every frame shares: drag by the header, resize from the corner.

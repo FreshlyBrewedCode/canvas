@@ -327,4 +327,145 @@ if (step === "config") {
   await host.keyboard.press("Escape");
   console.log("opencode chip:", await ocChip.innerText());
 }
+
+// Run against a scratch repo made by the files validation (finding 05):
+// docs/adr/*.md, src/server/*.ts, big.ts (> 1 MiB), logo.png, .env, …
+if (step === "files") {
+  const dir = process.env.DIR ?? "/tmp/canvas-demo";
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let frameId = "";
+  const frameOf = (page: Page) => page.locator(`[data-frame="${frameId}"]`);
+  /** Find a file with the tree's search, then click it (rows are virtualized). */
+  const pick = async (page: Page, path: string, modifier = false) => {
+    const frame = frameOf(page);
+    const name = path.split("/").at(-1)!;
+    await frame.getByPlaceholder("Search").fill(name);
+    await frame
+      .locator(`[role=treeitem][data-item-path="${path}"]`)
+      .click({ modifiers: modifier ? ["ControlOrMeta"] : [] });
+    await frame.getByPlaceholder("Search").fill("");
+  };
+
+  const ids = () =>
+    host.locator("[data-frame]").evaluateAll((els) => els.map((el) => el.getAttribute("data-frame")));
+  const existing = new Set(await ids());
+  await host.locator("[data-hud]").getByRole("button", { name: "Files" }).click();
+  await host.waitForFunction((n) => document.querySelectorAll("[data-frame]").length > n, existing.size);
+  frameId = (await ids()).find((id) => !existing.has(id))!;
+  await frameOf(host).getByText("Pick a file from the tree.").waitFor({ timeout: 10000 });
+  await frameOf(guest).getByText("Pick a file from the tree.").waitFor({ timeout: 10000 });
+  await wait(800);
+  await shot(host, "20-host-tree");
+  const tree = await frameOf(guest)
+    .getByRole("treeitem")
+    .evaluateAll((rows) => rows.map((row) => row.textContent?.replace(/…/g, "")));
+  console.log("guest tree (top level):", tree.join(", "));
+
+  // Markdown: rendered by default, for everyone.
+  await pick(host, "docs/adr/0002-shared-files-read-only.md");
+  await frameOf(guest).locator(".prose-canvas h1").waitFor({ timeout: 10000 });
+  console.log("guest preview h1:", await frameOf(guest).locator(".prose-canvas h1").innerText());
+  await shot(guest, "21-guest-markdown-preview");
+
+  // Toggle to source: shared.
+  await frameOf(host).getByTitle("Show source").click();
+  await frameOf(guest).locator("diffs-container").waitFor({ timeout: 10000 });
+  await wait(800);
+  await shot(guest, "22-guest-markdown-source");
+
+  // The guest browses: a TypeScript file, highlighted, for the host too.
+  await pick(guest, "src/server/files.ts");
+  await frameOf(host).getByText("src/server/files.ts", { exact: true }).waitFor();
+  await wait(1200);
+  await shot(host, "23-host-typescript");
+
+  // Live: an agent (here: us) rewrites the file on disk.
+  await Bun.write(`${dir}/src/server/files.ts`, "// rewritten on disk\nexport const live = true;\n");
+  await frameOf(guest).getByText("rewritten on disk").waitFor({ timeout: 10000 });
+  console.log("guest saw the disk change");
+
+  // ⌘/Ctrl-click opens a second frame.
+  await pick(guest, "src/generated.ts", true);
+  await host.locator("[data-frame-type=file]").nth(1).waitFor({ timeout: 10000 });
+  console.log("file frames on host:", await host.locator("[data-frame-type=file]").count());
+  await wait(1500);
+  await shot(host, "24-host-two-frames");
+
+  // What the frame refuses to show.
+  for (const [path, expect] of [
+    ["big.ts", "Too large"],
+    ["logo.png", "Binary file"],
+  ] as const) {
+    await pick(host, path);
+    await frameOf(guest)
+      .getByText(expect)
+      .waitFor({ timeout: 10000 })
+      .catch(async (error: unknown) => {
+        await shot(host, "fail-host");
+        await shot(guest, "fail-guest");
+        throw error;
+      });
+    console.log(`${path}: ${expect}`);
+  }
+  // A path set through the board directly, as a hostile guest could.
+  for (const path of [".env", ".canvas/room.json", "etc-link/hostname", "../../etc/passwd"]) {
+    await guest.evaluate(
+      ([p]) => {
+        const frames = (window as any).room.doc.getMap("frames");
+        const id = [...frames.keys()].find((k: string) => frames.get(k).get("type") === "file");
+        frames.get(id).set("path", p);
+      },
+      [path],
+    );
+    const notice = frameOf(guest).locator("p", { hasText: "not shared" }).or(
+      frameOf(guest).locator("p", { hasText: "outside the working dir" }),
+    );
+    await notice.first().waitFor({ timeout: 10000 });
+    console.log(`${path} →`, await notice.first().innerText());
+  }
+  await shot(guest, "25-guest-denied");
+
+  // Resizing the tree on a zoomed board: the handle follows the pointer.
+  await host.getByTitle("Zoom out").click();
+  await wait(300);
+  const panel = frameOf(host).locator("[data-slot=resizable-panel]").first();
+  const handle = frameOf(host).locator("[data-slot=resizable-handle]");
+  const before = (await panel.boundingBox())!.width;
+  const box = (await handle.boundingBox())!;
+  await host.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await host.mouse.down();
+  await host.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 6 });
+  await host.mouse.up();
+  const after = (await panel.boundingBox())!.width;
+  console.log(`tree panel at 80%: ${before.toFixed(0)} → ${after.toFixed(0)} px (dragged 60)`);
+  await shot(host, "25b-host-zoomed-resize");
+  await host.getByTitle("Reset to 100%").click();
+
+  // The tree panel is each viewer's own.
+  await frameOf(host).getByTitle("Hide files").click();
+  await wait(500);
+  console.log(
+    "after host hides its tree, guest tree visible:",
+    await frameOf(guest).getByRole("treeitem").first().isVisible(),
+  );
+  await shot(host, "26-host-tree-hidden");
+
+  // View-only guests see open files, but get no tree.
+  await host.getByLabel("Guest access").selectOption("view");
+  await pick(host, "docs/adr/0001-host-relayed-star-topology.md").catch(async () => {
+    await frameOf(host).getByTitle("Show files").click();
+    await pick(host, "docs/adr/0001-host-relayed-star-topology.md");
+  });
+  await frameOf(guest).getByText("The host's browser is the only door").first().waitFor({
+    timeout: 10000,
+  });
+  console.log(
+    "view guest: tree toggle shown:",
+    await frameOf(guest).getByTitle(/files$/).count(),
+    "treeitems:",
+    await frameOf(guest).getByRole("treeitem").count(),
+  );
+  await shot(guest, "27-view-guest");
+  await host.getByLabel("Guest access").selectOption("edit");
+}
 await browser.close();

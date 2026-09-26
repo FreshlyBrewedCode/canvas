@@ -1,7 +1,7 @@
 import {
   Bot,
   Check,
-  FileText,
+  FileCode,
   Globe,
   Link2,
   Maximize2,
@@ -14,11 +14,18 @@ import { useEffect, useState } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
 import { BrowserFrame } from "@/components/browser-frame";
-import { MarkdownFrame } from "@/components/markdown-frame";
+import { FileFrame } from "@/components/file-frame";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardViewport } from "@/hooks/use-board-viewport";
-import { addFrame, DEFAULT_SIZE, useFrames, type Frame, type FrameType } from "@/lib/board";
+import {
+  addFrame,
+  DEFAULT_SIZE,
+  useFrames,
+  type Frame,
+  type FrameType,
+  type NewFrame,
+} from "@/lib/board";
 import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval } from "@/lib/room";
 import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-context";
@@ -75,12 +82,13 @@ export function Board() {
       type === "agent"
         ? // The frame asks which agent to run.
           { ...base, type, title: `agent-${count}`, agent: "" }
-        : type === "markdown"
-          ? { ...base, type, title: `notes-${count}`, path: extra.path ?? `docs/notes-${count}.md` }
+        : type === "file"
+          ? // The frame opens with its tree, to pick a file.
+            { ...base, type, title: `files-${count}`, path: "" }
           : type === "browser"
             ? { ...base, type, title: `preview-${count}`, url: extra.url ?? "https://example.com" }
             : { ...base, type, title: `shell-${count}` };
-    addFrame(room.doc, frame as Omit<Frame, "id" | "z">);
+    addFrame(room.doc, frame as NewFrame);
   };
 
   return (
@@ -149,8 +157,8 @@ function FrameView({ frame, readOnly }: { frame: Frame; readOnly: boolean }) {
   switch (frame.type) {
     case "agent":
       return <AgentFrame frame={frame} readOnly={readOnly} />;
-    case "markdown":
-      return <MarkdownFrame frame={frame} readOnly={readOnly} />;
+    case "file":
+      return <FileFrame frame={frame} readOnly={readOnly} />;
     case "browser":
       return <BrowserFrame frame={frame} readOnly={readOnly} />;
     case "terminal":
@@ -171,8 +179,8 @@ function Toolbar({
       <Button variant="ghost" size="sm" onClick={() => onCreate("agent")}>
         <Bot /> Agent
       </Button>
-      <Button variant="ghost" size="sm" onClick={() => onCreate("markdown")}>
-        <FileText /> Markdown
+      <Button variant="ghost" size="sm" onClick={() => onCreate("file")}>
+        <FileCode /> Files
       </Button>
       <Button variant="ghost" size="sm" onClick={() => onCreate("browser")}>
         <Globe /> Browser
