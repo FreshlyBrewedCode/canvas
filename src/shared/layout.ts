@@ -12,6 +12,7 @@
  * new frame's rect and patches for the frames that make room: frames later in
  * the row shift right, rows further down shift down. Nothing outside the
  * anchor's cluster moves. Anything placed away from other frames stays free.
+ * A frame leaving (moved or removed) closes its gap the same way, reversed.
  */
 
 export interface Rect {
@@ -178,10 +179,50 @@ export function placeNear(
   );
 }
 
-/** A frame leaves its row: the frames after it close the gap. */
+/**
+ * A frame leaves its place: the frames after it in its row close the gap, or,
+ * when it was alone in its row, the rows below move up into it.
+ */
 export function lift(rects: ReadonlyArray<Rect>, id: string): Patch[] {
-  const { row, frame } = locate(rects, id);
-  return row.filter((f) => f.x > frame.x).map((f) => ({ id: f.id, x: f.x - frame.w - GAP }));
+  const { cluster: c, row, frame } = locate(rects, id);
+  if (row.length > 1)
+    return row.filter((f) => f.x > frame.x).map((f) => ({ id: f.id, x: f.x - frame.w - GAP }));
+  const below = c.rows.slice(c.rows.indexOf(row) + 1).flat();
+  if (below.length === 0) return [];
+  const dy = Math.min(...below.map((f) => f.y)) - frame.y;
+  return below.map((f) => ({ id: f.id, y: f.y - dy }));
+}
+
+/**
+ * Whether placing next to `target` goes in between two frames — two of a
+ * row, or two rows — and if so the gap's centre line (`w` or `h` is 0), for a
+ * drop's preview. `movingId`, the frame being placed, is no neighbour.
+ */
+export function insertion(
+  rects: ReadonlyArray<Rect>,
+  target: Target,
+  movingId?: string,
+): Box | null {
+  const rest = rects.filter((f) => f.id !== movingId);
+  const { cluster: c, row, frame: anchor } = locate(rest, target.anchor);
+  switch (target.side) {
+    case "right":
+    case "left": {
+      const i = row.indexOf(anchor);
+      const [l, r] = target.side === "right" ? [anchor, row[i + 1]] : [row[i - 1], anchor];
+      if (!l || !r) return null;
+      const y = Math.min(l.y, r.y);
+      return { x: (l.x + l.w + r.x) / 2, y, w: 0, h: Math.max(l.y + l.h, r.y + r.h) - y };
+    }
+    case "below":
+    case "above": {
+      const i = c.rows.indexOf(row);
+      const [upper, lower] = target.side === "below" ? [row, c.rows[i + 1]] : [c.rows[i - 1], row];
+      if (!upper || !lower) return null;
+      const y = (rowBottom(upper) + Math.min(...lower.map((f) => f.y))) / 2;
+      return { x: c.bounds.x, y, w: c.bounds.w, h: 0 };
+    }
+  }
 }
 
 /** Where a frame being dragged would snap to: next to the nearest frame within reach. */
