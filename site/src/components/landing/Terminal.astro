@@ -1,0 +1,14 @@
+---
+/* A terminal frame's content. Dark in both schemes: a shell is a shell. */
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+---
+
+<pre
+  class:list={[
+    "term m-0 h-full overflow-hidden bg-[oklch(0.16_0_0)] p-3 font-mono text-[11.5px] leading-[1.6] text-[oklch(0.93_0_0)]",
+    className,
+  ]}
+><slot /></pre>

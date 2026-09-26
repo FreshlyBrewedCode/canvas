@@ -1,0 +1,20 @@
+---
+/* The round initial the top bar and frame headers use for a person. */
+interface Props {
+  name: string;
+  color: string;
+  class?: string;
+}
+const { name, color, class: className } = Astro.props;
+---
+
+<span
+  class:list={[
+    "inline-grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold",
+    className,
+  ]}
+  style={`background-color:${color};color:oklch(0.2 0 0)`}
+  aria-hidden="true"
+>
+  {name[0]}
+</span>

@@ -1,0 +1,48 @@
+---
+/*
+ * The chrome of a board frame, rebuilt for the landing page from the app's
+ * `frame-shell.tsx`: square, hairline border, a header with the frame type's
+ * icon, a mono title, whatever the frame shows on the right, and the ×. Frames
+ * hold user data, so they are square (design.md › Shapes).
+ *
+ * `ring` is an occupant's colour: the frame is ringed in it, as it is for
+ * everyone following that person.
+ */
+import Bot from "@lucide/astro/icons/bot";
+import FileCode from "@lucide/astro/icons/file-code";
+import Globe from "@lucide/astro/icons/globe";
+import SquareTerminal from "@lucide/astro/icons/square-terminal";
+import X from "@lucide/astro/icons/x";
+
+interface Props {
+  type: "agent" | "file" | "browser" | "terminal";
+  title: string;
+  ring?: string;
+  class?: string;
+  style?: string;
+}
+
+const { type, title, ring, class: className, style } = Astro.props;
+const Icon = { agent: Bot, file: FileCode, browser: Globe, terminal: SquareTerminal }[type];
+const ringStyle = ring
+  ? `border-color:${ring};box-shadow:0 0 0 1px ${ring},0 0 18px -6px ${ring};`
+  : "";
+---
+
+<div
+  class:list={["frame flex flex-col overflow-hidden border border-border bg-card shadow-sm", className]}
+  style={`${ringStyle}${style ?? ""}`}
+  aria-hidden="true"
+>
+  <div class="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5 text-[13px]">
+    <Icon class="size-3.5 shrink-0 text-muted-foreground" />
+    <span class="truncate font-mono font-medium">{title}</span>
+    <div class="ml-auto flex items-center gap-2 text-muted-foreground">
+      <slot name="meta" />
+      <X class="size-3.5" />
+    </div>
+  </div>
+  <div class="relative min-h-0 flex-1">
+    <slot />
+  </div>
+</div>

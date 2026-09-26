@@ -1,0 +1,38 @@
+---
+/*
+ * An agent thread as the app shows it: a prompt with its author, a sentence
+ * of reply, tool calls folded to one line each, the board tool among them.
+ */
+import ChevronRight from "@lucide/astro/icons/chevron-right";
+import Wrench from "@lucide/astro/icons/wrench";
+
+interface Props {
+  author: string;
+  color: string;
+  prompt: string;
+  class?: string;
+}
+const { author, color, prompt, class: className } = Astro.props;
+
+const calls = ["read done", "read done", "canvas · open_frame done"];
+---
+
+<div class:list={["space-y-2.5 p-3 text-[12px] leading-relaxed", className]}>
+  <div class="border-l-2 bg-muted/60 px-2.5 py-2" style={`border-color:${color}`}>
+    <div class="mb-0.5 text-[10px] font-semibold tracking-wide uppercase" style={`color:${color}`}>
+      {author}
+    </div>
+    {prompt}
+  </div>
+  <p>I'll look at the board first, then find the login code.</p>
+  <div class="space-y-1 font-mono text-[11px] text-muted-foreground">
+    {calls.map((call) => (
+      <div class="flex items-center gap-1.5">
+        <ChevronRight class="size-3" />
+        <Wrench class="size-3" />
+        {call}
+      </div>
+    ))}
+  </div>
+  <slot />
+</div>
