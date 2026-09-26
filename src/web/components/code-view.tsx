@@ -2,6 +2,7 @@ import type { FileContents, SelectedLineRange } from "@pierre/diffs";
 import { File, Virtualizer, type FileOptions } from "@pierre/diffs/react";
 import { useEffect, useMemo, useRef } from "react";
 
+import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import type { LineRange } from "@/lib/board";
 import type { Presence } from "@/lib/room";
 import { usePeers, useRoom } from "@/lib/room-context";
@@ -137,6 +138,17 @@ export function CodeView({
     );
     return () => cancelAnimationFrame(raf);
   }, [start, end, path, text.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Whoever occupies the frame scrolls it for everyone following them.
+  useFollowScroll(
+    frameId,
+    `source:${path}`,
+    () => {
+      const scroller = box.current?.firstElementChild;
+      return scroller instanceof HTMLElement ? domSurface(scroller) : null;
+    },
+    text,
+  );
 
   return (
     <div ref={box} className="h-full">

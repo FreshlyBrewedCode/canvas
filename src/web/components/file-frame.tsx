@@ -11,6 +11,7 @@ import { FrameShell } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import {
   addFrame,
   allFrames,
@@ -216,8 +217,15 @@ const REHYPE = [keyBlocks];
 const REMARK = [remarkGfm];
 
 function MarkdownPreview({ frameId, path, text }: { frameId: string; path: string; text: string }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  useFollowScroll(
+    frameId,
+    `preview:${path}`,
+    () => scroller.current && domSurface(scroller.current),
+    text,
+  );
   return (
-    <div data-frame-body="" className="h-full overflow-auto">
+    <div ref={scroller} data-frame-body="" className="h-full overflow-auto">
       <div data-sel-root={frameId} data-sel-path={path} className="relative p-4">
         <div className="prose-canvas text-sm select-text">
           <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE}>

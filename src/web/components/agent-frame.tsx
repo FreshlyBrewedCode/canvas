@@ -8,6 +8,7 @@ import { CollabEditor } from "@/components/collab-editor";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
+import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { promptText, updateFrame, type Frame } from "@/lib/board";
 import { useRoom, useRoomState, useSession } from "@/lib/room-context";
 import { foldThread, type Permission, type Row, type Turn } from "@/lib/thread";
@@ -199,6 +200,13 @@ function Thread({
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [version]);
+  // After the pin above: following someone, their place wins.
+  useFollowScroll(
+    frameId,
+    "thread",
+    () => scroller.current && domSurface(scroller.current),
+    version,
+  );
 
   return (
     <div
