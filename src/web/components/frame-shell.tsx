@@ -9,7 +9,7 @@ import {
   updateFrame,
   type Frame,
 } from "@/lib/board";
-import { useRoom } from "@/lib/room-context";
+import { useFrameFocus, useRoom } from "@/lib/room-context";
 import { setSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import {
@@ -30,6 +30,9 @@ const ICONS = { agent: Bot, file: FileCode, browser: Globe, terminal: SquareTerm
  * snaps into a row or a new row, resizing keeps a row's height. Holding Alt
  * places and sizes a frame freely.
  * Frames hold user data, so they are square (design.md › Shapes).
+ *
+ * Pressing on a frame claims it (`focus.ts`): its occupant shows in the
+ * header, and the frame is ringed in their colour while we follow them.
  */
 export function FrameShell({
   frame,
@@ -46,14 +49,28 @@ export function FrameShell({
 }) {
   const room = useRoom();
   const Icon = ICONS[frame.type];
+  const focus = useFrameFocus(frame.id);
+  const ring = focus.occupant && (focus.mine || focus.following) ? focus.occupant.color : null;
 
   return (
     <section
       data-frame={frame.id}
       data-frame-type={frame.type}
+      data-occupant={focus.occupant?.name}
+      data-following={focus.following || undefined}
       className="bg-card absolute flex flex-col border shadow-sm"
-      style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h, zIndex: frame.z }}
-      onPointerDownCapture={() => !readOnly && raiseFrame(room.doc, frame.id)}
+      style={{
+        left: frame.x,
+        top: frame.y,
+        width: frame.w,
+        height: frame.h,
+        zIndex: frame.z,
+        ...(ring && { borderColor: ring, boxShadow: `0 0 0 1px ${ring}, 0 0 18px -6px ${ring}` }),
+      }}
+      onPointerDownCapture={() => {
+        room.focusFrame(frame.id);
+        if (!readOnly) raiseFrame(room.doc, frame.id);
+      }}
     >
       <Drag
         frame={frame}
@@ -71,6 +88,7 @@ export function FrameShell({
           onChange={(event) => updateFrame(room.doc, frame.id, { title: event.target.value })}
         />
         {status}
+        {focus.occupant && <OccupantBadge frameId={frame.id} focus={focus} />}
         {actions}
         {!readOnly && (
           <button
@@ -207,6 +225,45 @@ function Drag({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Who is in the frame. Following them, it just says so; scrolled away,
+ * it fades, and a click follows them again.
+ */
+function OccupantBadge({
+  frameId,
+  focus,
+}: {
+  frameId: string;
+  focus: ReturnType<typeof useFrameFocus>;
+}) {
+  const room = useRoom();
+  const occupant = focus.occupant!;
+  const detached = !focus.mine && !focus.following;
+  const who = occupant.kind === "agent" ? `${occupant.name} (agent)` : occupant.name;
+  const title = focus.mine
+    ? "You are here: others follow your scroll"
+    : detached
+      ? `${who} is here. Click to follow them again`
+      : `${who} is here: you follow their scroll`;
+  return (
+    <button
+      type="button"
+      data-occupant-badge=""
+      title={title}
+      className={cn(
+        "grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold transition-opacity",
+        detached && "opacity-45 hover:opacity-100",
+        focus.mine && "cursor-default",
+      )}
+      style={{ backgroundColor: occupant.color, color: "oklch(0.2 0 0)" }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={() => detached && room.follow(frameId)}
+    >
+      {occupant.kind === "agent" ? <Bot className="size-3" /> : occupant.name.slice(0, 1)}
+    </button>
   );
 }
 

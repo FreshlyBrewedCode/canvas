@@ -42,7 +42,7 @@ export function Board() {
   );
   const readOnly = !room.isHost && room.roomState?.access === "view";
 
-  // Publish our pointer (board coordinates) and text selections as presence.
+  // Publish our pointer (board coordinates), text selections and frame focus as presence.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -54,6 +54,10 @@ export function Board() {
       );
     };
     const onLeave = () => room.setPresence({ pointer: null });
+    // Pressing on the board itself lets go of the frame we were in.
+    const onDown = (event: PointerEvent) => {
+      if (!(event.target as Element).closest("[data-frame], [data-hud]")) room.focusFrame(null);
+    };
     const onSelection = () => {
       const selection = readSelection();
       const current = (room.awareness.getLocalState() as Presence | null)?.selection ?? null;
@@ -63,10 +67,12 @@ export function Board() {
     };
     wrap.addEventListener("pointermove", onMove);
     wrap.addEventListener("pointerleave", onLeave);
+    wrap.addEventListener("pointerdown", onDown);
     document.addEventListener("selectionchange", onSelection);
     return () => {
       wrap.removeEventListener("pointermove", onMove);
       wrap.removeEventListener("pointerleave", onLeave);
+      wrap.removeEventListener("pointerdown", onDown);
       document.removeEventListener("selectionchange", onSelection);
     };
   }, [room, viewport, wrapRef]);
