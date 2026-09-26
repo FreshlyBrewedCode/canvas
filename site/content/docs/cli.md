@@ -18,7 +18,7 @@ Starts `canvas serve` for a project and prints the host link. Run it with
 | ----------------- | --------------------------- | --------------------------------------------------------- |
 | `--dir`           | `.`                         | The project directory: agents, terminals and files work here |
 | `--port`          | `4418`                      | The port `canvas serve` listens on                        |
-| `--web-url`       | `https://canvas.frebreco.de`| The web app the host link opens                           |
+| `--web-url`       | `https://ui.canvas.frebreco.de`, or `…/next` for a pre-release | The web app the host link opens |
 | `--tls-host`      | none                        | Serve `wss://` on this host name, on all interfaces       |
 | `--cert`, `--key` | `.certs/dev.crt`, `.certs/dev.key` in canvas's own directory | The certificate for `--tls-host` |
 
@@ -48,7 +48,7 @@ canvas serve --tls-host machine.tailnet.ts.net --cert cert.crt --key cert.key
 canvas serving /home/you/src/shop
 
   open the board as host:
-  https://canvas.frebreco.de/?room=…#k=…&pk=…&server=ws%3A%2F%2F127.0.0.1%3A4418&token=…
+  https://ui.canvas.frebreco.de/?room=…#k=…&pk=…&server=ws%3A%2F%2F127.0.0.1%3A4418&token=…
 ```
 
 The link is the same on every start in the same directory, as long as `.canvas/room.json` exists.

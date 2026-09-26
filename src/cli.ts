@@ -6,7 +6,7 @@
  *
  * Starts the local server and prints the link that opens the board as its
  * host. `--tls-host` serves wss:// on that name (with `.certs/dev.{crt,key}`)
- * so a browser on another device of the tailnet can be the host; without it
+ * so a browser on another device can be the host; without it
  * the server only listens on loopback.
  */
 
@@ -14,13 +14,21 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { serve } from "./server/server";
+import { defaultWebUrl } from "./server/web-url";
+
+const manifest = (await Bun.file(join(import.meta.dir, "../package.json")).json()) as {
+  version?: string;
+};
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
     dir: { type: "string", default: "." },
     port: { type: "string", default: "4418" },
-    "web-url": { type: "string", default: process.env.CANVAS_WEB_URL ?? "http://localhost:4417" },
+    "web-url": {
+      type: "string",
+      default: process.env.CANVAS_WEB_URL ?? defaultWebUrl(manifest.version),
+    },
     "tls-host": { type: "string" },
     cert: { type: "string", default: join(import.meta.dir, "../.certs/dev.crt") },
     key: { type: "string", default: join(import.meta.dir, "../.certs/dev.key") },

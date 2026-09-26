@@ -29,4 +29,4 @@ order: 5
 | **row**           | Frames in a cluster whose top edges line up; they share a height            |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |
 | **terminal frame**| A shell on the host's machine. [Terminal](/docs/terminal)                   |
-| **web app**       | The browser UI at `canvas.frebreco.de`                                      |
+| **web app**       | The browser UI at `ui.canvas.frebreco.de`                                   |

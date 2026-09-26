@@ -27,7 +27,7 @@ bunx @frebreco/canvas serve
 canvas serving /home/you/src/shop
 
   open the board as host:
-  https://canvas.frebreco.de/?room=LEXuANjizGUi#k=…&pk=…&server=ws%3A%2F%2F127.0.0.1%3A4418&token=…
+  https://ui.canvas.frebreco.de/?room=LEXuANjizGUi#k=…&pk=…&server=ws%3A%2F%2F127.0.0.1%3A4418&token=…
 
   keep this link to yourself — it controls agents on this machine.
   share the guest link from the board instead.

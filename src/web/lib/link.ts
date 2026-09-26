@@ -26,9 +26,16 @@ export function readLink(location: Location = window.location): BoardLink | null
   return { roomId, key, hostPublicKey, host: server && token ? { server, token } : null };
 }
 
-export function guestLink(link: BoardLink, origin: string = window.location.origin): string {
+/**
+ * `app` is where this app is served from: the origin plus Vite's base, so a
+ * guest of the `next` UI (`/next/`) lands on the same build as its host.
+ */
+export function guestLink(
+  link: BoardLink,
+  app: string = new URL(import.meta.env.BASE_URL, window.location.origin).href,
+): string {
   const fragment = new URLSearchParams({ k: link.key, pk: link.hostPublicKey });
-  return `${origin}/?room=${link.roomId}#${fragment}`;
+  return `${app.replace(/\/$/, "")}/?room=${link.roomId}#${fragment}`;
 }
 
 // ---------------------------------------------------------------------------

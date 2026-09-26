@@ -6,8 +6,10 @@ order: 1
 ---
 
 canvas has two halves: **`canvas serve`**, a local server on the host's machine, and the **web
-app**, a static single-page app served from `canvas.frebreco.de`. There is no canvas backend in
-between.
+app**, a static single-page app served from `ui.canvas.frebreco.de`. There is no canvas backend in
+between. Each release channel has its own build of the web app, matching its `canvas serve`: a
+stable release opens `ui.canvas.frebreco.de`, a pre-release (`@frebreco/canvas@next`) opens
+`ui.canvas.frebreco.de/next`.
 
 ```
 guest ──┐
