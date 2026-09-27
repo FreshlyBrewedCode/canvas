@@ -11,10 +11,11 @@ order: 5
 | **agent settings**| An agent session's model, reasoning effort, mode and so on, as the agent offers them |
 | **approval**      | The host's yes or no to something an edit guest wants to run. [Guests](/docs/guests#approvals) |
 | **board**         | The shared surface all frames live on. One per project                      |
-| **board tools**   | `view_board`, `open_frame`, `update_frame`, `close_frame`, `read_board_file`, `write_board_file`: how agents change the board. [Board tools](/docs/board-tools) |
+| **board tools**   | `view_board`, `view_frame`, `open_frame`, `update_frame`, `close_frame`, `read_board_file`, `write_board_file`, `add_comment`, `edit_comment`, `delete_comment`: how agents see and change the board. [Board tools](/docs/board-tools) |
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
 | **cluster**       | Frames within 48 px of each other. [Board](/docs/board#layout)              |
+| **comment**       | A markdown note on lines of a file, kept by the files frame it was written in. [Files](/docs/files#comments) |
 | **file list**     | Files an agent picked for a files frame's tree, at display paths it chose. [Files](/docs/files#lists) |
 | **files frame**   | A frame showing one project file, read-only and live. [Files](/docs/files)  |
 | **follow**        | Scrolling with a frame's occupant. [Focus](/docs/focus)                     |
@@ -25,6 +26,7 @@ order: 5
 | **host**          | The person who runs `canvas serve` and opens the host link                  |
 | **host link**     | The link `canvas serve` prints. Controls the machine: never share it        |
 | **occupant**      | The person or agent holding a frame. [Focus](/docs/focus)                   |
+| **outdated comment** | A comment whose lines are gone from the file. It shows above the first line, with what they read. [Files](/docs/files#comments) |
 | **permission**    | An agent asking before a tool call. Only the host answers                   |
 | **prompt draft**  | The shared composer of an agent frame, written by several people at once    |
 | **row**           | Frames in a cluster whose top edges line up; they share a height            |

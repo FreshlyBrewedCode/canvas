@@ -12,11 +12,14 @@ instead of pasting code into its reply.
 | Tool           | Does                                                                     |
 | -------------- | ------------------------------------------------------------------------ |
 | `view_board`   | Lists the agent's own cluster row by row, and summarises the others      |
+| `view_frame`   | Shows one frame in full; for a files frame, its list and its comments    |
 | `open_frame`   | Opens a frame: a file (optionally at a line range), a new scratch file, a list of files, a browser, a terminal, an agent |
-| `update_frame` | Points a files frame at another file, lines or a new scratch file, replaces its list, switches preview/source (markdown, HTML), changes a URL, renames, moves |
+| `update_frame` | Points a files frame at another file, lines, a comment or a new scratch file, replaces its list, switches preview/source (markdown, HTML), changes a URL, renames, moves |
 | `close_frame`  | Removes a frame                                                          |
 | `read_board_file` | Reads a scratch file                                                  |
 | `write_board_file` | Creates a scratch file, or overwrites one                            |
+| `add_comment`  | Comments on lines of a file, in a files frame                            |
+| `edit_comment`, `delete_comment` | Change an agent's comment                              |
 
 ![The login code, opened by the agent at lines 5–15, next to its frame](./screenshots/files-lines.webp)
 
@@ -53,6 +56,20 @@ Asked for the files of one feature, an agent can put them in a single files fram
 [list](/docs/files#lists), instead of opening a frame per file. Each entry is a project file or a
 scratch file at a display path the agent picks, optionally with lines. So one frame can hold a
 write-up, the code at the relevant lines, and a visualisation.
+
+## Comments
+
+Agents read the [comments](/docs/files#comments) people leave in a files frame, and leave their
+own. So you can review code together, then ask an agent to "address the comments in the login
+frame".
+
+- `view_board` says which files frames have comments; `view_frame` lists them, with their ids,
+  authors, lines and text. For an outdated comment, it also shows what its lines used to read.
+- Agents aren't told when someone comments. They look when you ask them to.
+- `add_comment` names a file and lines. `canvas serve` reads the lines, so the comment can follow
+  them as the file changes.
+- An agent edits and deletes agents' comments, never people's.
+- `update_frame` with a comment's id shows its file at its lines.
 
 ## Placement
 

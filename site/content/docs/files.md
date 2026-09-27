@@ -1,6 +1,6 @@
 ---
 title: Files
-description: Files frames, the file tree, line ranges and selections.
+description: Files frames, the file tree, line ranges, selections and comments.
 section: Features
 order: 5
 ---
@@ -14,8 +14,8 @@ for example because an agent edited it, everyone sees the new content.
 
 - A new files frame opens with its **file tree**. Pick a file, or search the tree.
 - **⌘/Ctrl-click** a file in the tree to open it in a new frame.
-- The tree button in the header shows or hides the tree. The tree is yours alone; the file
-  shown is shared.
+- The toolbar above the search hides the tree; **Show files** in the header brings it back. The
+  tree is yours alone; the file shown is shared.
 
 The tree lists the [shared set](/docs/security#the-shared-set): the files `canvas serve` lets out.
 Anything outside it cannot be opened. It also lists the [scratch files](/docs/board-tools#scratch-files)
@@ -30,7 +30,7 @@ files with [scratch files](/docs/board-tools#scratch-files), such as a write-up 
 visualisation at the bottom.
 
 - Picking a file in the list shows it for everyone, at its lines.
-- The **all files** button switches your tree between the list and all files. In all files, the
+- The **all files** button in the tree's toolbar switches your tree between the list and all files. In all files, the
   file shown is selected where it really lives. The switch is yours alone.
 - The status bar always shows the file's real path.
 
@@ -60,8 +60,30 @@ everyone. Agents use this to point at code ([Board tools](/docs/board-tools)).
 Select lines in the source view (drag over the line numbers), or text in the preview, and everyone
 sees the selection in your colour, labelled with your name.
 
+## Comments
+
+Comment on lines of the source to leave a note for everyone, people and agents alike. Hover a
+line and click the **+** by its number, or select lines first (drag over the line numbers) and
+comment on all of them. Comments are markdown. Each shows below its last line, with its author.
+
+![Comments on login.ts, and the frame's list of them](./screenshots/files-comments.webp)
+
+- **They belong to the frame**, not to the file. They stay while the frame shows other files, and
+  are removed with the frame. A file opened in a new frame (⌘/Ctrl-click) starts without them.
+- The **comments button** in the header counts them. It lists them all, by file. Picking one opens
+  its file at its lines, in source, for everyone.
+- In the tree, files with comments show their count. The comments button in the tree's toolbar
+  shows only those files. That filter is yours alone.
+- **Files change under comments.** When an agent edits the file, a comment moves with its lines.
+  If its lines are gone, it is **outdated**: it shows above the first line, with what its lines
+  used to read, until someone deletes it or the lines come back.
+- Comments show in the source only. A markdown or HTML file switches to source when you pick one
+  of its comments.
+- You edit and delete your own comments, and the host edits and deletes anyone's. Agents read
+  them with [`view_frame`](/docs/board-tools#comments) and can write their own.
+
 ## Guest access
 
-- **edit** and **trusted** guests open files and browse the tree, without approval.
+- **edit** and **trusted** guests open files, browse the tree and comment, without approval.
 - **view** guests see the files others open, but get no tree and cannot open files. They see a
-  frame's list, but can't pick from it.
+  frame's list, but can't pick from it. They read comments, but can't write them.
