@@ -3,6 +3,7 @@
  *
  *   frames            Y.Map<frameId, Y.Map>   position, size, type, settings
  *   prompt:<frameId>  Y.Text                  an agent frame's shared prompt draft
+ *   comments:<frameId> Y.Map<id, Comment>     a file frame's comments (`comments.ts`)
  *
  * Agent threads, terminal output and file contents are not in here: they
  * come from the host's machine and are mirrored separately (see `room.ts`).
@@ -12,6 +13,7 @@ import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
 import type { Patch } from "../../shared/layout";
+import { clearComments } from "./comments";
 
 export type FrameType = "agent" | "file" | "browser" | "terminal";
 
@@ -160,6 +162,7 @@ export function removeFrame(doc: Y.Doc, id: string, patches: ReadonlyArray<Patch
     applyPatches(doc, patches);
     framesOf(doc).delete(id);
     promptText(doc, id).delete(0, promptText(doc, id).length);
+    clearComments(doc, id);
   });
 }
 
