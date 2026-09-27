@@ -13,6 +13,10 @@
  * agent hears why a file can't be shown. It listens on loopback only: agents
  * run on this machine.
  *
+ * An agent's comment (ADR 0006) gets the text of its lines here, from the
+ * shared set: the browser keeps it to find the lines again as the file
+ * changes.
+ *
  * Scratch files (ADR 0005) never reach the browser as content: a call's
  * `content` becomes a file in `.canvas/scratch/` here, and the call goes on
  * with its path. Reading and writing them needs no board, so those tools are
@@ -22,6 +26,7 @@
 import { randomBytes } from "node:crypto";
 import type { McpServer } from "@agentclientprotocol/sdk";
 import { BOARD_SERVER_NAME, BOARD_TOOLS, boardInstructions } from "../shared/board-tools";
+import { linesOf, quoteOf } from "../shared/comments";
 import type { FileContent } from "../shared/protocol";
 import type { Scratch } from "./scratch";
 import type { Skill } from "./skills";
@@ -182,6 +187,7 @@ export class BoardMcp {
         delete args.content;
         delete args.name;
       } else this.checkPath(args, notes);
+      if (tool === "add_comment") this.quote(args);
       if (Array.isArray(args.files))
         args.files = args.files.map((value: unknown) => {
           if (typeof value !== "object" || value === null)
@@ -236,6 +242,26 @@ export class BoardMcp {
       const lines = file.text.split("\n").length - (file.text.endsWith("\n") ? 1 : 0);
       if (args.start_line > lines) throw new Error(`${path} has ${lines} lines`);
     }
+  }
+
+  /** An agent's comment carries the text of its lines. */
+  private quote(args: Record<string, unknown>) {
+    if (typeof args.path !== "string" || !args.path.trim())
+      throw new Error("a comment needs the path of the file it is on");
+    const path = args.path.trim().replace(/^(\.\/)+/, "");
+    const file = this.options.read(path);
+    if (file.kind !== "text")
+      throw new Error(
+        `${path} can't be commented on: ${file.kind === "denied" ? file.reason : file.kind}`,
+      );
+    const start = Math.floor(Number(args.start_line));
+    const end = args.end_line === undefined ? start : Math.floor(Number(args.end_line));
+    const quote = quoteOf(file.text, start, end);
+    if (quote === null)
+      throw new Error(
+        `lines ${start}-${end} aren't in ${path}: it has ${linesOf(file.text).length} lines`,
+      );
+    Object.assign(args, { path, start_line: start, end_line: end, quote });
   }
 
   private relay(sessionId: string, tool: string, args: Record<string, unknown>) {

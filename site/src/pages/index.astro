@@ -1,7 +1,10 @@
 ---
 import Check from "@lucide/astro/icons/check";
+import ChevronRight from "@lucide/astro/icons/chevron-right";
 import Copy from "@lucide/astro/icons/copy";
 import Link from "@lucide/astro/icons/link";
+import MessageSquare from "@lucide/astro/icons/message-square";
+import Wrench from "@lucide/astro/icons/wrench";
 import Approval from "../components/landing/Approval.astro";
 import Avatar from "../components/landing/Avatar.astro";
 import Code from "../components/landing/Code.astro";
@@ -54,6 +57,17 @@ export async function logout(req: Request) {
 
 const prompt =
   "Show me the code that handles login on the board, at the relevant lines. Then explain in two sentences how a password is checked.";
+
+const review = "Review the login flow. Leave what you find as comments on the lines.";
+
+const notes = [
+  { lines: [8, 9] as [number, number], author: "Ada", color: ADA, text: "Should failed attempts be rate-limited here?" },
+  {
+    lines: [12, 12] as [number, number],
+    author: "claude-1",
+    text: "The session cookie has no `HttpOnly`, so page scripts can read it. Add `HttpOnly; Secure; SameSite=Lax`.",
+  },
+];
 
 const steps = [
   {
@@ -191,7 +205,7 @@ shop on <span class="ok">http://localhost:5199</span>
       </div>
     </section>
 
-    {/* ---- one session, in four beats ------------------------------------ */}
+    {/* ---- one session, in five beats ------------------------------------ */}
     <div class="mx-auto max-w-6xl px-6 pt-12 lg:pt-24">
       <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[minmax(0,24rem)_1fr] lg:gap-20 lg:py-48">
         <div>
@@ -313,6 +327,52 @@ shop on <span class="ok">http://localhost:5199</span>
 
       <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[1fr_minmax(0,24rem)] lg:gap-20 lg:py-48">
         <div class="lg:order-2">
+          <h2 class="text-3xl font-semibold tracking-tight text-balance">Comment on the lines.</h2>
+          <p class="mt-4 leading-relaxed text-muted-foreground">
+            Leave a note on lines of a file, for everyone to read, people and agents alike. Ask an
+            agent to review the code and it comments too, on the lines it means. Ask it to address
+            the comments and it reads them all, and the lines they are about.
+          </p>
+          <p class="mt-4 text-sm">
+            <a class="underline underline-offset-3 hover:text-primary" href="/docs/files#comments">Comments</a>
+          </p>
+        </div>
+        <div class="relative min-w-0 min-h-[22rem] lg:order-1 lg:min-h-[30rem]">
+          <div data-depth="0.18" class="back absolute top-[-14%] left-[-10%] hidden w-[22rem] lg:block">
+            <Frame type="agent" title="claude-1" class="h-[17rem]">
+              <Fragment slot="meta"><Avatar name="Karl" color={KARL} /></Fragment>
+              <div class="space-y-2.5 p-3 text-[12px] leading-relaxed">
+                <div class="border-l-2 bg-muted/60 px-2.5 py-2" style={`border-color:${KARL}`}>
+                  <div class="mb-0.5 text-[10px] font-semibold tracking-wide uppercase" style={`color:${KARL}`}>Karl</div>
+                  {review}
+                </div>
+                <div class="space-y-1 font-mono text-[11px] text-muted-foreground">
+                  {["read done", "canvas · add_comment done"].map((call) => (
+                    <div class="flex items-center gap-1.5"><ChevronRight class="size-3" /><Wrench class="size-3" />{call}</div>
+                  ))}
+                </div>
+                <p>I left a comment on line 12 of login.ts: the session cookie isn't <code class="rounded-sm bg-muted px-1 font-mono text-[11px]">HttpOnly</code>.</p>
+              </div>
+            </Frame>
+          </div>
+          <div data-depth="0.12" class="lg:absolute lg:top-1/2 lg:right-0 lg:w-[36rem] lg:-translate-y-1/2">
+            <Frame type="file" title="login.ts" class="h-[28rem] w-full">
+              <Fragment slot="meta">
+                <span class="font-mono text-[10px]">src/routes/login.ts</span>
+                <span class="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px]"><MessageSquare class="size-3" />2</span>
+              </Fragment>
+              <div class="flex h-full">
+                <div class="hidden sm:block"><FileTree comments={2} /></div>
+                <Code code={login} notes={notes} class="min-w-0 flex-1 pt-2" />
+              </div>
+            </Frame>
+            <Cursor name="Ada" color={ADA} class="top-[62%] left-[88%]" />
+          </div>
+        </div>
+      </section>
+
+      <section data-beat class="grid items-center gap-10 py-24 lg:grid-cols-[minmax(0,24rem)_1fr] lg:gap-20 lg:py-48">
+        <div>
           <h2 class="text-3xl font-semibold tracking-tight text-balance">Your machine stays yours.</h2>
           <p class="mt-4 leading-relaxed text-muted-foreground">
             Guests connect straight to the host's browser, and the host's browser is the only thing
@@ -330,8 +390,8 @@ shop on <span class="ok">http://localhost:5199</span>
             <a class="underline underline-offset-3 hover:text-primary" href="/docs/security">Security</a>
           </p>
         </div>
-        <div class="relative min-h-[12rem] lg:order-1 lg:min-h-[24rem]">
-          <div data-depth="0.18" class="back absolute top-0 left-[-8%] hidden w-[22rem] lg:block">
+        <div class="relative min-h-[12rem] lg:min-h-[24rem]">
+          <div data-depth="0.18" class="back absolute top-0 right-[-6%] hidden w-[22rem] lg:block">
             <Frame type="agent" title="claude-1" class="h-[15rem]">
               <Fragment slot="meta">
                 <span class="flex items-center gap-1 font-mono text-[10px]"><span class="size-1.5 rounded-full bg-[#22c55e]"></span>idle</span>
@@ -346,7 +406,7 @@ shop on <span class="ok">http://localhost:5199</span>
               </div>
             </Frame>
           </div>
-          <div data-depth="0.12" class="lg:absolute lg:top-1/2 lg:left-[26%] lg:-translate-y-1/2">
+          <div data-depth="0.12" class="lg:absolute lg:top-1/2 lg:left-0 lg:-translate-y-1/2">
             <div class="mb-3 inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-[13px] shadow-sm">
               <span class="text-muted-foreground">Guests:</span> edit, I approve runs
               <span class="mx-1 h-4 w-px bg-border"></span>

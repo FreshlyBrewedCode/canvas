@@ -7,6 +7,7 @@
 //   STEP=setup  an agent shows the login code on the board; a terminal, a preview
 //   STEP=shots  everything else, on the board setup left
 //   STEP=snap   a drag with its snap preview
+//   STEP=comments  comments on login.ts (the one setup left, else a new frame)
 import { chromium, type Locator, type Page } from "playwright";
 
 const hostLink = process.argv[2]!;
@@ -288,6 +289,58 @@ if (step === "snap") {
   await shot(host, "snap");
   await host.mouse.move(from.x, from.y, { steps: 8 });
   await host.mouse.up();
+}
+
+// Ada and Karl comment on login.ts; the header lists the frame's comments.
+if (step === "comments") {
+  let login = (await frames(host)).find(
+    (fr) => fr.type === "file" && fr.path === "src/routes/login.ts",
+  )?.id;
+  if (!login) {
+    login = await addFrame(host, "Files");
+    await place(host, login, { x: 0, y: 0, w: 720, h: 780, path: "src/routes/login.ts", title: "login.ts" });
+  }
+  await place(host, login, { lines: null });
+  // Idempotent: this step's comments only, with the tree open.
+  await host.evaluate((id) => {
+    const map = (window as any).room.doc.getMap(`comments:${id}`);
+    for (const key of [...map.keys()]) map.delete(key);
+  }, login);
+  const hideFiles = frameOf(host, login).getByTitle("Hide files");
+  if (await hideFiles.isVisible()) await hideFiles.click();
+  await frameOf(host, login).getByTitle("Show files").click();
+  await wait(1500);
+  await fit(host, guest);
+  await host.getByTitle("Reset to 100%").click();
+  await guest.getByTitle("Reset to 100%").click();
+  await wait(800);
+  const comment = async (page: Page, from: number, to: number, body: string) => {
+    const frame = frameOf(page, login!);
+    await frame.locator(`[data-column-number="${from}"]`).first().click();
+    if (to !== from)
+      await frame.locator(`[data-column-number="${to}"]`).first().click({ modifiers: ["Shift"] });
+    const box = (await frame.locator(`[data-line="${to}"]`).first().boundingBox())!;
+    await page.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 3 });
+    await frame.locator("[data-utility-button]").click();
+    await frame.getByLabel("Comment", { exact: true }).fill(body);
+    await page.keyboard.press("Control+Enter");
+    await wait(600);
+  };
+  await comment(guest, 8, 9, "Should failed attempts be **rate-limited** here?");
+  await comment(host, 13, 13, "Give the cookie a `Max-Age`, so sessions end.");
+  await guest.mouse.move(40, 860);
+  await host.mouse.move(40, 860);
+  // The toolbar would cover the frame's header.
+  await host
+    .locator("[data-hud]")
+    .filter({ has: host.getByRole("button", { name: "Agent" }) })
+    .evaluate((hud) => ((hud as HTMLElement).style.visibility = "hidden"));
+  await frameOf(host, login).locator("[data-comments-button]").click();
+  await host.locator("[data-comments-popover]").waitFor();
+  await wait(800);
+  console.log("frame at", JSON.stringify(await frameOf(host, login).boundingBox()));
+  await shot(host, "files-comments");
+  await host.keyboard.press("Escape");
 }
 
 await browser.close();

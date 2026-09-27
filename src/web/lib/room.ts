@@ -51,7 +51,7 @@ import {
 } from "./focus";
 import { runBoardTool } from "./board-tools";
 import { signHost, verifyHost } from "./host-key";
-import type { BoardLink, Identity } from "./link";
+import { loadAuthorId, type BoardLink, type Identity } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
 
 export interface Approval {
@@ -129,6 +129,8 @@ export class Room {
   readonly doc = new Y.Doc();
   readonly awareness = new Awareness(this.doc);
   readonly isHost: boolean;
+  /** Says which comments are ours (`comments.ts`). */
+  readonly authorId = loadAuthorId();
   readonly selfId = selfId;
 
   roomState: RoomState | null = null;

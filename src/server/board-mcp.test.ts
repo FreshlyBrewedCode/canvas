@@ -69,11 +69,15 @@ describe("BoardMcp", () => {
     const { body } = await rpc("tools/list");
     expect(body.result.tools.map((t: { name: string }) => t.name)).toEqual([
       "view_board",
+      "view_frame",
       "open_frame",
       "update_frame",
       "close_frame",
       "read_board_file",
       "write_board_file",
+      "add_comment",
+      "edit_comment",
+      "delete_comment",
     ]);
   });
 
@@ -100,6 +104,59 @@ describe("BoardMcp", () => {
     const missing = await call("update_frame", { frame: "f", path: "docs/new.md" });
     expect(missing.content[0]!.text).toContain("doesn't exist yet");
     expect(calls.length).toBe(before + 1);
+  });
+
+  test("add_comment carries the text of its lines, read from the shared set", async () => {
+    const added = await call("add_comment", {
+      frame: "f",
+      path: "./src/auth.ts",
+      start_line: 2,
+      end_line: 3,
+      body: "hm",
+      quote: "forged",
+    });
+    expect(added.isError).toBeUndefined();
+    expect(calls.at(-1)!.args).toEqual({
+      frame: "f",
+      path: "src/auth.ts",
+      start_line: 2,
+      end_line: 3,
+      body: "hm",
+      quote: "b\nc",
+    });
+    const one = await call("add_comment", {
+      frame: "f",
+      path: "src/auth.ts",
+      start_line: 1,
+      body: "x",
+    });
+    expect(one.isError).toBeUndefined();
+    expect(calls.at(-1)!.args).toMatchObject({ start_line: 1, end_line: 1, quote: "a" });
+
+    const before = calls.length;
+    const past = await call("add_comment", {
+      frame: "f",
+      path: "src/auth.ts",
+      start_line: 3,
+      end_line: 4,
+      body: "x",
+    });
+    expect(past.content[0]!.text).toContain("aren't in src/auth.ts: it has 3 lines");
+    const secret = await call("add_comment", {
+      frame: "f",
+      path: ".env",
+      start_line: 1,
+      body: "x",
+    });
+    expect(secret.content[0]!.text).toContain("looks like a secret");
+    const missing = await call("add_comment", {
+      frame: "f",
+      path: "gone.ts",
+      start_line: 1,
+      body: "x",
+    });
+    expect(missing.content[0]!.text).toContain("can't be commented on: missing");
+    expect(calls.length).toBe(before);
   });
 
   test("content becomes a scratch file; the board only sees its path", async () => {

@@ -1,7 +1,12 @@
 ---
-/* The file tree of a files frame, at the login code. */
+/* The file tree of a files frame, at the login code; `comments` counts its comments. */
 import ChevronDown from "@lucide/astro/icons/chevron-down";
 import ChevronRight from "@lucide/astro/icons/chevron-right";
+
+interface Props {
+  comments?: number;
+}
+const { comments } = Astro.props;
 ---
 
 <div class="tree w-[9.5rem] shrink-0 border-r border-border px-2 py-2 text-[11px] leading-[1.9]">
@@ -11,7 +16,10 @@ import ChevronRight from "@lucide/astro/icons/chevron-right";
   <div class="flex items-center gap-1"><ChevronDown class="size-3" /> src</div>
   <div class="flex items-center gap-1 pl-3 text-muted-foreground"><ChevronRight class="size-3" /> auth</div>
   <div class="flex items-center gap-1 pl-3"><ChevronDown class="size-3" /> routes</div>
-  <div class="ml-6 rounded-sm bg-primary/25 px-1.5 font-medium">login.ts</div>
+  <div class="ml-6 flex items-center rounded-sm bg-primary/25 px-1.5 font-medium">
+    login.ts
+    {comments && <span class="ml-auto flex items-center gap-1 font-normal"><span class="size-1.5 rounded-full bg-primary"></span>{comments}</span>}
+  </div>
   <div class="ml-6 px-1.5 text-muted-foreground">products.ts</div>
   <div class="ml-3 px-1.5 text-muted-foreground">db.ts</div>
   <div class="ml-3 px-1.5 text-muted-foreground">server.ts</div>

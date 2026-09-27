@@ -3,15 +3,28 @@
  * A few lines of TypeScript, coloured by a deliberately small tokenizer:
  * keywords, strings, numbers, calls, punctuation. Enough for a snippet on the
  * landing page; the real files frame uses Shiki. `highlight` is the line range
- * the agent asked for, marked in the gutter like the app marks it.
+ * the agent asked for, marked in the gutter like the app marks it. `notes` are
+ * comments, each shown below its last line with its author, as the app does;
+ * an agent is named by its frame's title and drawn with a bot, people by their
+ * colour. Backticks in a note's text set code.
  */
+import Bot from "@lucide/astro/icons/bot";
+
+interface Note {
+  lines: [number, number];
+  author: string;
+  color?: string;
+  text: string;
+}
+
 interface Props {
   code: string;
   highlight?: [number, number];
+  notes?: Note[];
   class?: string;
 }
 
-const { code, highlight, class: className } = Astro.props;
+const { code, highlight, notes = [], class: className } = Astro.props;
 
 const KEYWORDS = new Set([
   "import", "from", "export", "async", "function", "const", "await", "if", "return", "new", "null",
@@ -40,12 +53,14 @@ const lines = code.replace(/^\n/, "").split("\n").map((line, i) => ({
   n: i + 1,
   tokens: tokenize(line),
   hit: highlight ? i + 1 >= highlight[0] && i + 1 <= highlight[1] : false,
+  noted: notes.some((note) => i + 1 >= note.lines[0] && i + 1 <= note.lines[1]),
+  notes: notes.filter((note) => note.lines[1] === i + 1),
 }));
+
+const label = ([start, end]: [number, number]) => (start === end ? `L${start}` : `L${start}–${end}`);
 ---
 
 <pre
   class:list={["code m-0 overflow-hidden font-mono text-[11.5px] leading-[1.6]", className]}
-><code>{lines.map((line) => (
-  <span class:list={["line", line.hit && "hit"]}><span class="n">{line.n}</span>{line.tokens.map((t) => <span class={t.kind}>{t.text}</span>)}
-</span>
-))}</code></pre>
+><code>{lines.map((line) => (<><span class:list={["line", line.hit && "hit", line.noted && "noted"]}><span class="n">{line.n}</span>{line.tokens.map((t) => <span class={t.kind}>{t.text}</span>)}
+</span>{line.notes.map((note) => <span class="note"><span class="card"><span class="head">{note.color ? <span class="dot" style={`background:${note.color}`} /> : <Bot class="size-3" />}<span class="who">{note.author}</span>{label(note.lines)}<span>just now</span></span>{note.text.split("`").map((part, i) => (i % 2 ? <code>{part}</code> : part))}</span></span>)}</>))}</code></pre>

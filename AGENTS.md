@@ -19,6 +19,10 @@ canvas
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
   MCP server instructions, never a replaced system prompt (finding 06). Layout rules — clusters
   and rows read off positions — are pure geometry in `src/shared/layout.ts`
+- comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
+  again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
+  gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with
+  `view_frame`, and `canvas serve` quotes the lines of theirs
 - agent skills (finding 12): `skills/` ships with the package; every session gets it as a Claude
   plugin (`.claude-plugin/plugin.json` points `skills` at the folder itself) and an opencode
   skills path, and the board priming names each skill. A new skill is a `skills/<name>/SKILL.md`
@@ -50,10 +54,12 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|resume|focus|focus-agent|preview|scratch|lists|takeover|version`; `files` wants
-    the scratch repo of finding 05, `tools`/`lines`/`scratch`/`lists` the one of finding 07,
-    `focus`/`focus-agent` a long file and a long markdown file, finding 08, `preview` an HTML file
-    and a loopback server, finding 09; `IDLE_MS` gives slow agents longer than 4 min per prompt)
+    layout|arrange|resume|focus|focus-agent|preview|scratch|lists|comments|comments-agent|
+    takeover|version`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
+    `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
+    finding 08, `preview` an HTML file and a loopback server, finding 09, `comments`/
+    `comments-agent` the repo of finding 13; `IDLE_MS` gives slow agents longer than 4 min per
+    prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
     semantic-release reads. Every merge to `main` publishes `@frebreco/canvas@next` and deploys its

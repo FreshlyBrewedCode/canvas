@@ -78,6 +78,10 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
   write one. Only agents can write them; the board holds just their paths.
 - **An HTML file in a files frame** runs its scripts in everyone's browser. They are sandboxed away
   from canvas and the board, but can still reach the network.
+- **Comments are the web app's rule, not the host's.** The app lets people change only their own
+  comments, and the host anyone's. Edit guests' board changes still reach everyone unchecked, so a
+  modified client can change or delete any comment, as it can any frame. A comment keeps the lines
+  it is about, so those lines are in the board document for everyone on it.
 - **Peers see each other's IP addresses**, as with any WebRTC connection.
 
 ## Not covered

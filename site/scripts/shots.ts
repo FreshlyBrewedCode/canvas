@@ -24,6 +24,7 @@ const shots: Record<string, Crop> = {
   "agent-guest-permission": null,
   "files-preview": null,
   "files-lines": null,
+  "files-comments": { left: 700, top: 150, width: 1480, height: 1600 },
   terminal: null,
   browser: null,
   snap: { left: 280, top: 1140, width: 2320, height: 660 },
