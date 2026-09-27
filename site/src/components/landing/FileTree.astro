@@ -1,0 +1,20 @@
+---
+/* The file tree of a files frame, at the login code. */
+import ChevronDown from "@lucide/astro/icons/chevron-down";
+import ChevronRight from "@lucide/astro/icons/chevron-right";
+---
+
+<div class="tree w-[9.5rem] shrink-0 border-r border-border px-2 py-2 text-[11px] leading-[1.9]">
+  <div class="mb-1.5 h-6 rounded-sm border border-border bg-background px-2 leading-6 text-muted-foreground">Search…</div>
+  <div class="flex items-center gap-1 text-muted-foreground"><ChevronRight class="size-3" /> docs</div>
+  <div class="flex items-center gap-1 text-muted-foreground"><ChevronRight class="size-3" /> public</div>
+  <div class="flex items-center gap-1"><ChevronDown class="size-3" /> src</div>
+  <div class="flex items-center gap-1 pl-3 text-muted-foreground"><ChevronRight class="size-3" /> auth</div>
+  <div class="flex items-center gap-1 pl-3"><ChevronDown class="size-3" /> routes</div>
+  <div class="ml-6 rounded-sm bg-primary/25 px-1.5 font-medium">login.ts</div>
+  <div class="ml-6 px-1.5 text-muted-foreground">products.ts</div>
+  <div class="ml-3 px-1.5 text-muted-foreground">db.ts</div>
+  <div class="ml-3 px-1.5 text-muted-foreground">server.ts</div>
+  <div class="px-1.5 text-muted-foreground">package.json</div>
+  <div class="px-1.5 text-muted-foreground">README.md</div>
+</div>

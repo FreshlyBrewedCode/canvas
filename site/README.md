@@ -26,7 +26,9 @@ Astro's image pipeline, sharp, needs `libstdc++`.
 | `content/docs/*.md`              | Docs prose. Frontmatter: `title`, `description?`, `section`, `order` |
 | `content/docs/screenshots/`      | Screenshots the docs embed, made by `scripts/shots.ts`      |
 | `src/content.config.ts`          | The `docs` collection — glob loader + zod schema            |
-| `src/pages/index.astro`          | Landing page                                                |
+| `src/pages/index.astro`          | Landing page: the board as hero, one session in four beats  |
+| `src/components/landing/`        | Frames, cursors and frame contents rebuilt in HTML for it   |
+| `src/styles/landing.css`, `src/scripts/landing.ts` | Its grid, animations, parallax, copy buttons |
 | `src/pages/docs/[...slug].astro` | One route per markdown file                                 |
 | `src/pages/docs/[...slug].md.ts` | The same pages as raw markdown at `/docs/<slug>.md`         |
 | `src/pages/docs/index.md.ts`     | Unlisted markdown index of every doc                        |

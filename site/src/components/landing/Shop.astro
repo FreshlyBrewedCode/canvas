@@ -1,0 +1,52 @@
+---
+/*
+ * The demo project's storefront, as a browser frame shows it: an address bar
+ * with the page's URL, then the page. Drawn on the tokens so it follows the
+ * colour scheme like the rest of the board.
+ */
+import RotateCw from "@lucide/astro/icons/rotate-cw";
+
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+const items = [
+  ["Ceramic mug", "€18", "oklch(0.9 0.1 90)", "oklch(0.45 0.08 90)"],
+  ["Linen tote", "€24", "oklch(0.88 0.07 250)", "oklch(0.42 0.07 250)"],
+  ["Notebook, A5", "€9", "oklch(0.9 0.09 150)", "oklch(0.42 0.07 150)"],
+  ["Desk lamp", "€64", "oklch(0.88 0.08 25)", "oklch(0.42 0.08 25)"],
+];
+---
+
+<div class:list={["flex h-full flex-col bg-card", className]}>
+  <div class="flex h-8 shrink-0 items-center gap-2 border-b border-border bg-muted/60 px-2">
+    <RotateCw class="size-3 shrink-0 text-muted-foreground" />
+    <span
+      class="flex h-5.5 flex-1 items-center rounded-sm border border-border bg-background px-2 font-mono text-[10px] text-foreground"
+    >
+      http://localhost:5199
+    </span>
+  </div>
+  <div class="flex items-center justify-between px-4 pt-3 pb-2">
+    <span class="text-[14px] font-semibold">shop</span>
+    <span class="rounded-sm bg-foreground px-2 py-0.5 text-[10px] text-background">Sign in</span>
+  </div>
+  <div class="grid grid-cols-4 gap-2 px-4 pb-4">
+    {items.map(([name, price, light, dark]) => (
+      <div class="rounded-md border border-border p-1.5">
+        <div class="swatch aspect-[4/3] rounded-sm" style={`--light:${light};--dark:${dark}`} />
+        <div class="mt-1.5 text-[10px] font-medium">{name}</div>
+        <div class="font-mono text-[9px] text-muted-foreground">{price}</div>
+      </div>
+    ))}
+  </div>
+</div>
+
+<style>
+  .swatch {
+    background: var(--light);
+  }
+  :global(.dark) .swatch {
+    background: var(--dark);
+  }
+</style>

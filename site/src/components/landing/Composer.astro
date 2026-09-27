@@ -1,0 +1,26 @@
+---
+/*
+ * The prompt draft at the bottom of an agent frame. Two people write it at
+ * once, each with a caret in their colour; the animation types it in when the
+ * section comes into view (`.is-in` on an ancestor).
+ */
+import Send from "@lucide/astro/icons/send";
+
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+---
+
+<div class:list={["composer border-t border-border p-3", className]}>
+  <div class="min-h-[3.4rem] text-[12px] leading-relaxed">
+    <span class="typed typed-ada" style="--caret:#3b82f6">Show me the code that handles login on the board, at the relevant lines.</span>
+    <span class="typed typed-karl" style="--caret:#f97316"> Then explain in two sentences how a password is checked.</span>
+  </div>
+  <div class="mt-2 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+    <span>Haiku 4.5 <span class="ml-2">⌘↵ to send</span></span>
+    <span class="inline-flex h-6 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground">
+      <Send class="size-3" /> Send
+    </span>
+  </div>
+</div>

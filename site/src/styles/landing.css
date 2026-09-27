@@ -1,0 +1,216 @@
+/*
+ * Landing page only. The board surface, the rebuilt frames' code colours,
+ * and every animation on the page: the cursors, the page-load settle, the
+ * typed prompt draft, the frame the agent opens, the scroll someone follows.
+ * All of it stops under `prefers-reduced-motion`.
+ */
+
+/* The board: the app's dot grid, 22 px like the app, drawn on a pseudo-element
+   so that fading it in or out leaves the frames and text on it alone. */
+.board {
+  position: relative;
+}
+.board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--foreground) 16%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+/* The grid fades out under the page below the hero, and in above the footer. */
+.board-fade-bottom::before {
+  mask-image: linear-gradient(to bottom, black 65%, transparent);
+}
+.board-fade-top::before {
+  mask-image: linear-gradient(to top, black 55%, transparent);
+}
+
+/* A soft pool behind the headline so it stays readable over the grid. */
+.headline-pool {
+  background: radial-gradient(
+    closest-side,
+    var(--background) 40%,
+    color-mix(in oklab, var(--background) 85%, transparent) 70%,
+    transparent 100%
+  );
+}
+
+/* ---- code in a files frame ---------------------------------------------- */
+
+.code .line {
+  display: block;
+  padding-inline: 0.75rem;
+  border-left: 2px solid transparent;
+}
+.code .line.hit {
+  border-left-color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+.code .n {
+  display: inline-block;
+  width: 1.5rem;
+  margin-right: 0.75rem;
+  text-align: right;
+  color: var(--muted-foreground);
+  user-select: none;
+}
+.code .kw { color: oklch(0.5 0.18 340); }
+.code .fn { color: oklch(0.55 0.12 250); }
+.code .str { color: oklch(0.52 0.13 150); }
+.code .num { color: oklch(0.55 0.15 60); }
+.code .id { color: var(--foreground); }
+.code .pn { color: var(--muted-foreground); }
+.dark .code .kw { color: oklch(0.78 0.13 340); }
+.dark .code .fn { color: oklch(0.8 0.1 250); }
+.dark .code .str { color: oklch(0.8 0.12 150); }
+.dark .code .num { color: oklch(0.82 0.13 70); }
+
+.term .dim { color: oklch(0.6 0 0); }
+.term .ok { color: oklch(0.81 0.16 163); }
+.term .warn { color: oklch(0.86 0.176 89.2); }
+
+/* ---- cursors ------------------------------------------------------------ */
+
+/* Each cursor walks its own path: a few stops with holds between, like a
+   person reading, pointing, moving on. Percent positions come from the
+   element; the walk is a translate so it scales with nothing. */
+.cursor {
+  transition: transform 75ms linear;
+}
+
+@keyframes walk-ada {
+  0%, 8% { translate: 0 0; }
+  22%, 34% { translate: -9rem 7rem; }
+  48%, 58% { translate: -3rem 14rem; }
+  74%, 84% { translate: 6rem 4rem; }
+  100% { translate: 0 0; }
+}
+@keyframes walk-lynx {
+  0%, 10% { translate: 0 0; }
+  30%, 40% { translate: 12rem -5rem; }
+  60%, 70% { translate: 20rem 2rem; }
+  85%, 92% { translate: 5rem 3rem; }
+  100% { translate: 0 0; }
+}
+@keyframes walk-karl {
+  0%, 12% { translate: 0 0; }
+  28%, 40% { translate: 10rem 3rem; }
+  55%, 66% { translate: 16rem -6rem; }
+  82%, 90% { translate: 4rem -9rem; }
+  100% { translate: 0 0; }
+}
+@keyframes walk-follow {
+  0%, 15% { translate: 0 0; }
+  35%, 50% { translate: 2rem 3.5rem; }
+  70%, 85% { translate: 7rem 1rem; }
+  100% { translate: 0 0; }
+}
+.walk-ada { animation: walk-ada 19s ease-in-out infinite; }
+.walk-lynx { animation: walk-lynx 23s ease-in-out infinite; }
+.walk-karl { animation: walk-karl 17s ease-in-out infinite; }
+.walk-follow { animation: walk-follow 9s ease-in-out infinite; }
+
+/* ---- the hero settles once, on load ------------------------------------- */
+
+@keyframes settle {
+  from { opacity: 0; translate: 0 1.25rem; }
+  to { opacity: 1; translate: 0 0; }
+}
+.settle {
+  animation: settle 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--settle-delay, 0ms);
+}
+
+/* ---- beats: motion that answers the scroll ------------------------------ */
+
+/* The prompt draft types itself in (`landing.ts`); until then the carets wait. */
+.typed {
+  position: relative;
+}
+.typed::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--caret);
+  animation: blink 1s steps(2, start) infinite;
+}
+.typed.done::after {
+  animation: none;
+  opacity: 0.35;
+}
+@keyframes blink {
+  to { visibility: hidden; }
+}
+
+/* The frame the agent opened, arriving next to it. */
+.arrives {
+  opacity: 0;
+  translate: -2.5rem 0;
+  transition:
+    opacity 0.6s ease 0.4s,
+    translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.4s;
+}
+.is-in .arrives {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* Following Ada: the code scrolls with her. */
+@keyframes follow-scroll {
+  0%, 20% { translate: 0 0; }
+  45%, 70% { translate: 0 -3.4rem; }
+  90%, 100% { translate: 0 0; }
+}
+.follow-scroll {
+  animation: follow-scroll 9s ease-in-out infinite paused;
+}
+.is-in .follow-scroll {
+  animation-play-state: running;
+}
+
+/* The frame a step behind the ones that matter: fainter and a touch out of
+   focus, no shadow, and it scrolls a little slower (`data-depth` on its
+   wrapper). */
+.back .frame {
+  box-shadow: none;
+  opacity: 0.6;
+  filter: blur(1px);
+}
+
+/* Parallax layers: `landing.ts` writes `--py` from the scroll position. */
+[data-depth] {
+  translate: 0 var(--py, 0px);
+  will-change: translate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor,
+  .walk-ada,
+  .walk-lynx,
+  .walk-karl,
+  .walk-follow,
+  .settle,
+  .follow-scroll,
+  .typed::after {
+    animation: none;
+  }
+  .settle,
+  .arrives,
+  .is-in .arrives {
+    opacity: 1;
+    translate: 0 0;
+    transition: none;
+  }
+  [data-depth] {
+    translate: 0 0;
+  }
+}
