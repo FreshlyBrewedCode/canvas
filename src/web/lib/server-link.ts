@@ -1,6 +1,7 @@
-import type { ClientToServer, ServerToClient } from "../../shared/protocol";
+import { HOST_REPLACED, type ClientToServer, type ServerToClient } from "../../shared/protocol";
 
-export type LinkStatus = "connecting" | "open" | "closed";
+/** `replaced`: another tab is the host now; this one waits for `takeOver`. */
+export type LinkStatus = "connecting" | "open" | "closed" | "replaced";
 
 /**
  * The host browser's WebSocket to `canvas serve`, reconnecting with backoff.
@@ -30,7 +31,8 @@ export class ServerLink {
       this.setStatus("open");
     };
     ws.onmessage = (event) => this.onMessage(JSON.parse(String(event.data)) as ServerToClient);
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (event.code === HOST_REPLACED && !this.stopped) return this.setStatus("replaced");
       this.setStatus("closed");
       if (this.stopped) return;
       const delay = Math.min(10_000, 500 * 2 ** this.retry++);
@@ -47,6 +49,13 @@ export class ServerLink {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
     this.ws.send(JSON.stringify(message));
     return true;
+  }
+
+  /** Connect again after another tab took over, taking over from it in turn. */
+  takeOver() {
+    if (this.status !== "replaced") return;
+    this.retry = 0;
+    this.connect();
   }
 
   close() {

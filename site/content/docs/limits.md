@@ -11,7 +11,8 @@ canvas is a prototype. These are known, and not bugs to report.
 
 - **The host's browser must be open.** It is the only way to `canvas serve`: without it nothing
   runs, board tools are unavailable, and board edits between guests wait.
-- **With several host tabs**, the first one connected runs the board tools.
+- **One host tab at a time.** Opening the host link again moves the board to the new tab; the
+  old one turns read-only until you press **Use here** there.
 - **Peer discovery uses public Nostr relays.** Some are down at any time; discovery usually
   succeeds through the others.
 
@@ -35,6 +36,9 @@ canvas is a prototype. These are known, and not bugs to report.
 
 - **Terminals** do not survive a restart of `canvas serve`, and keep running after their frame is
   removed, until `canvas serve` stops.
+- **Terminals need `setsid`** (util-linux, on every Linux) to be a real terminal for the shell.
+  Without it, as on macOS, Ctrl-C does not reach programs, and ones that open the terminal
+  themselves — fzf's Ctrl-R, `sudo` and `ssh` prompts — hang.
 - **Browser frames** load pages per viewer: a dev server on the host's `localhost` is not visible
   to guests, who see a notice.
 - **HTML previews** are one file: relative assets and links don't load.

@@ -1403,4 +1403,42 @@ if (step === "version") {
   console.log(`${gone ? "ok  " : "FAIL"} dismissed`);
   if (!gone) process.exitCode = 1;
 }
+
+// One host tab at a time: a second one takes over, "Use here" takes it back.
+if (step === "takeover") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const connected = (page: Page) => page.getByText("connected to canvas serve");
+  const replaced = (page: Page) => page.locator("[data-host-elsewhere]");
+
+  const second = await open(hostLink, "Karl", "#f97316");
+  await connected(second).waitFor({ timeout: 15000 });
+  await replaced(host).waitFor({ timeout: 10000 });
+  check(true, "the first tab steps down when a second one opens");
+  const toolbar = host.locator("[data-hud]").getByRole("button", { name: "Agent" });
+  check((await toolbar.count()) === 0, "the replaced tab is read-only");
+  await shot(host, "90-first-tab-replaced");
+
+  // Guests follow the tab that has canvas serve: a frame a guest adds reaches it.
+  await guest.getByText("host online").waitFor({ timeout: 30000 });
+  const frame = await addFrame(guest, "Files");
+  const id = await frame.getAttribute("data-frame");
+  await second.locator(`[data-frame="${id}"]`).waitFor({ timeout: 10000 });
+  check(true, "a guest's edit reaches the second tab");
+
+  await host.getByRole("button", { name: "Use here" }).click();
+  await connected(host).waitFor({ timeout: 15000 });
+  await replaced(second).waitFor({ timeout: 10000 });
+  check(true, "Use here takes the board back");
+  await shot(second, "91-second-tab-replaced");
+
+  // Neither tab reconnects by itself: they don't take it from each other.
+  await new Promise((r) => setTimeout(r, 5000));
+  check(await connected(host).isVisible(), "the first tab is still the host 5 s later");
+  check(await replaced(second).isVisible(), "the second tab still waits");
+  await guest.getByText("host online").waitFor({ timeout: 30000 });
+  check(true, "the guest sees the host again");
+}
 await browser.close();

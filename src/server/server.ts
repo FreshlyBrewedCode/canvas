@@ -1,13 +1,14 @@
 /**
  * `canvas serve`: the local half of canvas. One WebSocket endpoint that only
- * the host's browser may use (it presents the token from the printed link).
+ * the host's browser may use (it presents the token from the printed link),
+ * in one tab at a time: a newer tab takes over from an older one.
  * Nothing here knows about guests — the host's browser is the relay.
  */
 
 import type { ServerWebSocket } from "bun";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ClientToServer, ServerToClient } from "../shared/protocol";
+import { HOST_REPLACED, type ClientToServer, type ServerToClient } from "../shared/protocol";
 import { AgentManager, detectAgents } from "./agents";
 import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
@@ -28,11 +29,9 @@ export async function serve(options: ServeOptions) {
   const store = new Store(options.dir);
   excludeFromGit(options.dir);
   const room = await store.room();
-  const clients = new Set<ServerWebSocket<unknown>>();
-  const broadcast = (message: ServerToClient) => {
-    const text = JSON.stringify(message);
-    for (const ws of clients) ws.send(text);
-  };
+  // The host tab: the board, and so every board tool call, lives there.
+  let host: ServerWebSocket<unknown> | null = null;
+  const broadcast = (message: ServerToClient) => host?.send(JSON.stringify(message));
 
   // Scratch files are written by agents' board tools; `files` mirrors them.
   const scratch = new Scratch(options.dir, (path) => files.scratchChanged(path));
@@ -48,9 +47,8 @@ export async function serve(options: ServeOptions) {
     read: (path) => files.read(path),
     scratch,
     relay: (call) => {
-      const [ws] = clients;
-      if (!ws) return false;
-      ws.send(JSON.stringify({ t: "board-call", ...call } satisfies ServerToClient));
+      if (!host) return false;
+      host.send(JSON.stringify({ t: "board-call", ...call } satisfies ServerToClient));
       return true;
     },
   });
@@ -150,7 +148,11 @@ export async function serve(options: ServeOptions) {
     websocket: {
       maxPayloadLength: 64 * 1024 * 1024,
       open(ws) {
-        clients.add(ws);
+        if (host) {
+          files.drop(host);
+          host.close(HOST_REPLACED, "opened in another tab");
+        }
+        host = ws;
         const board = store.board();
         const { token: _, ...secrets } = room;
         ws.send(
@@ -166,6 +168,8 @@ export async function serve(options: ServeOptions) {
         );
       },
       message(ws, data) {
+        // Still in flight from a tab that was just replaced.
+        if (ws !== host) return;
         try {
           handle(ws, JSON.parse(String(data)) as ClientToServer);
         } catch (error) {
@@ -173,7 +177,7 @@ export async function serve(options: ServeOptions) {
         }
       },
       close(ws) {
-        clients.delete(ws);
+        if (ws === host) host = null;
         files.drop(ws);
       },
     },

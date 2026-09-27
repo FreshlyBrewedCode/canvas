@@ -43,6 +43,9 @@ serve**. You are the host.
 
 The host link carries the token that controls `canvas serve`. Never share it.
 
+One tab is the host at a time. Open the link in another tab and the board moves there; the first
+tab says so and offers **Use here** to take it back.
+
 ## 3. Add frames
 
 The toolbar adds frames: **Agent**, **Files**, **Browser**, **Terminal**. Add an agent frame, pick

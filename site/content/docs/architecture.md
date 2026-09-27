@@ -33,7 +33,8 @@ A [Bun](https://bun.sh) server started in the project directory. It:
 - **persists** the room, the board and the sessions in `.canvas/` (see below).
 
 It speaks to exactly one kind of client: the host's browser, over one WebSocket, authenticated with
-the token from the host link. It knows nothing about guests.
+the token from the host link, in one tab at a time: a newer tab takes over from an older one. It
+knows nothing about guests.
 
 ## Web app
 
