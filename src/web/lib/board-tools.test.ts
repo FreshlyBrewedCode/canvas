@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import { GAP } from "../../shared/layout";
 import { addFrame, allFrames, promptText, type Frame, type NewFrame } from "./board";
 import { runBoardTool } from "./board-tools";
+import { addComment, readComments } from "./comments";
 
 const AGENTS = [
   { kind: "claude", label: "Claude Code" },
@@ -239,5 +240,112 @@ describe("close_frame", () => {
     expect(frame(ids[1]!)).toBeUndefined();
     expect(frame(ids[2]!)!.x).toBe(484);
     expect(() => run("close_frame", { frame: self })).toThrow(/your own frame/);
+  });
+});
+
+describe("comments", () => {
+  const person = { kind: "person", id: "k", name: "Karl", color: "#f97316" } as const;
+  const setup = () => {
+    const b = board(agent(0, 0), file(484, 0, "src/a.ts"), agent(0, 700));
+    const note = (body: string, extra = {}) =>
+      addComment(b.doc, b.ids[1]!, {
+        path: "src/a.ts",
+        start: 3,
+        end: 4,
+        quote: "c\nd",
+        body,
+        author: person,
+        ...extra,
+      });
+    const comments = () => readComments(b.doc, b.ids[1]!);
+    return { ...b, note, comments };
+  };
+
+  test("view_board counts a frame's comments", () => {
+    const { run, note, ids } = setup();
+    expect(run("view_board")).not.toContain("comment");
+    note("one");
+    note("two", { outdated: true });
+    expect(run("view_board")).toContain(
+      `[${ids[1]}] file "a.ts" src/a.ts 2 comments (1 outdated) — view_frame lists them`,
+    );
+  });
+
+  test("view_frame lists them: id, lines, author, body; an outdated one's lines", () => {
+    const { run, note, ids, self } = setup();
+    expect(run("view_frame", { frame: ids[1] })).toContain("No comments.");
+    const mine = note("rename this\nplease");
+    const old = note("was fine", { outdated: true, start: 9, end: 9, quote: "old line" });
+    const agents = note("agent's", { author: { kind: "agent", frame: self, name: "claude-1" } });
+    const text = run("view_frame", { frame: ids[1] });
+    expect(text).toContain("3 comments, by file and line:");
+    expect(text).toContain(
+      `- #${mine.id} src/a.ts L3-4 by "Karl" (a person):\n    rename this\n    please`,
+    );
+    expect(text).toContain(`- #${agents.id} src/a.ts L3-4 by agent "claude-1" [${self}] (you):`);
+    expect(text).toContain(`- #${old.id} src/a.ts L9 by "Karl" (a person) — OUTDATED`);
+    expect(text).toContain("  >    old line");
+    expect(() => run("view_frame", { frame: "nope" })).toThrow(/no frame nope/);
+  });
+
+  test("add_comment: on a file frame, by the agent, with the lines canvas serve quoted", () => {
+    const { run, touched, comments, ids, self } = setup();
+    const text = run("add_comment", {
+      frame: ids[1],
+      path: "src/b.ts",
+      start_line: 2,
+      end_line: 3,
+      body: " looks off ",
+      quote: "x\ny",
+    });
+    expect(text).toMatch(
+      /^Added comment #\w+ on src\/b.ts L2-3 in \[\w+\] \(the frame shows src\/a.ts\)\.$/,
+    );
+    expect(comments()[0]).toMatchObject({
+      path: "src/b.ts",
+      start: 2,
+      end: 3,
+      quote: "x\ny",
+      body: "looks off",
+      author: { kind: "agent", frame: self, name: "claude-1" },
+    });
+    const args = { frame: ids[1], path: "src/a.ts", start_line: 1, body: "x", quote: "a" };
+    expect(touched("add_comment", args)).toBe(ids[1]);
+    expect(() => run("add_comment", { ...args, frame: ids[0] })).toThrow(/file frames/);
+    expect(() => run("add_comment", { ...args, body: " " })).toThrow(/needs a body/);
+    expect(() => run("add_comment", { ...args, quote: undefined })).toThrow(/didn't read/);
+  });
+
+  test("edit and delete: agents' comments only", () => {
+    const { run, note, comments, ids } = setup();
+    const persons = note("mine");
+    const other = note("theirs", { author: { kind: "agent", frame: ids[2], name: "claude-2" } });
+    run("edit_comment", { frame: ids[1], comment: `#${other.id}`, body: "better" });
+    expect(comments().find((c) => c.id === other.id)).toMatchObject({ body: "better" });
+    expect(() => run("edit_comment", { frame: ids[1], comment: persons.id, body: "x" })).toThrow(
+      /"Karl"'s: agents only change agents' comments/,
+    );
+    expect(() => run("delete_comment", { frame: ids[1], comment: persons.id })).toThrow(/Karl/);
+    expect(run("delete_comment", { frame: ids[1], comment: other.id })).toBe(
+      `Deleted comment #${other.id}.`,
+    );
+    expect(comments().map((c) => c.id)).toEqual([persons.id]);
+    expect(() => run("delete_comment", { frame: ids[1], comment: "zz" })).toThrow(/no comment zz/);
+  });
+
+  test("update_frame with a comment shows its file at its lines, in source", () => {
+    const { run, note, frame, ids, doc } = setup();
+    const md = note("a heading", { path: "docs/x.md", start: 5, end: 6 });
+    doc.getMap<any>("frames").get(ids[1]!)!.set("view", "preview");
+    run("update_frame", { frame: ids[1], comment: md.id });
+    expect(frame(ids[1]!)).toMatchObject({
+      path: "docs/x.md",
+      title: "x.md",
+      view: null,
+      lines: { start: 5, end: 6 },
+    });
+    expect(() => run("update_frame", { frame: ids[1], comment: md.id, path: "a.ts" })).toThrow(
+      /either a comment/,
+    );
   });
 });

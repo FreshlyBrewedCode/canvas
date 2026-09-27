@@ -11,11 +11,15 @@
 
 export const BOARD_TOOL_NAMES = [
   "view_board",
+  "view_frame",
   "open_frame",
   "update_frame",
   "close_frame",
   "read_board_file",
   "write_board_file",
+  "add_comment",
+  "edit_comment",
+  "delete_comment",
 ] as const;
 export type BoardToolName = (typeof BOARD_TOOL_NAMES)[number];
 
@@ -72,6 +76,33 @@ export interface UpdateFrameArgs extends Placement, FileTarget, ScratchContent, 
   readonly title?: string;
   readonly url?: string;
   readonly view?: "preview" | "source";
+  /** A comment's id: show its file at its lines. */
+  readonly comment?: string;
+}
+
+export interface ViewFrameArgs {
+  readonly frame: string;
+}
+
+export interface AddCommentArgs {
+  readonly frame: string;
+  readonly path: string;
+  readonly start_line: number;
+  readonly end_line?: number;
+  readonly body: string;
+  /** The lines' text, which `canvas serve` adds (ADR 0006). */
+  readonly quote?: string;
+}
+
+export interface EditCommentArgs {
+  readonly frame: string;
+  readonly comment: string;
+  readonly body: string;
+}
+
+export interface DeleteCommentArgs {
+  readonly frame: string;
+  readonly comment: string;
 }
 
 export interface CloseFrameArgs {
@@ -181,6 +212,18 @@ export const BOARD_TOOLS: ReadonlyArray<{
     },
   },
   {
+    name: "view_frame",
+    description:
+      "Look at one frame in full. For a file frame: what it shows, its list of files, and its " +
+      "comments — people's and agents' notes on lines of its files, with ids, authors and lines. " +
+      "view_board says which frames have comments.",
+    inputSchema: {
+      type: "object",
+      properties: { frame: { type: "string", description: "Id of the frame." } },
+      required: ["frame"],
+    },
+  },
+  {
     name: "open_frame",
     description:
       "Open a new frame on the board, in your own cluster unless placed next to another frame. " +
@@ -220,6 +263,10 @@ export const BOARD_TOOLS: ReadonlyArray<{
         ...scratchContent,
         ...fileList,
         view: { type: "string", enum: ["preview", "source"] },
+        comment: {
+          type: "string",
+          description: "file: a comment's id (view_frame) — show its file at its lines.",
+        },
         url: { type: "string" },
         title: { type: "string" },
         ...placement,
@@ -264,6 +311,51 @@ export const BOARD_TOOLS: ReadonlyArray<{
       required: ["content"],
     },
   },
+  {
+    name: "add_comment",
+    description:
+      "Comment on lines of a file, in a file frame: it shows below the lines for everyone, " +
+      "whatever file the frame shows. Markdown. The frame keeps it; people read it there.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        frame: { type: "string", description: "Id of the file frame." },
+        path: {
+          type: "string",
+          description: "The file, relative to the project root, or canvas:scratch/<name>.",
+        },
+        start_line: { type: "integer", minimum: 1 },
+        end_line: { type: "integer", minimum: 1, description: "Default: start_line." },
+        body: { type: "string", description: "The comment, markdown." },
+      },
+      required: ["frame", "path", "start_line", "body"],
+    },
+  },
+  {
+    name: "edit_comment",
+    description: "Rewrite a comment's text. Only agents' comments: people's are theirs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        frame: { type: "string", description: "Id of the file frame." },
+        comment: { type: "string", description: "The comment's id (view_frame)." },
+        body: { type: "string", description: "The new text, markdown." },
+      },
+      required: ["frame", "comment", "body"],
+    },
+  },
+  {
+    name: "delete_comment",
+    description: "Remove a comment. Only agents' comments: people's are theirs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        frame: { type: "string", description: "Id of the file frame." },
+        comment: { type: "string", description: "The comment's id (view_frame)." },
+      },
+      required: ["frame", "comment"],
+    },
+  },
 ];
 
 /** The agent's standing context, sent as MCP server instructions. */
@@ -284,5 +376,6 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - Scratch files hold what exists only to be shown on this board: a write-up, a diagram, an HTML visualisation. Pass the text as \`content\` (with a \`name\`) to open_frame or update_frame, or use write_board_file; canvas keeps them outside the project, as canvas:scratch/<name>. Don't write such files into the project for the board. Anything else — a temp file for your own work, a script, test data — goes wherever it would without canvas.
 - Any agent may read (read_board_file) and overwrite (write_board_file) any scratch file; view_board lists them.
 - To show several files for one topic, prefer one file frame with a list (files) over a frame per file: people click through it at their own pace. You decide the tree: display paths, folders, order, line ranges. A write-up (a scratch file) at the top and a visualisation at the bottom fit in the same list.
+- People (and agents) comment on lines of files in a file frame. view_board says which frames have comments; view_frame lists them, with ids. You aren't told when someone comments: look when asked to, e.g. to address feedback. add_comment leaves one of yours; edit_comment and delete_comment change agents' comments, never people's. update_frame with a comment's id shows its file at its lines. A comment is "outdated" when its lines changed since; it shows what they were.
 - Markdown and HTML files render. HTML runs its scripts, but relative links and assets (CSS, images, other scripts) don't load, so inline them.`;
 }

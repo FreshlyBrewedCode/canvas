@@ -1575,6 +1575,87 @@ if (step === "comments") {
   check((await comments()).length === 0, "removing the frame removes its comments");
 }
 
+// Agents read comments with view_frame and write their own (ADR 0006).
+// Same project as `comments`.
+if (step === "comments-agent") {
+  const kind = process.env.AGENT ?? "claude";
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, kind);
+  const self = (await frame.getAttribute("data-frame"))!;
+  await place(host, self, { x: 0, y: 0 });
+  const files = await addFrame(host, "Files");
+  const id = (await files.getAttribute("data-frame"))!;
+  await place(host, id, { x: 484, y: 0, w: 820, h: 620, path: "src/values.ts", title: "values.ts" });
+  const comments = () =>
+    host.evaluate(
+      (frameId) => [...(window as any).room.doc.getMap(`comments:${frameId}`).values()],
+      id,
+    ) as Promise<Array<Record<string, any>>>;
+  // Karl's comments, as the gutter writes them.
+  await host.evaluate((frameId) => {
+    const map = (window as any).room.doc.getMap(`comments:${frameId}`);
+    const author = { kind: "person", id: "karl", name: "Karl", color: "#f97316" };
+    map.set("k1", {
+      id: "k1", path: "src/values.ts", start: 20, end: 22, author, at: Date.now(),
+      quote: [20, 21, 22].map((n) => `export const value${n} = ${n}; // line ${n}`).join("\n"),
+      body: "What is the sum of the three values on these lines?",
+    });
+    map.set("k2", {
+      id: "k2", path: "src/deep/greet.ts", start: 2, end: 2, author, at: Date.now(),
+      quote: "  return `hi ${name}`;", body: "Which greeting word does this use?",
+    });
+  }, id);
+  await frame
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 30000 });
+
+  await ask(
+    frame,
+    "Karl left comments in the files frame next to you. Read them and answer each in your reply. " +
+      "Then leave a comment of your own in that frame on line 40 of src/values.ts, saying which " +
+      "constant it exports. Keep it short.",
+  );
+  let all = await comments();
+  const reply = (await frame.locator(".prose-canvas").allInnerTexts()).join("\n").toLowerCase();
+  check(reply.includes("63"), "it read the range comment (20 + 21 + 22 = 63)");
+  check(reply.includes("hi"), "it read the comment on the other file");
+  const mine = all.find((c) => c.author.kind === "agent");
+  check(
+    !!mine && mine.start === 40 && mine.quote.includes("value40") && mine.author.frame === self,
+    `its comment: L${mine?.start} by ${mine?.author.name}: ${mine?.body}`,
+  );
+  await guest.locator(`[data-frame="${id}"] [data-comment="${mine?.id}"]`).waitFor({ timeout: 10000 });
+  check(true, "the guest sees the agent's comment");
+  await host.locator(`[data-frame="${id}"]`).screenshot({ path: `${out}/104-${kind}-agent-comment.png` });
+
+  await ask(
+    frame,
+    "Change your comment to say just 'checked'. Then delete Karl's comment about greet.ts. Short reply.",
+  );
+  all = await comments();
+  check(all.find((c) => c.id === mine?.id)?.body === "checked", "it edited its comment");
+  check(!!all.find((c) => c.id === "k2"), "it can't delete Karl's comment");
+
+  await ask(
+    frame,
+    "Show Karl's comment about src/values.ts on the board: point that frame at it. Short reply.",
+  );
+  const now = (await framesOf(host)).find((f) => f.id === id)!;
+  check(
+    now.path === "src/values.ts" && now.lines?.start === 20 && now.lines?.end === 22,
+    `it points the frame at the comment: ${now.path} L${now.lines?.start}-${now.lines?.end}`,
+  );
+  await frame.screenshot({ path: `${out}/105-${kind}-thread.png` });
+}
+
 // Page and canvas serve of different releases: both host and guest are told.
 // Run the dev server with VITE_CANVAS_VERSION and a staged release of the CLI
 // (scripts/build-release.ts) of another version; EXPECT is the skew.

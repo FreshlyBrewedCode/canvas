@@ -13,11 +13,15 @@
 import type * as Y from "yjs";
 
 import type {
+  AddCommentArgs,
   CloseFrameArgs,
+  DeleteCommentArgs,
+  EditCommentArgs,
   FileListEntry,
   OpenFrameArgs,
   UpdateFrameArgs,
   ViewBoardArgs,
+  ViewFrameArgs,
 } from "../../shared/board-tools";
 import {
   clusters,
@@ -43,6 +47,14 @@ import {
   type LineRange,
   type NewFrame,
 } from "./board";
+import {
+  addComment,
+  editComment,
+  mayChange,
+  readComments,
+  removeComment,
+  type Comment,
+} from "./comments";
 import { checkDisplays, displayPath } from "./file-list";
 
 export interface BoardToolContext {
@@ -70,12 +82,20 @@ export function runBoardTool(ctx: BoardToolContext, name: string, args: unknown)
   switch (name) {
     case "view_board":
       return { text: viewBoard(ctx, frames, input as ViewBoardArgs) };
+    case "view_frame":
+      return { text: viewFrame(ctx, frames, input as unknown as ViewFrameArgs) };
     case "open_frame":
       return openFrame(ctx, frames, input as unknown as OpenFrameArgs);
     case "update_frame":
       return changeFrame(ctx, frames, input as unknown as UpdateFrameArgs);
     case "close_frame":
       return { text: closeFrame(ctx, frames, input as unknown as CloseFrameArgs) };
+    case "add_comment":
+      return commentOn(ctx, self, frames, input as unknown as AddCommentArgs);
+    case "edit_comment":
+      return changeComment(ctx, frames, input as unknown as EditCommentArgs);
+    case "delete_comment":
+      return changeComment(ctx, frames, input as unknown as DeleteCommentArgs);
     default:
       throw new Error(`no tool ${name}`);
   }
@@ -127,6 +147,14 @@ function describe(ctx: BoardToolContext, frame: Frame): string {
       if (frame.view) parts.push(`(${frame.view})`);
       if (frame.files?.length)
         parts.push(`list of ${frame.files.length}: [${frame.files.map(describeEntry).join(", ")}]`);
+      {
+        const comments = readComments(ctx.doc, frame.id);
+        const outdated = comments.filter((c) => c.outdated).length;
+        if (comments.length)
+          parts.push(
+            `${count(comments.length, "comment")}${outdated ? ` (${outdated} outdated)` : ""} — view_frame lists them`,
+          );
+      }
       break;
     case "browser":
       parts.push("browser", JSON.stringify(frame.title), frame.url);
@@ -206,9 +234,15 @@ function changeFrame(
   const frame = known(frames, args.frame);
   const patch: Record<string, unknown> = {};
   const wantsFile =
-    args.path !== undefined || args.start_line !== undefined || args.view || args.files;
+    args.path !== undefined ||
+    args.start_line !== undefined ||
+    args.view ||
+    args.files ||
+    args.comment !== undefined;
   if (wantsFile && frame.type !== "file")
-    throw new Error("path, lines, view and files only apply to file frames");
+    throw new Error("path, lines, view, files and comment only apply to file frames");
+  if (args.comment !== undefined && (args.path !== undefined || args.start_line !== undefined))
+    throw new Error("give either a comment or a path and lines, not both");
   if (args.url !== undefined && frame.type !== "browser")
     throw new Error("url only applies to browser frames");
 
@@ -219,6 +253,17 @@ function changeFrame(
       Object.assign(patch, { path, view: null, lines: lineRange(args) ?? null });
       if (defaultTitle) patch.title = basename(path);
     } else if (args.start_line !== undefined) patch.lines = lineRange(args);
+    if (args.comment !== undefined) {
+      // Comments show in the source.
+      const comment = knownComment(ctx, frame.id, args.comment);
+      Object.assign(patch, {
+        path: comment.path,
+        view: null,
+        lines: { start: comment.start, end: comment.end },
+      });
+      if (frame.title === basename(frame.path) && !frame.files?.length)
+        patch.title = basename(comment.path);
+    }
     if (args.view) patch.view = args.view;
     if (args.files !== undefined) {
       const files = fileList(args.files);
@@ -254,7 +299,97 @@ function closeFrame(ctx: BoardToolContext, frames: Frame[], args: CloseFrameArgs
   return `Closed ${text}.`;
 }
 
+function viewFrame(ctx: BoardToolContext, frames: Frame[], args: ViewFrameArgs): string {
+  const frame = known(frames, args.frame);
+  const lines = [describe(ctx, frame)];
+  if (frame.type === "file") {
+    for (const entry of frame.files ?? []) lines.push(`  list: ${describeEntry(entry)}`);
+    const comments = readComments(ctx.doc, frame.id);
+    lines.push(
+      comments.length
+        ? `${count(comments.length, "comment")}, by file and line:`
+        : "No comments. People add them from the gutter of the source; you with add_comment.",
+    );
+    for (const comment of comments) lines.push(...describeComment(ctx, comment));
+  }
+  return lines.join("\n");
+}
+
+function describeComment(ctx: BoardToolContext, comment: Comment): string[] {
+  const { author } = comment;
+  const by =
+    author.kind === "agent"
+      ? `agent ${JSON.stringify(author.name)} [${author.frame}]${author.frame === ctx.self ? " (you)" : ""}`
+      : `${JSON.stringify(author.name)} (a person)`;
+  const where =
+    comment.start === comment.end ? `L${comment.start}` : `L${comment.start}-${comment.end}`;
+  const head = `- #${comment.id} ${comment.path} ${where} by ${by}${comment.edited ? ", edited" : ""}${comment.outdated ? " — OUTDATED: these lines changed since; they read:" : ":"}`;
+  const indent = (text: string) => text.split("\n").map((line) => `    ${line}`);
+  return [
+    head,
+    ...(comment.outdated ? indent(comment.quote).map((line) => `  >${line}`) : []),
+    ...indent(comment.body),
+  ];
+}
+
+function commentOn(
+  ctx: BoardToolContext,
+  self: Frame,
+  frames: Frame[],
+  args: AddCommentArgs,
+): BoardToolResult {
+  const frame = known(frames, args.frame);
+  if (frame.type !== "file") throw new Error("comments go on file frames");
+  const body = commentBody(args.body);
+  const range = lineRange(args);
+  if (!range) throw new Error("a comment needs start_line");
+  if (typeof args.quote !== "string") throw new Error("canvas serve didn't read the lines");
+  const comment = addComment(ctx.doc, frame.id, {
+    path: filePath(args.path),
+    ...range,
+    quote: args.quote,
+    body,
+    author: { kind: "agent", frame: ctx.self, name: self.title },
+  });
+  const shown = frame.path === comment.path ? "" : ` (the frame shows ${frame.path || "no file"})`;
+  return {
+    text: `Added comment #${comment.id} on ${comment.path} L${range.start}-${range.end} in [${frame.id}]${shown}.`,
+    frame: frame.id,
+  };
+}
+
+function changeComment(
+  ctx: BoardToolContext,
+  frames: Frame[],
+  args: EditCommentArgs | DeleteCommentArgs,
+): BoardToolResult {
+  const frame = known(frames, args.frame);
+  const comment = knownComment(ctx, frame.id, args.comment);
+  if (!mayChange({ kind: "agent" }, comment))
+    throw new Error(
+      `#${comment.id} is ${JSON.stringify(comment.author.name)}'s: agents only change agents' comments`,
+    );
+  if ("body" in args) {
+    editComment(ctx.doc, frame.id, comment.id, commentBody(args.body));
+    return { text: `Edited comment #${comment.id}.`, frame: frame.id };
+  }
+  removeComment(ctx.doc, frame.id, comment.id);
+  return { text: `Deleted comment #${comment.id}.`, frame: frame.id };
+}
+
 // ---------------------------------------------------------------------------
+
+function knownComment(ctx: BoardToolContext, frameId: string, id: unknown): Comment {
+  const key = String(id ?? "").replace(/^#/, "");
+  const comment = readComments(ctx.doc, frameId).find((c) => c.id === key);
+  if (!comment) throw new Error(`no comment ${String(id)} in [${frameId}] — view_frame lists them`);
+  return comment;
+}
+
+function commentBody(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error("a comment needs a body");
+  return value.trim();
+}
 
 function known(frames: Frame[], id: unknown): Frame {
   const frame = frames.find((f) => f.id === id);
