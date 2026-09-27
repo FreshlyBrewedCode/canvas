@@ -63,3 +63,22 @@ export function fitRects(
     y: (height - (bottom - top) * scale) / 2 - top * scale,
   };
 }
+
+/** Is a rectangle (board coordinates) wholly in the viewport, at a scale it can be read at? */
+export function inView(
+  t: Transform,
+  rect: { x: number; y: number; w: number; h: number },
+  width: number,
+  height: number,
+  minScale = 0.5,
+): boolean {
+  const left = rect.x * t.scale + t.x;
+  const top = rect.y * t.scale + t.y;
+  return (
+    t.scale >= minScale &&
+    left >= 0 &&
+    top >= 0 &&
+    left + rect.w * t.scale <= width &&
+    top + rect.h * t.scale <= height
+  );
+}

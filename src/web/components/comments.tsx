@@ -3,6 +3,7 @@ import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { MARKDOWN_LINKS, urlTransform } from "@/components/board-link";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import type { Comment } from "@/lib/comments";
@@ -47,7 +48,9 @@ function Author({ comment }: { comment: Comment }) {
 function Body({ text }: { text: string }) {
   return (
     <div className="prose-canvas text-xs select-text">
-      <Markdown remarkPlugins={REMARK}>{text}</Markdown>
+      <Markdown remarkPlugins={REMARK} components={MARKDOWN_LINKS} urlTransform={urlTransform}>
+        {text}
+      </Markdown>
     </div>
   );
 }

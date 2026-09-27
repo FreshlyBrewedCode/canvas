@@ -77,7 +77,9 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
 - **Scratch files** are whatever an agent writes, and anyone who can prompt an agent can have it
   write one. Only agents can write them; the board holds just their paths.
 - **An HTML file in a files frame** runs its scripts in everyone's browser. They are sandboxed away
-  from canvas and the board, but can still reach the network.
+  from canvas and the board, but can still reach the network. Its links reach the board only on a
+  person's click in it: then it can do what a link in markdown can, open a file of the shared set
+  in a frame.
 - **Comments are the web app's rule, not the host's.** The app lets people change only their own
   comments, and the host anyone's. Edit guests' board changes still reach everyone unchecked, so a
   modified client can change or delete any comment, as it can any frame. A comment keeps the lines

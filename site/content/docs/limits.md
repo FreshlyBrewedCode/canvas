@@ -41,7 +41,8 @@ canvas is a prototype. These are known, and not bugs to report.
   themselves — fzf's Ctrl-R, `sudo` and `ssh` prompts — hang.
 - **Browser frames** load pages per viewer: a dev server on the host's `localhost` is not visible
   to guests, who see a notice.
-- **HTML previews** are one file: relative assets and links don't load.
+- **HTML previews** don't load relative assets (CSS, images, scripts). Their links work.
+- **Links to frames** name a frame's id: once it's closed, they go nowhere.
 - **Files are read-only.** The board cannot create or edit files; agents do.
 - **The shared set is fixed by rule.** There is no `.canvasignore` yet.
 - **Layout**: only rows, no stacks; a dropped frame can still run into a neighbouring cluster.

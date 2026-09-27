@@ -7,12 +7,19 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import type { Root } from "hast";
+import type { ElementContent, Root } from "hast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import {
+  LinkScope,
+  MARKDOWN_LINKS,
+  urlTransform,
+  useGo,
+  useLinkBase,
+} from "@/components/board-link";
 import { CodeView } from "@/components/code-view";
 import { CommentCard, CommentComposer, CommentsButton } from "@/components/comments";
 import { FileTree } from "@/components/file-tree";
@@ -24,6 +31,10 @@ import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import {
   addFrame,
   allFrames,
+  fileView,
+  hasPreview,
+  isHtml,
+  isMarkdown,
   updateFrame,
   type FileEntry,
   type FileView,
@@ -44,17 +55,16 @@ import {
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import { quoteOf, relocate } from "../../shared/comments";
 import { placeNew } from "../../shared/layout";
+import { parseLink, Slugger } from "@/lib/board-link";
+import { bridgedLink, withLinkBridge } from "@/lib/link-bridge";
 import { entryFor } from "@/lib/file-list";
+import { revealed, useReveal } from "@/lib/reveal";
 import { useFile, useRoom, useTree } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
 import type { FileContent } from "../../shared/protocol";
 
 type FileFrameData = Extract<Frame, { type: "file" }>;
 
-const isMarkdown = (path: string) => /\.(md|markdown|mdx)$/i.test(path);
-const isHtml = (path: string) => /\.html?$/i.test(path);
-/** Files with a rendered view, which they open in. */
-const hasPreview = (path: string) => isMarkdown(path) || isHtml(path);
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 /**
@@ -72,8 +82,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   const allPaths = useTree();
   const previewable = hasPreview(frame.path);
   const scratch = frame.path.startsWith(SCRATCH_PREFIX);
-  // Lines only show in the source; a range asked for means the source.
-  const view: FileView = frame.view ?? (previewable && !frame.lines ? "preview" : "source");
+  const view = fileView(frame);
   // `view` guests don't get the tree (ADR 0002), only a list.
   const canBrowse = !readOnly;
   // Every board change makes new frame objects: key the list by its content.
@@ -240,6 +249,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
         />
       )}
       preview={(text) => <MarkdownPreview frameId={frame.id} path={frame.path} text={text} />}
+      html={(text) => <HtmlPreview frameId={frame.id} path={frame.path} html={text} />}
     />
   );
 
@@ -519,6 +529,7 @@ function FileBody({
   empty,
   source,
   preview,
+  html,
 }: {
   path: string;
   file: FileContent | undefined;
@@ -526,6 +537,7 @@ function FileBody({
   empty: "tree" | "none";
   source: (text: string) => React.ReactNode;
   preview: (text: string) => React.ReactNode;
+  html: (text: string) => React.ReactNode;
 }) {
   if (!path)
     return (
@@ -542,7 +554,7 @@ function FileBody({
     case "too-large":
       return <Notice>Too large to show ({formatSize(file.size)}).</Notice>;
     case "text":
-      if (view === "preview" && isHtml(path)) return <HtmlPreview path={path} html={file.text} />;
+      if (view === "preview" && isHtml(path)) return html(file.text);
       return view === "preview" && isMarkdown(path) ? preview(file.text) : source(file.text);
   }
 }
@@ -559,7 +571,25 @@ function keyBlocks() {
         node.properties = { ...node.properties, dataSelKey: `L${node.position?.start.line ?? 0}` };
   };
 }
-const REHYPE = [keyBlocks];
+/** Marks each heading with its slug, for links to it (`#install`, ADR 0007). */
+function slugHeadings() {
+  return (tree: Root) => {
+    const slugger = new Slugger();
+    const visit = (nodes: ReadonlyArray<Root["children"][number] | ElementContent>) => {
+      for (const node of nodes) {
+        if (node.type !== "element") continue;
+        if (/^h[1-6]$/.test(node.tagName))
+          node.properties = { ...node.properties, dataHeading: slugger.slug(textOf(node)) };
+        else visit(node.children);
+      }
+    };
+    visit(tree.children);
+  };
+}
+const textOf = (node: ElementContent): string =>
+  node.type === "text" ? node.value : "children" in node ? node.children.map(textOf).join("") : "";
+
+const REHYPE = [keyBlocks, slugHeadings];
 const REMARK = [remarkGfm];
 
 function MarkdownPreview({ frameId, path, text }: { frameId: string; path: string; text: string }) {
@@ -570,13 +600,35 @@ function MarkdownPreview({ frameId, path, text }: { frameId: string; path: strin
     () => scroller.current && domSurface(scroller.current),
     text,
   );
+  // A heading a link sent us to: scrolled to, for us.
+  const reveal = useReveal(frameId, path);
+  useEffect(() => {
+    const box = scroller.current;
+    if (!reveal?.heading || !box) return;
+    const heading = box.querySelector(`[data-heading="${CSS.escape(reveal.heading)}"]`);
+    if (heading) {
+      const scale = box.getBoundingClientRect().height / box.offsetHeight || 1;
+      const offset = heading.getBoundingClientRect().top - box.getBoundingClientRect().top;
+      box.scrollTop += offset / scale - 12;
+    }
+    revealed(frameId, reveal);
+  }, [reveal, frameId, text]);
+  // Relative links are the file's own.
+  const scope = useMemo(() => ({ frame: frameId, file: path }), [frameId, path]);
   return (
     <div ref={scroller} data-frame-body="" className="h-full overflow-auto">
       <div data-sel-root={frameId} data-sel-path={path} className="relative p-4">
         <div className="prose-canvas text-sm select-text">
-          <Markdown remarkPlugins={REMARK} rehypePlugins={REHYPE}>
-            {text}
-          </Markdown>
+          <LinkScope value={scope}>
+            <Markdown
+              remarkPlugins={REMARK}
+              rehypePlugins={REHYPE}
+              components={MARKDOWN_LINKS}
+              urlTransform={urlTransform}
+            >
+              {text}
+            </Markdown>
+          </LinkScope>
         </div>
         <RemoteSelections frameId={frameId} path={path} version={text} />
       </div>
@@ -588,14 +640,38 @@ function MarkdownPreview({ frameId, path, text }: { frameId: string; path: strin
  * An HTML file of the shared set, rendered (ADR 0004). Its scripts run, in a
  * sandbox without `allow-same-origin`: an opaque origin that cannot reach
  * the web app's storage (the room key, the host token), navigate the board
- * or open windows. Relative links and assets don't resolve — one-file pages.
+ * or open windows. Relative assets don't resolve — one-file pages.
  * The page keeps its own scroll; selections don't reach it.
+ *
+ * Its links do (ADR 0007): a script we add hands every click a person makes
+ * on one to us, and we follow it as a link in markdown. Another HTML file
+ * opens in this frame.
  */
-function HtmlPreview({ path, html }: { path: string; html: string }) {
+function HtmlPreview({ frameId, path, html }: { frameId: string; path: string; html: string }) {
+  const iframe = useRef<HTMLIFrameElement>(null);
+  const go = useGo();
+  const base = useLinkBase();
+  // A token per page: the bridge's posts carry it, the page's own scripts can't (`link-bridge.ts`).
+  const [token] = useState(() => crypto.randomUUID());
+  const doc = useMemo(() => withLinkBridge(html, token), [html, token]);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== iframe.current?.contentWindow) return;
+      const href = bridgedLink(event.data, token);
+      if (href === null) return;
+      const link = parseLink(href, { cwd: base.cwd, file: path });
+      if (!link) return;
+      const page = link.kind === "board" && !link.target.frame && isHtml(link.target.path ?? "");
+      go(link, { from: frameId, inPlace: page });
+    };
+    addEventListener("message", onMessage);
+    return () => removeEventListener("message", onMessage);
+  }, [go, base.cwd, path, frameId, token]);
   return (
     <iframe
+      ref={iframe}
       title={path}
-      srcDoc={html}
+      srcDoc={doc}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       // Pointer events off while the board is being dragged, or the iframe swallows them.

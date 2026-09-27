@@ -1,9 +1,10 @@
 import type { FileContents, LineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import { File, Virtualizer, type FileOptions } from "@pierre/diffs/react";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import type { LineRange } from "@/lib/board";
+import { revealed, useReveal } from "@/lib/reveal";
 import type { Presence } from "@/lib/room";
 import { usePeers, useRoom } from "@/lib/room-context";
 
@@ -47,7 +48,8 @@ const MAX_REMOTE_LINES = 2000;
  * else sees them in your colour, with your name on the first line.
  *
  * `lines` is the frame's own range (an agent pointed it there): highlighted
- * for everyone and scrolled to whenever it, or the file, changes.
+ * for everyone and scrolled to whenever it, or the file, changes. Lines a
+ * link sent us to (`reveal.ts`) are scrolled to and become our selection.
  *
  * `notes` go below lines (0: above the first) — comments. With `onGutter`,
  * hovering a line shows a "+" that asks for a note on it, or on the lines
@@ -106,6 +108,16 @@ export function CodeView({
   });
   const commenting = !!onGutter;
 
+  // Our line selection: shown by the view, published as presence.
+  const [selected, setSelected] = useState<LineRange | null>(null);
+  const select = useMemo(
+    () => (range: LineRange | null) => {
+      setSelected(range);
+      room.setPresence({ selection: range && { kind: "lines", frameId, path, ...range } });
+    },
+    [room, frameId, path],
+  );
+
   const options = useMemo<FileOptions<undefined, undefined>>(
     () => ({
       ...BASE,
@@ -118,16 +130,7 @@ export function CodeView({
             end: Math.max(range.start, range.end),
           }),
       }),
-      onLineSelected: (range: SelectedLineRange | null) =>
-        room.setPresence({
-          selection: range && {
-            kind: "lines",
-            frameId,
-            path,
-            start: Math.min(range.start, range.end),
-            end: Math.max(range.start, range.end),
-          },
-        }),
+      onLineSelected: (range: SelectedLineRange | null) => select(range && ordered(range)),
       onPostRender: (node, _, phase) => {
         if (phase === "unmount" || !node.shadowRoot) return;
         style.current ??= document.createElement("style");
@@ -135,12 +138,13 @@ export function CodeView({
         if (style.current.parentNode !== node.shadowRoot) node.shadowRoot.append(style.current);
       },
     }),
-    [room, frameId, path, wrap, commenting],
+    [wrap, commenting, select],
   );
 
   // Our lines go with the file we selected them in.
   useEffect(
     () => () => {
+      setSelected(null);
       const mine = (room.awareness.getLocalState() as Presence | null)?.selection;
       if (mine?.kind === "lines" && mine.frameId === frameId && mine.path === path)
         room.setPresence({ selection: null });
@@ -148,26 +152,24 @@ export function CodeView({
     [room, frameId, path],
   );
 
-  // Scroll to the frame's range: roughly by line height first, so the
-  // virtualizer renders it, then exactly by the rendered line.
+  // Scroll to the frame's range.
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const scroller = box.current?.firstElementChild;
     if (!start || !(scroller instanceof HTMLElement)) return;
-    const top = Math.max(0, start - 1 - CONTEXT_LINES);
-    scroller.scrollTop = CONTENT.paddingBlock + top * LINE_PX;
-    const raf = requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const root = scroller.querySelector("diffs-container")?.shadowRoot;
-        const line = root?.querySelector(`[data-line="${start}"]`);
-        if (!line) return;
-        const offset = line.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        const scale = scroller.getBoundingClientRect().height / scroller.offsetHeight || 1;
-        scroller.scrollTop += offset / scale - CONTEXT_LINES * LINE_PX;
-      }),
-    );
-    return () => cancelAnimationFrame(raf);
+    return scrollToLine(scroller, start);
   }, [start, end, path, text.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lines a link sent us to: ours to see and select.
+  const reveal = useReveal(frameId, path);
+  useEffect(() => {
+    const scroller = box.current?.firstElementChild;
+    if (!reveal?.lines || !(scroller instanceof HTMLElement)) return;
+    select(reveal.lines);
+    // Not cancelled: done with, the request goes, and this effect re-runs.
+    scrollToLine(scroller, reveal.lines.start);
+    revealed(frameId, reveal);
+  }, [reveal, frameId, select]);
 
   // Whoever occupies the frame scrolls it for everyone following them.
   useFollowScroll(
@@ -186,6 +188,7 @@ export function CodeView({
         <File
           file={file}
           options={options}
+          selectedLines={selected}
           style={STYLE}
           lineAnnotations={annotations}
           renderAnnotation={renderNote && ((note) => renderNote(note.lineNumber))}
@@ -193,6 +196,39 @@ export function CodeView({
       </Virtualizer>
     </div>
   );
+}
+
+const ordered = (range: SelectedLineRange): LineRange => ({
+  start: Math.min(range.start, range.end),
+  end: Math.max(range.start, range.end),
+});
+
+/**
+ * Scroll `line` into view, a few lines below the top: roughly by line height
+ * first, so the virtualizer renders it, then exactly by the rendered line. A
+ * view that has just mounted may not be laid out yet: until the line shows
+ * up, try again each frame, for a second at most. Returns the cancel.
+ */
+function scrollToLine(scroller: HTMLElement, line: number): () => void {
+  let raf = 0;
+  let tries = 60;
+  const attempt = () => {
+    const top = Math.max(0, line - 1 - CONTEXT_LINES);
+    scroller.scrollTop = CONTENT.paddingBlock + top * LINE_PX;
+    raf = requestAnimationFrame(() => {
+      const root = scroller.querySelector("diffs-container")?.shadowRoot;
+      const row = root?.querySelector(`[data-line="${line}"]`);
+      if (!row) {
+        if (--tries > 0) raf = requestAnimationFrame(attempt);
+        return;
+      }
+      const offset = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      const scale = scroller.getBoundingClientRect().height / scroller.offsetHeight || 1;
+      scroller.scrollTop += offset / scale - CONTEXT_LINES * LINE_PX;
+    });
+  };
+  attempt();
+  return () => cancelAnimationFrame(raf);
 }
 
 /** The frame's own range: a quiet highlight, the same for everyone. */

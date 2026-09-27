@@ -1,6 +1,7 @@
 import { Bot, FileCode, Globe, SquareTerminal, X } from "lucide-react";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 
+import { LinkScope } from "@/components/board-link";
 import {
   allFrames,
   applyPatches,
@@ -55,6 +56,8 @@ export function FrameShell({
   const Icon = ICONS[frame.type];
   const focus = useFrameFocus(frame.id);
   const ring = focus.occupant && (focus.mine || focus.following) ? focus.occupant.color : null;
+  // Links in the frame open new frames beside it (ADR 0007).
+  const scope = useMemo(() => ({ frame: frame.id }), [frame.id]);
 
   return (
     <section
@@ -113,7 +116,9 @@ export function FrameShell({
           </button>
         )}
       </Drag>
-      <div className="relative min-h-0 flex-1">{children}</div>
+      <LinkScope value={scope}>
+        <div className="relative min-h-0 flex-1">{children}</div>
+      </LinkScope>
       {!readOnly && (
         <Drag
           frame={frame}

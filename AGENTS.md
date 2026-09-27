@@ -23,6 +23,10 @@ canvas
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with
   `view_frame`, and `canvas serve` quotes the lines of theirs
+- links (ADR 0007, finding 14): markdown and HTML links name places on the board;
+  `web/lib/board-link.ts` parses them, `web/lib/navigate.ts` goes there. Going is the clicker's
+  own (view, focus, lines as their selection); what a frame shows stays shared. HTML previews hand
+  links over a token-guarded `postMessage` bridge (`web/lib/link-bridge.ts`)
 - agent skills (finding 12): `skills/` ships with the package; every session gets it as a Claude
   plugin (`.claude-plugin/plugin.json` points `skills` at the folder itself) and an opencode
   skills path, and the board priming names each skill. A new skill is a `skills/<name>/SKILL.md`
@@ -55,10 +59,10 @@ canvas
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
     layout|arrange|resume|focus|focus-agent|preview|scratch|lists|comments|comments-agent|
-    takeover|version`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
+    takeover|version|links`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `preview` an HTML file and a loopback server, finding 09, `comments`/
-    `comments-agent` the repo of finding 13; `IDLE_MS` gives slow agents longer than 4 min per
+    `comments-agent` the repo of finding 13, `links` the one of finding 14; `IDLE_MS` gives slow agents longer than 4 min per
     prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
