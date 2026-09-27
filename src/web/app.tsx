@@ -19,6 +19,14 @@ export function App() {
   );
 }
 
+// The UI of a release channel speaks the protocol of that channel's CLI
+// (`server/web-url.ts`); `ui.yml` builds `next` with the Vite base `/next/`.
+const SERVE_COMMAND = import.meta.env.BASE_URL.startsWith("/next")
+  ? "bunx @frebreco/canvas@next serve"
+  : "bunx @frebreco/canvas serve";
+
+const DOCS_URL = "https://canvas.frebreco.de";
+
 function Landing() {
   return (
     <div className="bg-dot-grid grid h-full place-items-center p-6">
@@ -28,12 +36,20 @@ function Landing() {
           A multiplayer board for coding agents that run on your own machine. Start the local server
           in the project you want to work on, then open the link it prints:
         </p>
-        <pre className="bg-muted/60 rounded-md p-3 font-mono text-xs">
-          bunx canvas serve --dir .
-        </pre>
+        <pre className="bg-muted/60 rounded-md p-3 font-mono text-xs">{SERVE_COMMAND}</pre>
         <p className="text-muted-foreground text-xs leading-relaxed">
           The board syncs peer to peer; only the host's browser talks to the local server. Joining
           someone else's board? Ask them for the guest link.
+        </p>
+        <p className="text-sm">
+          <a
+            href={`${DOCS_URL}/docs/quick-start`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            Quick start and docs at canvas.frebreco.de
+          </a>
         </p>
       </div>
     </div>
