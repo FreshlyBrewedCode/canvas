@@ -51,7 +51,7 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
 
 ## Frames
 
-- **Add** a frame from the toolbar: **Agent**, **Files**, **Browser**, **Terminal**.
+- **Add** a frame from the toolbar: **Agent**, **Files**, **Browser**, **Terminal**, **Drawing**.
 - **Move** it by its header, **resize** it from its bottom-right corner.
 - **Rename** it by clicking its title in the header.
 - **Remove** it with the **×** in its header.

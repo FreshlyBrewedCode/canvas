@@ -1,7 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { existsSync, readFileSync } from "node:fs";
-import { defineConfig, loadEnv } from "vite";
+import { cpSync, createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { join, sep } from "node:path";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 
 // To reach the dev server from other devices, set `CANVAS_DEV_HOST` (in the
 // environment or a gitignored `.env`) to a name they resolve and put a real
@@ -17,13 +18,37 @@ const https =
     : undefined;
 
 /**
+ * Excalidraw's fonts (drawing frames, ADR 0008), served by the app at
+ * `excalidraw/fonts/` rather than fetched from Excalidraw's CDN
+ * (`web/lib/drawing-kit.ts` points it here).
+ */
+function excalidrawFonts(): Plugin {
+  const fonts = join(import.meta.dirname, "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
+  return {
+    name: "canvas:excalidraw-fonts",
+    configureServer(server) {
+      server.middlewares.use("/excalidraw/fonts", (req, res, next) => {
+        const file = join(fonts, decodeURIComponent((req.url ?? "").split("?")[0]!));
+        if (!file.startsWith(fonts + sep) || !existsSync(file) || !statSync(file).isFile())
+          return next();
+        res.setHeader("content-type", "font/woff2");
+        createReadStream(file).pipe(res);
+      });
+    },
+    writeBundle(options) {
+      cpSync(fonts, join(options.dir!, "excalidraw/fonts"), { recursive: true });
+    },
+  };
+}
+
+/**
  * The web app is static: it stands in for the publicly hosted UI. It talks to
  * `canvas serve` directly from the browser (URL in the link's fragment) and to
  * other people over trystero, so there is no proxy here.
  */
 export default defineConfig({
   root: "src/web",
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), excalidrawFonts()],
   resolve: {
     alias: { "@": new URL("./src/web", import.meta.url).pathname },
   },

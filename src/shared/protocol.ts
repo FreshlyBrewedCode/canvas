@@ -200,13 +200,21 @@ export type ClientToServer =
       readonly cols: number;
       readonly rows: number;
     }
-  /** The answer to a `board-call`: the tool's text, for the agent. */
+  /** The answer to a `board-call`: the tool's text, for the agent, and any images. */
   | {
       readonly t: "board-result";
       readonly callId: string;
       readonly ok: boolean;
       readonly text: string;
+      readonly images?: ReadonlyArray<ToolImage>;
     };
+
+/** An image a board tool shows the agent, e.g. a drawing (ADR 0008). */
+export interface ToolImage {
+  /** base64, no data: prefix. */
+  readonly data: string;
+  readonly mimeType: "image/png";
+}
 
 export type ServerToClient =
   | {

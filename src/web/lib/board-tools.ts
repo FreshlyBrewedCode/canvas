@@ -7,7 +7,11 @@
  * An agent has the board powers of an `edit` guest: it opens, changes and
  * closes frames, and nothing it does here runs on the machine by itself (a
  * new agent frame gets only a draft; a terminal frame is an idle shell).
- * Results are plain text for the model, and people read them in the thread.
+ * Results are plain text for the model, and people read them in the thread;
+ * a drawing is also shown as an image. What needs Excalidraw (turning an
+ * agent's elements or mermaid into Excalidraw's, rendering the image) is
+ * async and happens around these calls (`drawing-kit.ts`), so they stay
+ * plain functions of the doc.
  */
 
 import type * as Y from "yjs";
@@ -16,6 +20,7 @@ import type {
   AddCommentArgs,
   CloseFrameArgs,
   DeleteCommentArgs,
+  DrawArgs,
   EditCommentArgs,
   FileListEntry,
   OpenFrameArgs,
@@ -55,6 +60,14 @@ import {
   removeComment,
   type Comment,
 } from "./comments";
+import {
+  describeDrawing,
+  drawChanges,
+  readElements,
+  visible,
+  writeElements,
+  type DrawingElement,
+} from "./drawing";
 import { checkDisplays, displayPath } from "./file-list";
 
 export interface BoardToolContext {
@@ -71,6 +84,8 @@ export interface BoardToolResult {
   readonly text: string;
   /** The frame the call opened or changed: the agent works on it now (`focus.ts`). */
   readonly frame?: string;
+  /** A drawing frame to show the agent as an image, too. */
+  readonly image?: string;
 }
 
 /** Run one tool call; throws with a message for the agent when it can't. */
@@ -83,7 +98,7 @@ export function runBoardTool(ctx: BoardToolContext, name: string, args: unknown)
     case "view_board":
       return { text: viewBoard(ctx, frames, input as ViewBoardArgs) };
     case "view_frame":
-      return { text: viewFrame(ctx, frames, input as unknown as ViewFrameArgs) };
+      return viewFrame(ctx, frames, input as unknown as ViewFrameArgs);
     case "open_frame":
       return openFrame(ctx, frames, input as unknown as OpenFrameArgs);
     case "update_frame":
@@ -96,6 +111,8 @@ export function runBoardTool(ctx: BoardToolContext, name: string, args: unknown)
       return changeComment(ctx, frames, input as unknown as EditCommentArgs);
     case "delete_comment":
       return changeComment(ctx, frames, input as unknown as DeleteCommentArgs);
+    case "draw":
+      return draw(ctx, frames, input as unknown as DrawArgs);
     default:
       throw new Error(`no tool ${name}`);
   }
@@ -162,6 +179,11 @@ function describe(ctx: BoardToolContext, frame: Frame): string {
     case "terminal":
       parts.push("terminal", JSON.stringify(frame.title));
       break;
+    case "drawing": {
+      const n = visible(readElements(ctx.doc, frame.id)).length;
+      parts.push("drawing", JSON.stringify(frame.title), n ? count(n, "element") : "empty");
+      break;
+    }
   }
   if (frame.id === ctx.self) parts.push("(you)");
   else if (frame.origin === ctx.self) parts.push("(opened by you)");
@@ -202,6 +224,9 @@ function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs):
     case "terminal":
       frame = { type: "terminal", title: numbered("shell", "terminal") };
       break;
+    case "drawing":
+      frame = { type: "drawing", title: numbered("drawing", "drawing") };
+      break;
     case "agent": {
       const kinds = ctx.agents.map((a) => a.kind);
       if (!args.agent || !kinds.includes(args.agent))
@@ -210,7 +235,10 @@ function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs):
       break;
     }
     default:
-      throw new Error("type must be one of: file, browser, terminal, agent");
+      throw new Error(
+        `type ${args.type === undefined ? "is missing" : "must be"}: one of file, browser, ` +
+          "terminal, agent, drawing",
+      );
   }
   const size = DEFAULT_SIZE[args.type];
   const { rect, patches } = args.next_to
@@ -222,6 +250,10 @@ function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs):
     patches,
   );
   if (args.type === "agent" && args.draft) promptText(ctx.doc, id).insert(0, args.draft);
+  if (args.type === "drawing" && args.elements) {
+    const { write } = drawChanges([], { add: prepared(args.elements) });
+    writeElements(ctx.doc, id, write);
+  }
   const where = args.next_to ? `${side(args.side)} of [${args.next_to}]` : "in your cluster";
   return { text: `Opened ${describe(ctx, reread(ctx, id))}, ${where}.`, frame: id };
 }
@@ -299,9 +331,14 @@ function closeFrame(ctx: BoardToolContext, frames: Frame[], args: CloseFrameArgs
   return `Closed ${text}.`;
 }
 
-function viewFrame(ctx: BoardToolContext, frames: Frame[], args: ViewFrameArgs): string {
+function viewFrame(ctx: BoardToolContext, frames: Frame[], args: ViewFrameArgs): BoardToolResult {
   const frame = known(frames, args.frame);
   const lines = [describe(ctx, frame)];
+  if (frame.type === "drawing") {
+    const elements = visible(readElements(ctx.doc, frame.id));
+    lines.push(...describeDrawing(elements));
+    return { text: lines.join("\n"), ...(elements.length && { image: frame.id }) };
+  }
   if (frame.type === "file") {
     for (const entry of frame.files ?? []) lines.push(`  list: ${describeEntry(entry)}`);
     const comments = readComments(ctx.doc, frame.id);
@@ -312,7 +349,7 @@ function viewFrame(ctx: BoardToolContext, frames: Frame[], args: ViewFrameArgs):
     );
     for (const comment of comments) lines.push(...describeComment(ctx, comment));
   }
-  return lines.join("\n");
+  return { text: lines.join("\n") };
 }
 
 function describeComment(ctx: BoardToolContext, comment: Comment): string[] {
@@ -377,7 +414,48 @@ function changeComment(
   return { text: `Deleted comment #${comment.id}.`, frame: frame.id };
 }
 
+function draw(ctx: BoardToolContext, frames: Frame[], args: DrawArgs): BoardToolResult {
+  const frame = known(frames, args.frame);
+  if (frame.type !== "drawing") throw new Error("draw changes drawing frames");
+  if (args.delete !== undefined && !Array.isArray(args.delete))
+    throw new Error("delete is a list of element ids");
+  const { write, added, replaced, removed } = drawChanges(readElements(ctx.doc, frame.id), {
+    add: args.elements ? prepared(args.elements) : [],
+    remove: (args.delete ?? []).map(String),
+    clear: args.clear === true,
+  });
+  if (!write.length) throw new Error("nothing to draw: give elements, mermaid, delete or clear");
+  writeElements(ctx.doc, frame.id, write);
+  const done = [
+    added && `added ${count(added, "element")}`,
+    replaced && `replaced ${count(replaced, "element")}`,
+    removed && `removed ${count(removed, "element")}`,
+  ].filter(Boolean);
+  const ids = write.filter((e) => !e.isDeleted && e.type !== "text").map((e) => e.id);
+  return {
+    text:
+      `In [${frame.id}]: ${done.join(", ")}.` +
+      (ids.length ? ` Ids: ${ids.join(", ")}. view_frame shows the result.` : ""),
+    frame: frame.id,
+  };
+}
+
 // ---------------------------------------------------------------------------
+
+/** Elements the host's browser made from the agent's (`drawing-kit.ts`). */
+function prepared(value: unknown): DrawingElement[] {
+  const ok =
+    Array.isArray(value) &&
+    value.every(
+      (e) =>
+        typeof e === "object" &&
+        e !== null &&
+        typeof e.id === "string" &&
+        typeof e.version === "number",
+    );
+  if (!ok) throw new Error("the drawing's elements weren't prepared");
+  return value as DrawingElement[];
+}
 
 function knownComment(ctx: BoardToolContext, frameId: string, id: unknown): Comment {
   const key = String(id ?? "").replace(/^#/, "");
@@ -392,6 +470,8 @@ function commentBody(value: unknown): string {
 }
 
 function known(frames: Frame[], id: unknown): Frame {
+  // Agents that load tool schemas lazily sometimes call before they have them.
+  if (id === undefined) throw new Error("frame is missing: the id of a frame, from view_board");
   const frame = frames.find((f) => f.id === id);
   if (!frame) throw new Error(`no frame ${String(id)} — view_board lists the frame ids`);
   return frame;

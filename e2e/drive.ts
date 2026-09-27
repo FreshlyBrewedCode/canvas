@@ -1813,4 +1813,258 @@ if (step === "links") {
   check(theirs.selection?.start === 30 && theirs.selection?.end === 33, "a guest's deep link to lines");
   await shot(guest, "98-links-guest-deep");
 }
+// Drawing frames (ADR 0008): Excalidraw under the board's zoom, host and guest
+// drawing into one drawing at once, undo that stays yours, view guests.
+if (step === "drawing") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const elements = (p: Page, id: string) =>
+    p.evaluate(
+      (frameId) =>
+        [...(window as any).room.doc.getMap(`drawing:${frameId}`).values()].filter(
+          (e: any) => !e.isDeleted,
+        ),
+      id,
+    ) as Promise<Array<Record<string, any>>>;
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await addFrame(host, "Drawing");
+  const id = (await frame.getAttribute("data-frame"))!;
+  await place(host, id, { x: 0, y: 0 });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await guest.locator("[data-hud]").getByTitle("Fit board to view").click();
+  // Not 100%: Excalidraw must draw under the board's zoom.
+  await host.locator("[data-hud]").getByTitle("Zoom out").click();
+  const scale = async (p: Page) =>
+    Number(await p.locator("[data-board]").evaluate((el) => (el as HTMLElement).style.getPropertyValue("--board-scale")));
+  const s = await scale(host);
+  console.log("host board scale", s);
+  await guest.locator(`[data-frame="${id}"]`).getByText("Double-click to draw.").waitFor({ timeout: 10000 });
+  check(true, "the guest sees the empty drawing");
+
+  // Host: a rectangle, dragged over 200×160 screen pixels.
+  await host.locator(`[data-frame="${id}"] [data-drawing]`).dblclick({ position: { x: 20, y: 300 } });
+  const editor = host.locator(`[data-frame="${id}"] [data-drawing-editor] .excalidraw`);
+  await editor.waitFor({ timeout: 20000 });
+  await host.waitForTimeout(800);
+  const box = (await host.locator(`[data-frame="${id}"] [data-drawing-editor]`).boundingBox())!;
+  await host.mouse.click(box.x + box.width - 60, box.y + box.height - 120);
+  await host.keyboard.press("r");
+  const drag = async (p: Page, x0: number, y0: number, x1: number, y1: number) => {
+    await p.mouse.move(x0, y0);
+    await p.mouse.down();
+    await p.mouse.move((x0 + x1) / 2, (y0 + y1) / 2, { steps: 6 });
+    await p.mouse.move(x1, y1, { steps: 6 });
+    await p.mouse.up();
+  };
+  // Right of the style panel, which opens on the left with a tool.
+  await drag(host, box.x + 260, box.y + 140, box.x + 460, box.y + 300);
+  await host.waitForTimeout(500);
+  await shot(host, "119-drawing-host-drew");
+  let all = await elements(host, id);
+  const rect = all.find((e) => e.type === "rectangle");
+  const near = (a: number, b: number) => Math.abs(a - b) <= 3;
+  check(
+    !!rect && near(rect.width, 200 / s) && near(rect.height, 160 / s) && near(rect.x, 260 / s),
+    `the rectangle is where the pointer drew it at ${Math.round(s * 100)}%: ` +
+      `${Math.round(rect?.x)},${Math.round(rect?.y)} ${Math.round(rect?.width)}×${Math.round(rect?.height)}, ` +
+      `want ${Math.round(260 / s)},${Math.round(140 / s)} ${Math.round(200 / s)}×${Math.round(160 / s)}`,
+  );
+  await guest.waitForFunction(
+    (frameId) => document.querySelector(`[data-frame="${frameId}"] [data-drawing-picture] svg path`),
+    id,
+    { timeout: 10000 },
+  );
+  const theirs = (await elements(guest, id)).find((e) => e.type === "rectangle");
+  check(theirs?.width === rect?.width, "the guest has it, at its final size");
+  await shot(host, "120-drawing-host-editing");
+  await shot(guest, "120-drawing-guest-picture");
+
+  // Guest edits too, while the host still is: an ellipse.
+  await guest.locator(`[data-frame="${id}"] [data-drawing-edit]`).click();
+  const theirEditor = guest.locator(`[data-frame="${id}"] [data-drawing-editor] .excalidraw`);
+  await theirEditor.waitFor({ timeout: 20000 });
+  await guest.waitForTimeout(800);
+  const gbox = (await guest.locator(`[data-frame="${id}"] [data-drawing-editor]`).boundingBox())!;
+  await guest.mouse.click(gbox.x + gbox.width - 60, gbox.y + gbox.height - 120);
+  await guest.keyboard.press("o");
+  await drag(guest, gbox.x + 560, gbox.y + 120, gbox.x + 720, gbox.y + 240);
+  await guest.waitForTimeout(800);
+  all = await elements(host, id);
+  check(all.some((e) => e.type === "ellipse"), "the guest's ellipse reaches the host");
+  await shot(host, "121-drawing-host-sees-guest");
+  await shot(guest, "121-drawing-guest-editing");
+
+  // Undo is the host's own: its rectangle goes, the guest's ellipse stays.
+  await host.keyboard.press("Control+z");
+  await host.waitForTimeout(800);
+  all = await elements(guest, id);
+  check(
+    !all.some((e) => e.type === "rectangle") && all.some((e) => e.type === "ellipse"),
+    `undo takes back the host's rectangle only: ${all.map((e) => e.type).join(", ")}`,
+  );
+  await host.keyboard.press("Control+Shift+z");
+  await host.waitForTimeout(800);
+  all = await elements(guest, id);
+  check(all.some((e) => e.type === "rectangle"), "redo brings it back");
+
+  // Leaving: a click outside the frame.
+  await host.mouse.click(5, 300);
+  await guest.locator(`[data-frame="${id}"] [data-drawing-edit="done"]`).click();
+  await host.locator(`[data-frame="${id}"] [data-drawing-picture] svg`).waitFor({ timeout: 10000 });
+  check((await host.locator("[data-drawing-editor]").count()) === 0, "a click outside ends editing");
+  await host.waitForTimeout(500);
+  await shot(host, "122-drawing-host-picture");
+
+  // The board zooms the picture like any frame.
+  await host.locator("[data-hud]").getByTitle("Zoom in").click();
+  await host.waitForTimeout(300);
+  const before = (await host.locator(`[data-frame="${id}"] [data-drawing-picture]`).boundingBox())!;
+  await host.locator("[data-hud]").getByTitle("Zoom out").click();
+  await host.waitForTimeout(300);
+  const after = (await host.locator(`[data-frame="${id}"] [data-drawing-picture]`).boundingBox())!;
+  check(near(before.width / after.width, 1.25), "the picture zooms with the board");
+
+  // View guests look, but don't draw.
+  await host.getByLabel("Guest access").selectOption("view");
+  await guest.waitForTimeout(1500);
+  check(
+    (await guest.locator(`[data-frame="${id}"] [data-drawing-edit]`).count()) === 0,
+    "a view guest gets no Edit",
+  );
+  await guest.locator(`[data-frame="${id}"] [data-drawing]`).dblclick();
+  await guest.waitForTimeout(800);
+  check((await guest.locator("[data-drawing-editor]").count()) === 0, "nor an editor on double-click");
+  await host.getByLabel("Guest access").selectOption("edit");
+
+  // Removing the frame clears its drawing.
+  await host.locator(`[data-frame="${id}"]`).getByTitle("Remove frame").click();
+  await host.waitForTimeout(500);
+  check((await elements(host, id)).length === 0, "removing the frame clears its elements");
+}
+
+// Agents and drawings (ADR 0008): view_frame shows the drawing as an image
+// (Karl's freehand sketch is only in the image), draw adds a mermaid diagram,
+// shapes bound to what is there, and removes. AGENT=claude|opencode.
+if (step === "drawing-agent") {
+  const kind = process.env.AGENT ?? "claude";
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const elements = (p: Page, id: string) =>
+    p.evaluate(
+      (frameId) =>
+        [...(window as any).room.doc.getMap(`drawing:${frameId}`).values()].filter(
+          (e: any) => !e.isDeleted,
+        ),
+      id,
+    ) as Promise<Array<Record<string, any>>>;
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, kind);
+  const self = (await frame.getAttribute("data-frame"))!;
+  await place(host, self, { x: 0, y: 0 });
+  const drawing = await addFrame(host, "Drawing");
+  const id = (await drawing.getAttribute("data-frame"))!;
+  await place(host, id, { x: 484, y: 0, h: 620 });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await guest.locator("[data-hud]").getByTitle("Fit board to view").click();
+
+  // Karl sketches a house with the pen.
+  await host.locator(`[data-frame="${id}"] [data-drawing-edit]`).click();
+  await host.locator(`[data-frame="${id}"] [data-drawing-editor] .excalidraw`).waitFor({ timeout: 20000 });
+  await host.waitForTimeout(800);
+  const box = (await host.locator(`[data-frame="${id}"] [data-drawing-editor]`).boundingBox())!;
+  await host.mouse.click(box.x + box.width - 80, box.y + box.height - 140);
+  await host.keyboard.press("p");
+  const stroke = async (points: Array<[number, number]>) => {
+    const at = ([x, y]: [number, number]) => [box.x + x, box.y + y] as const;
+    await host.mouse.move(...at(points[0]!));
+    await host.mouse.down();
+    for (const point of points.slice(1)) await host.mouse.move(...at(point), { steps: 8 });
+    await host.mouse.up();
+  };
+  const [l, t, w] = [260, 200, 160];
+  await stroke([[l, t], [l, t + w], [l + w, t + w], [l + w, t], [l, t]]); // walls
+  await stroke([[l - 20, t], [l + w / 2, t - 90], [l + w + 20, t]]); // roof
+  await stroke([[l + 60, t + w], [l + 60, t + 90], [l + 100, t + 90], [l + 100, t + w]]); // door
+  await host.keyboard.press("Escape");
+  await host.mouse.click(5, 400);
+  await host.waitForTimeout(500);
+  check((await elements(host, id)).length === 3, "Karl's three strokes are in the drawing");
+  await frame
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 30000 });
+
+  await ask(
+    frame,
+    "Look at the drawing frame next to you. What did Karl sketch in it? Answer in one short sentence.",
+  );
+  const reply = (await frame.locator(".prose-canvas").last().innerText()).toLowerCase();
+  check(/house|home|hut|cabin|building/.test(reply), `it saw the sketch in the image: ${reply.slice(0, 120)}`);
+
+  await ask(
+    frame,
+    "Below Karl's sketch in that drawing, add a mermaid flowchart of how a guest's prompt reaches " +
+      "an agent: guest browser -> host browser -> canvas serve -> agent. Short reply.",
+  );
+  let all = await elements(host, id);
+  const labels = all
+    .filter((e) => e.type === "text")
+    .map((e) => e.text.toLowerCase().replace(/\s+/g, " "));
+  check(
+    labels.some((text) => text.includes("canvas serve")) && all.some((e) => e.type === "arrow"),
+    `the flowchart is drawn: ${labels.join(" | ")}`,
+  );
+  const freehand = all.filter((e) => e.type === "freedraw");
+  check(freehand.length === 3, "Karl's sketch is untouched");
+  await guest.waitForFunction(
+    (n) => (window as any).room.doc.getMap(`drawing:${n[0]}`).size >= n[1],
+    [id, all.length] as const,
+    { timeout: 10000 },
+  );
+  check(true, "the guest has the agent's elements");
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await host.waitForTimeout(1500);
+  await shot(host, `125-${kind}-drawing-flowchart`);
+  await shot(guest, `125-${kind}-drawing-flowchart-guest`);
+
+  await ask(
+    frame,
+    "Next to the 'agent' box of your flowchart, add a red ellipse labelled 'you', with an arrow " +
+      "from the agent box to it. Short reply.",
+  );
+  all = await elements(host, id);
+  const you = all.find(
+    (e) => e.type === "ellipse" && all.some((t) => t.containerId === e.id && /you/i.test(t.text)),
+  );
+  const arrow = you && all.find((e) => e.type === "arrow" && e.endBinding?.elementId === you.id);
+  const from = arrow && all.find((e) => e.id === arrow.startBinding?.elementId);
+  check(!!you, `the ellipse: ${you?.strokeColor} / ${you?.backgroundColor}`);
+  check(
+    !!from && all.some((t) => t.containerId === from.id && /agent/i.test(t.text)),
+    "the arrow is bound from the agent box to it",
+  );
+  check(
+    !!from && (from.boundElements ?? []).some((b: any) => b.id === arrow.id),
+    "the agent box knows its new arrow, and keeps the old ones",
+  );
+  await host.waitForTimeout(1000);
+  await host.locator(`[data-frame="${id}"]`).screenshot({ path: `${out}/126-${kind}-drawing-you.png` });
+
+  await ask(frame, "Remove the ellipse and its arrow again. Short reply.");
+  all = await elements(host, id);
+  check(!all.some((e) => e.id === you?.id), "the ellipse is gone");
+  check(all.filter((e) => e.type === "freedraw").length === 3, "Karl's sketch is still there");
+  await frame.screenshot({ path: `${out}/127-${kind}-drawing-thread.png` });
+}
+
 await browser.close();

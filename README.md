@@ -1,7 +1,7 @@
 # canvas
 
-**A multiplayer canvas whose frames are coding-agent sessions, files, browser previews and
-terminals.** The agents run on one person's machine; everyone else joins peer to peer from the
+**A multiplayer canvas whose frames are coding-agent sessions, files, browser previews,
+terminals and drawings.** The agents run on one person's machine; everyone else joins peer to peer from the
 browser.
 
 ```bash

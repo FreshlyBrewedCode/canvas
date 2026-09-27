@@ -59,6 +59,18 @@ test("images in tool output become a placeholder with their size", () => {
   ]);
 });
 
+test("image attachments as data URLs (opencode's) become a placeholder too", () => {
+  const url = `data:image/png;base64,${"A".repeat(20_000)}`;
+  const output = { output: "a drawing", attachments: [{ type: "file", mime: "image/png", url }] };
+  const trimmed = trimEvent(
+    chunk({ type: "TOOL_CALL_RESULT", toolCallId: "c", content: JSON.stringify(output) }),
+  );
+  expect(JSON.parse((chunkOf(trimmed) as { content: string }).content)).toEqual({
+    output: "a drawing",
+    attachments: [{ type: "file", mime: "image/png", url: "data:… (20 KB omitted)" }],
+  });
+});
+
 test("long tool output keeps its start and end", () => {
   const content = `${"a".repeat(10_000)}${"z".repeat(10_000)}`;
   const event = chunk({ type: "TOOL_CALL_RESULT", toolCallId: "c", content });

@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { fitRects, inView, toBoard, zoomAbout, type Point, type Transform } from "@/lib/viewport";
+
+/** The board's zoom, for frames that must undo it (a drawing being edited). */
+const BoardScaleContext = createContext(1);
+export const BoardScale = BoardScaleContext.Provider;
+export const useBoardScale = () => useContext(BoardScaleContext);
 
 /** Must match the `background-size` in the `.bg-dot-grid` CSS class. */
 const DOT_GRID_SIZE = 22;

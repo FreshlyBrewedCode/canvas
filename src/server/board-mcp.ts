@@ -17,6 +17,9 @@
  * shared set: the browser keeps it to find the lines again as the file
  * changes.
  *
+ * A drawing (ADR 0008) comes back as an image too, which goes to the agent
+ * as MCP image content.
+ *
  * Scratch files (ADR 0005) never reach the browser as content: a call's
  * `content` becomes a file in `.canvas/scratch/` here, and the call goes on
  * with its path. Reading and writing them needs no board, so those tools are
@@ -27,7 +30,7 @@ import { randomBytes } from "node:crypto";
 import type { McpServer } from "@agentclientprotocol/sdk";
 import { BOARD_SERVER_NAME, BOARD_TOOLS, boardInstructions } from "../shared/board-tools";
 import { linesOf, quoteOf } from "../shared/comments";
-import type { FileContent } from "../shared/protocol";
+import type { FileContent, ToolImage } from "../shared/protocol";
 import type { Scratch } from "./scratch";
 import type { Skill } from "./skills";
 
@@ -56,7 +59,8 @@ interface Rpc {
   readonly params?: Record<string, unknown>;
 }
 
-type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: true };
+type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+type ToolResult = { content: Content[]; isError?: true };
 
 const LATEST_PROTOCOL = "2025-06-18";
 
@@ -89,12 +93,12 @@ export class BoardMcp {
   }
 
   /** The host's browser answered a call. */
-  result(callId: string, ok: boolean, text: string): void {
+  result(callId: string, ok: boolean, text: string, images: ReadonlyArray<ToolImage> = []): void {
     const waiting = this.pending.get(callId);
     if (!waiting) return;
     this.pending.delete(callId);
     clearTimeout(waiting.timer);
-    waiting.resolve(ok ? done(text) : failed(text));
+    waiting.resolve(ok ? done(text, images) : failed(text));
   }
 
   stop(): void {
@@ -227,7 +231,10 @@ export class BoardMcp {
       undo();
       return answer;
     }
-    return notes.length ? done([answer.content[0]!.text, ...notes].join("\n")) : answer;
+    if (!notes.length) return answer;
+    const [first, ...rest] = answer.content;
+    const text = first?.type === "text" ? first.text : "";
+    return { content: [{ type: "text", text: [text, ...notes].join("\n") }, ...rest] };
   }
 
   /** A named file must be in the shared set (or a scratch file), and have the lines asked for. */
@@ -318,5 +325,10 @@ export class BoardMcp {
   }
 }
 
-const done = (text: string): ToolResult => ({ content: [{ type: "text", text }] });
+const done = (text: string, images: ReadonlyArray<ToolImage> = []): ToolResult => ({
+  content: [
+    { type: "text", text },
+    ...images.map((image) => ({ type: "image" as const, ...image })),
+  ],
+});
 const failed = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });

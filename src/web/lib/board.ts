@@ -4,6 +4,7 @@
  *   frames            Y.Map<frameId, Y.Map>   position, size, type, settings
  *   prompt:<frameId>  Y.Text                  an agent frame's shared prompt draft
  *   comments:<frameId> Y.Map<id, Comment>     a file frame's comments (`comments.ts`)
+ *   drawing:<frameId>  Y.Map<id, element>     a drawing frame's elements (`drawing.ts`)
  *
  * Agent threads, terminal output and file contents are not in here: they
  * come from the host's machine and are mirrored separately (see `room.ts`).
@@ -14,8 +15,9 @@ import * as Y from "yjs";
 
 import type { Patch } from "../../shared/layout";
 import { clearComments } from "./comments";
+import { clearDrawing } from "./drawing";
 
-export type FrameType = "agent" | "file" | "browser" | "terminal";
+export type FrameType = "agent" | "file" | "browser" | "terminal" | "drawing";
 
 /** How a file frame shows its file; null is the file's default (preview for markdown). */
 export type FileView = "preview" | "source";
@@ -61,6 +63,8 @@ export type Frame = FrameBase &
       }
     | { readonly type: "browser"; readonly url: string }
     | { readonly type: "terminal" }
+    /** An Excalidraw drawing; its elements are in `drawing:<id>` (ADR 0008). */
+    | { readonly type: "drawing" }
   );
 
 export interface LineRange {
@@ -82,6 +86,8 @@ export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
   file: { w: 720, h: 560 },
   browser: { w: 720, h: 520 },
   terminal: { w: 640, h: 400 },
+  // Excalidraw's full toolbars want 500 px of height on screen.
+  drawing: { w: 960, h: 640 },
 };
 
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
@@ -177,6 +183,7 @@ export function removeFrame(doc: Y.Doc, id: string, patches: ReadonlyArray<Patch
     framesOf(doc).delete(id);
     promptText(doc, id).delete(0, promptText(doc, id).length);
     clearComments(doc, id);
+    clearDrawing(doc, id);
   });
 }
 

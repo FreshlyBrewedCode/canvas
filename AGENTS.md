@@ -1,7 +1,7 @@
 canvas
 
 - a multiplayer canvas (think Miro) whose frames are coding-agent sessions, files of the
-  project, browser previews and terminals — the agents run **on one person's machine**, everyone
+  project, browser previews, terminals and Excalidraw drawings — the agents run **on one person's machine**, everyone
   else joins peer to peer. Prototype stage: proving the concept, not hardening it
 - two halves
   1. **`canvas serve`** (`src/cli.ts`, `src/server/`) — Bun server started in the project dir:
@@ -32,6 +32,12 @@ canvas
   skills path, and the board priming names each skill. A new skill is a `skills/<name>/SKILL.md`
   whose `name` is the folder's; nothing to register. Its description is priming too: keep it
   short, with its trigger. User-visible: add it to `site/content/docs/skills.md`
+- drawings (ADR 0008, finding 15): a drawing frame's Excalidraw elements live in
+  `drawing:<frameId>`, newer `version` wins (`web/lib/drawing.ts`). At rest an SVG; editing is
+  Excalidraw with the board's CSS scale undone (it can't live under one) and its own zoom set to
+  it (`components/drawing-editor.tsx`, lazy: Excalidraw is large). Agents' elements and mermaid
+  become Excalidraw's, and `view_frame`'s image is rendered, in the host's browser around the
+  sync tool call (`web/lib/drawing-kit.ts`); `board-result` carries images
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends
@@ -47,6 +53,8 @@ canvas
     y-codemirror.next, xterm
   - files frame (finding 05): `@pierre/trees` (file tree), `@pierre/diffs` `File` (Shiki,
     virtualized source view), react-markdown, shadcn Resizable on react-resizable-panels v4
+  - drawing frame (finding 15): `@excalidraw/excalidraw` 0.18, `@excalidraw/mermaid-to-excalidraw`;
+    its fonts are served by the app (`vite.config.ts`), not its CDN
   - deliberately not (yet): Effect, TanStack Router/Query — the server is a thin relay and the
     app has one screen. Revisit when hardening
 
@@ -59,7 +67,7 @@ canvas
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
     layout|arrange|resume|focus|focus-agent|preview|scratch|lists|comments|comments-agent|
-    takeover|version|links`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
+    takeover|version|links|drawing|drawing-agent`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `preview` an HTML file and a loopback server, finding 09, `comments`/
     `comments-agent` the repo of finding 13, `links` the one of finding 14; `IDLE_MS` gives slow agents longer than 4 min per

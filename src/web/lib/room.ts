@@ -40,6 +40,7 @@ import type {
   ServerToClient,
   SessionHead,
   SessionMeta,
+  ToolImage,
 } from "../../shared/protocol";
 import { allFrames, type Frame } from "./board";
 import {
@@ -50,6 +51,7 @@ import {
   type Occupant,
 } from "./focus";
 import { runBoardTool } from "./board-tools";
+import { drawingImage, prepareDrawCall } from "./drawing-kit";
 import { signHost, verifyHost } from "./host-key";
 import { loadAuthorId, type BoardLink, type Identity } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
@@ -701,7 +703,7 @@ export class Room {
         if (this.access !== "view") this.hostcast(message);
         return;
       case "board-call":
-        return this.runBoardCall(message);
+        return void this.runBoardCall(message);
       case "error":
         this.error = message.message;
         return this.emit("room");
@@ -722,11 +724,16 @@ export class Room {
     return allFrames(this.doc);
   }
 
-  /** Host: run an agent's board tool call against the board, and answer it. */
-  private runBoardCall(message: Extract<ServerToClient, { t: "board-call" }>) {
+  /**
+   * Host: run an agent's board tool call against the board, and answer it.
+   * A drawing's elements are made before, and its image after (ADR 0008).
+   */
+  private async runBoardCall(message: Extract<ServerToClient, { t: "board-call" }>) {
     let ok = true;
     let text: string;
+    let images: ToolImage[] | undefined;
     try {
+      const args = await prepareDrawCall(this.doc, message.tool, message.args);
       const result = runBoardTool(
         {
           doc: this.doc,
@@ -735,15 +742,16 @@ export class Room {
           status: (id) => this.sessions.get(id)?.meta.status,
         },
         message.tool,
-        message.args,
+        args,
       );
       text = result.text;
+      if (result.image) images = [await drawingImage(this.doc, result.image)];
       if (result.frame) this.claimForAgent(message.sessionId, result.frame);
     } catch (error) {
       ok = false;
       text = error instanceof Error ? error.message : String(error);
     }
-    this.server?.send({ t: "board-result", callId: message.callId, ok, text });
+    this.server?.send({ t: "board-result", callId: message.callId, ok, text, images });
   }
 
   /**

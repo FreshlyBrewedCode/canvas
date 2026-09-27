@@ -5,6 +5,7 @@ import { GAP } from "../../shared/layout";
 import { addFrame, allFrames, promptText, type Frame, type NewFrame } from "./board";
 import { runBoardTool } from "./board-tools";
 import { addComment, readComments } from "./comments";
+import { readElements, writeElements } from "./drawing";
 
 const AGENTS = [
   { kind: "claude", label: "Claude Code" },
@@ -348,4 +349,89 @@ describe("comments", () => {
       /either a comment/,
     );
   });
+});
+
+describe("drawings", () => {
+  const drawingFrame = (x: number): NewFrame => ({
+    type: "drawing",
+    title: "sketch",
+    x,
+    y: 0,
+    w: 960,
+    h: 640,
+  });
+  // Elements as `drawing-kit.ts` makes them from an agent's.
+  const made = (id: string, patch: Record<string, unknown> = {}) => ({
+    id,
+    type: "rectangle",
+    version: 1,
+    versionNonce: 1,
+    index: null,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 50,
+    ...patch,
+  });
+
+  test("open_frame opens a drawing, with elements to start it", () => {
+    const { run, newest, doc } = board(agent(0, 0));
+    const text = run("open_frame", {
+      type: "drawing",
+      elements: [made("box"), made("label", { type: "text", containerId: "box", text: "hi" })],
+    });
+    const frame = newest();
+    expect(frame).toMatchObject({ type: "drawing", title: "drawing-1" });
+    expect(text).toContain(`[${frame.id}] drawing "drawing-1" 2 elements`);
+    expect(readElements(doc, frame.id).map((e) => e.id)).toEqual(["box", "label"]);
+  });
+
+  test("view_frame describes it and asks for its image; empty, no image", () => {
+    const { ids, doc } = board(agent(0, 0), drawingFrame(484));
+    const view = () =>
+      runBoardTool({ doc, self: ids[0]!, agents: AGENTS }, "view_frame", { frame: ids[1] });
+    expect(view()).toEqual({
+      text: `[${ids[1]}] drawing "sketch" empty\nThe drawing is empty.`,
+    });
+    writeElements(doc, ids[1]!, [made("box") as never]);
+    const result = view();
+    expect(result.image).toBe(ids[1]);
+    expect(result.text).toContain("- rectangle box at 0,0 100×50");
+  });
+
+  test("draw adds, replaces and removes, and says what it did", () => {
+    const { run, touched, ids, doc } = board(agent(0, 0), drawingFrame(484));
+    const frame = ids[1]!;
+    expect(run("draw", { frame, elements: [made("a"), made("b")] })).toBe(
+      `In [${frame}]: added 2 elements. Ids: a, b. view_frame shows the result.`,
+    );
+    expect(touched("draw", { frame, elements: [made("a", { x: 50 })], delete: ["b"] })).toBe(frame);
+    const now = readElements(doc, frame);
+    expect(now.find((e) => e.id === "a")).toMatchObject({ x: 50, version: 2 });
+    expect(now.find((e) => e.id === "b")?.isDeleted).toBe(true);
+    expect(run("draw", { frame, clear: true })).toBe(`In [${frame}]: removed 1 element.`);
+  });
+
+  test("draw refuses what it can't draw", () => {
+    const { run, ids } = board(agent(0, 0), drawingFrame(484), file(484, 700, "a.ts"));
+    expect(() => run("draw", { frame: ids[2], elements: [made("a")] })).toThrow(/drawing frames/);
+    expect(() => run("draw", { frame: ids[1], elements: [{ type: "rectangle" }] })).toThrow(
+      /weren't prepared/,
+    );
+    expect(() => run("draw", { frame: ids[1] })).toThrow(/nothing to draw/);
+    expect(() => run("draw", { frame: ids[1], delete: ["nope"] })).toThrow(/no element nope/);
+  });
+
+  test("closing a drawing clears its elements", () => {
+    const { run, ids, doc } = board(agent(0, 0), drawingFrame(484));
+    writeElements(doc, ids[1]!, [made("box") as never]);
+    run("close_frame", { frame: ids[1] });
+    expect(readElements(doc, ids[1]!)).toEqual([]);
+  });
+});
+
+test("says which argument is missing", () => {
+  const { run } = board(agent(0, 0));
+  expect(() => run("view_frame")).toThrow("frame is missing");
+  expect(() => run("open_frame")).toThrow("type is missing");
 });

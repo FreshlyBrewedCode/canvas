@@ -9,6 +9,7 @@ import {
   MousePointer2,
   Plus,
   RotateCw,
+  Shapes,
   SquareTerminal,
   X,
 } from "lucide-react";
@@ -17,11 +18,12 @@ import { useEffect, useState } from "react";
 import { AgentFrame } from "@/components/agent-frame";
 import { GoProvider } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
+import { DrawingFrame } from "@/components/drawing-frame";
 import { FileFrame } from "@/components/file-frame";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
-import { useBoardViewport } from "@/hooks/use-board-viewport";
+import { BoardScale, useBoardViewport } from "@/hooks/use-board-viewport";
 import {
   addFrame,
   DEFAULT_SIZE,
@@ -105,7 +107,9 @@ export function Board() {
             { ...base, type, title: `files-${count}`, path: "" }
           : type === "browser"
             ? { ...base, type, title: `preview-${count}`, url: extra.url ?? "https://example.com" }
-            : { ...base, type, title: `shell-${count}` };
+            : type === "drawing"
+              ? { ...base, type, title: `drawing-${count}` }
+              : { ...base, type, title: `shell-${count}` };
     addFrame(room.doc, frame as NewFrame);
   };
 
@@ -120,9 +124,11 @@ export function Board() {
           className="bg-dot-grid relative min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
         >
           <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
-            {frames.map((frame) => (
-              <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
-            ))}
+            <BoardScale value={scale}>
+              {frames.map((frame) => (
+                <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
+              ))}
+            </BoardScale>
             <SnapGhost />
             <Pointers />
           </div>
@@ -186,6 +192,8 @@ function FrameView({ frame, readOnly }: { frame: Frame; readOnly: boolean }) {
       return <BrowserFrame frame={frame} readOnly={readOnly} />;
     case "terminal":
       return <TerminalFrame frame={frame} readOnly={readOnly} />;
+    case "drawing":
+      return <DrawingFrame frame={frame} readOnly={readOnly} />;
   }
 }
 
@@ -210,6 +218,9 @@ function Toolbar({
       </Button>
       <Button variant="ghost" size="sm" onClick={() => onCreate("terminal")}>
         <SquareTerminal /> Terminal
+      </Button>
+      <Button variant="ghost" size="sm" onClick={() => onCreate("drawing")}>
+        <Shapes /> Drawing
       </Button>
     </div>
   );
