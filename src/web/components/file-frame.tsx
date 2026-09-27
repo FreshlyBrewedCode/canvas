@@ -1,4 +1,12 @@
-import { Code, Eye, FolderTree, ListTree, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Code,
+  Eye,
+  FolderTree,
+  ListTree,
+  MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import type { Root } from "hast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
@@ -6,6 +14,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { CodeView } from "@/components/code-view";
+import { CommentCard, CommentComposer, CommentsButton } from "@/components/comments";
 import { FileTree } from "@/components/file-tree";
 import { FrameShell } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
@@ -21,10 +30,23 @@ import {
   type Frame,
   type LineRange,
 } from "@/lib/board";
+import {
+  addComment,
+  editComment,
+  mayChange,
+  rangeOf,
+  removeComment,
+  settle,
+  useComments,
+  type Comment,
+  type Editor,
+} from "@/lib/comments";
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
+import { quoteOf, relocate } from "../../shared/comments";
 import { placeNew } from "../../shared/layout";
 import { entryFor } from "@/lib/file-list";
 import { useFile, useRoom, useTree } from "@/lib/room-context";
+import { cn } from "@/lib/utils";
 import type { FileContent } from "../../shared/protocol";
 
 type FileFrameData = Extract<Frame, { type: "file" }>;
@@ -117,33 +139,135 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
     },
     [show],
   );
+  // Comments (ADR 0006): the frame's, whatever file it shows.
+  const comments = useComments(room.doc, frame.id);
+  const me = useMemo<Editor>(
+    () => ({ kind: "person", id: room.authorId, host: room.isHost }),
+    [room],
+  );
+  const text = file?.kind === "text" ? file.text : file?.kind === "missing" ? "" : null;
+  const counts = useMemo(() => {
+    const byPath = new Map<string, number>();
+    for (const comment of comments) byPath.set(comment.path, (byPath.get(comment.path) ?? 0) + 1);
+    return byPath;
+  }, [comments]);
+  const [commentedOnly, setCommentedOnly] = useState(false);
+  const filtering = commentedOnly && counts.size > 0;
+
+  // The host moves the shown file's comments along as it changes.
+  const shownIds = comments
+    .filter((c) => c.path === frame.path)
+    .map((c) => c.id)
+    .join();
+  useEffect(() => {
+    if (room.isHost && frame.path && text !== null) settle(room.doc, frame.id, frame.path, text);
+  }, [room, frame.id, frame.path, text, shownIds]);
+
+  const openComment = useCallback(
+    (comment: Comment) => show(comment.path, rangeOf(comment), basename(comment.path), false),
+    [show],
+  );
+
   const listPaths = useMemo(() => list?.map((entry) => entry.display), [list]);
+  const shownList = useMemo(
+    () =>
+      filtering
+        ? listPaths?.filter((display) => {
+            const entry = list?.find((e) => e.display === display);
+            return !!entry && counts.has(entry.path);
+          })
+        : listPaths,
+    [filtering, list, listPaths, counts],
+  );
+  const shownAll = useMemo(
+    () => (filtering && allPaths ? allPaths.filter((path) => counts.has(path)) : allPaths),
+    [filtering, allPaths, counts],
+  );
+  /** A row's badges, the comment count in colour (`FileTree`). */
+  const badgeOf = useCallback(
+    (labels: ReadonlyArray<string | false | null | undefined>, path: string) => {
+      const text = labels.filter(Boolean).join(" · ");
+      const n = counts.get(path);
+      if (!n) return text || null;
+      const count = `● ${n}`;
+      return {
+        text: text ? `${text} · ${count}` : count,
+        title: `${n} comment${n === 1 ? "" : "s"}`,
+        parts: [
+          ...(text ? [{ text: `${text} · ` }] : []),
+          { text: count, color: "var(--status-ready, #eab308)" },
+        ],
+      };
+    },
+    [counts],
+  );
   const badge = useCallback(
     (display: string) => {
       const entry = list?.find((e) => e.display === display);
       if (!entry) return null;
-      const badges = [
-        entry.lines &&
-          (entry.lines.start === entry.lines.end
-            ? `L${entry.lines.start}`
-            : `L${entry.lines.start}–${entry.lines.end}`),
-        entry.path.startsWith(SCRATCH_PREFIX) && "scratch",
-      ].filter(Boolean);
-      return badges.join(" · ") || null;
+      return badgeOf(
+        [
+          entry.lines &&
+            (entry.lines.start === entry.lines.end
+              ? `L${entry.lines.start}`
+              : `L${entry.lines.start}–${entry.lines.end}`),
+          entry.path.startsWith(SCRATCH_PREFIX) && "scratch",
+        ],
+        entry.path,
+      );
     },
-    [list],
+    [list, badgeOf],
   );
+  const allBadge = useCallback((path: string) => badgeOf([], path), [badgeOf]);
+  const badgeKey = [...counts].join();
   const selectedEntry = list ? (entryFor(list, frame.path, frame.lines)?.display ?? "") : "";
 
   const body = (
     <FileBody
-      frameId={frame.id}
       path={frame.path}
-      lines={frame.lines}
       file={file}
       view={view}
       empty={canBrowse ? "tree" : "none"}
+      source={(text) => (
+        <CommentedSource
+          frameId={frame.id}
+          path={frame.path}
+          text={text}
+          lines={frame.lines}
+          comments={comments}
+          me={me}
+          readOnly={readOnly}
+        />
+      )}
+      preview={(text) => <MarkdownPreview frameId={frame.id} path={frame.path} text={text} />}
     />
+  );
+
+  const hasTree = canBrowse || !!list;
+  const toolbar = (
+    <div className="flex h-8 shrink-0 items-center gap-0.5 border-b px-1.5" data-tree-toolbar="">
+      <ToolbarButton title="Hide files" onClick={toggleTree}>
+        <PanelLeftClose />
+      </ToolbarButton>
+      {list && canBrowse && (
+        <ToolbarButton
+          title={showList ? "Show all files" : "Show the list"}
+          onClick={() => setAllFiles(showList)}
+        >
+          {showList ? <FolderTree /> : <ListTree />}
+        </ToolbarButton>
+      )}
+      <span className="flex-1" />
+      {counts.size > 0 && (
+        <ToolbarButton
+          title={filtering ? "Show every file" : "Only files with comments"}
+          pressed={filtering}
+          onClick={() => setCommentedOnly(!filtering)}
+        >
+          <MessageSquare />
+        </ToolbarButton>
+      )}
+    </div>
   );
 
   return (
@@ -164,6 +288,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
       }
       actions={
         <>
+          {comments.length > 0 && <CommentsButton comments={comments} onOpen={openComment} />}
           {previewable && (
             <Button
               size="icon-sm"
@@ -181,37 +306,22 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
               {view === "preview" ? <Code /> : <Eye />}
             </Button>
           )}
-          {list && canBrowse && (
+          {hasTree && !treeOpen && (
             <Button
               size="icon-sm"
               variant="ghost"
               className="size-6"
-              title={showList ? "Show all files" : "Show the list"}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => {
-                setAllFiles(showList);
-                tree.current?.expand();
-              }}
-            >
-              {showList ? <FolderTree /> : <ListTree />}
-            </Button>
-          )}
-          {(canBrowse || list) && (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="size-6"
-              title={treeOpen ? "Hide files" : "Show files"}
+              title="Show files"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={toggleTree}
             >
-              {treeOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
+              <PanelLeftOpen />
             </Button>
           )}
         </>
       }
     >
-      {canBrowse || list ? (
+      {hasTree ? (
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel
             panelRef={tree}
@@ -224,20 +334,35 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
             className="bg-muted/30"
           >
             {/* Collapsed panels keep their content laid out; don't let it leak. */}
-            {treeOpen &&
-              (showList ? (
-                <FileTree
-                  key="list"
-                  paths={listPaths!}
-                  selected={selectedEntry}
-                  onOpen={openEntry}
-                  order={listPaths}
-                  badge={badge}
-                  readOnly={readOnly}
-                />
-              ) : (
-                <FileTree key="all" paths={allPaths} selected={frame.path} onOpen={open} />
-              ))}
+            {treeOpen && (
+              <div className="flex h-full flex-col">
+                {toolbar}
+                <div className="min-h-0 flex-1">
+                  {showList ? (
+                    <FileTree
+                      key={filtering ? "list-commented" : "list"}
+                      paths={shownList!}
+                      selected={selectedEntry}
+                      onOpen={openEntry}
+                      order={listPaths}
+                      badge={badge}
+                      badgeKey={badgeKey}
+                      readOnly={readOnly}
+                    />
+                  ) : (
+                    <FileTree
+                      key={filtering ? "all-commented" : "all"}
+                      paths={shownAll}
+                      selected={frame.path}
+                      onOpen={open}
+                      badge={allBadge}
+                      badgeKey={badgeKey}
+                      expandAll={filtering}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel minSize="30">{body}</ResizablePanel>
@@ -249,20 +374,147 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   );
 }
 
-function FileBody({
+function ToolbarButton({
+  title,
+  pressed,
+  onClick,
+  children,
+}: {
+  title: string;
+  pressed?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      className={cn("size-6 [&_svg]:size-3.5", pressed && "bg-accent text-foreground")}
+      title={title}
+      aria-pressed={pressed}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+/**
+ * A file's source with the frame's comments on it, below their last line;
+ * outdated ones above the first. Anyone who may edit the board comments from
+ * the gutter's "+" (on the lines selected, if any).
+ */
+function CommentedSource({
   frameId,
   path,
+  text,
   lines,
-  file,
-  view,
-  empty,
+  comments,
+  me,
+  readOnly,
 }: {
   frameId: string;
   path: string;
+  text: string;
   lines: LineRange | null | undefined;
+  comments: ReadonlyArray<Comment>;
+  me: Editor;
+  readOnly: boolean;
+}) {
+  const room = useRoom();
+  // A comment being written, on the file it was started on.
+  const [pending, setPending] = useState<(LineRange & { path: string }) | null>(null);
+  const draft = pending?.path === path ? pending : null;
+  const setDraft = useCallback(
+    (range: LineRange | null) => setPending(range && { ...range, path }),
+    [path],
+  );
+
+  // Placed here against the text we have: the host's `settle` may still be on its way.
+  const placed = useMemo(
+    () =>
+      comments
+        .filter((comment) => comment.path === path)
+        .map((comment) => ({ comment, at: relocate(text, comment.quote, comment.start) })),
+    [comments, path, text],
+  );
+  const notes = useMemo(() => {
+    const at = new Set(placed.map(({ at }) => at?.end ?? 0));
+    if (draft) at.add(draft.end);
+    return [...at].sort((a, b) => a - b);
+  }, [placed, draft]);
+
+  const card = (comment: Comment, outdated: boolean) => (
+    <CommentCard
+      key={comment.id}
+      comment={outdated ? { ...comment, outdated: true } : comment}
+      canChange={!readOnly && mayChange(me, comment)}
+      onEdit={(body) => editComment(room.doc, frameId, comment.id, body)}
+      onDelete={() => removeComment(room.doc, frameId, comment.id)}
+    />
+  );
+  const renderNote = (line: number) => (
+    <div className="flex flex-col gap-1.5 px-2 py-1.5" data-comment-line={line}>
+      {placed
+        .filter(({ at }) => (at?.end ?? 0) === line)
+        .map(({ comment, at }) => card(at ? { ...comment, ...at } : comment, !at))}
+      {draft?.end === line && (
+        <CommentComposer
+          onCancel={() => setDraft(null)}
+          onSave={(body) => {
+            const quote = quoteOf(text, draft.start, draft.end);
+            if (quote === null) return setDraft(null);
+            addComment(room.doc, frameId, {
+              path,
+              start: draft.start,
+              end: draft.end,
+              quote,
+              body,
+              author: {
+                kind: "person",
+                id: room.authorId,
+                name: room.identity.name,
+                color: room.identity.color,
+              },
+            });
+            setDraft(null);
+          }}
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div data-frame-body="" className="h-full select-text">
+      <CodeView
+        frameId={frameId}
+        path={path}
+        text={text}
+        wrap={isMarkdown(path)}
+        lines={lines}
+        notes={notes}
+        renderNote={renderNote}
+        onGutter={readOnly ? undefined : setDraft}
+      />
+    </div>
+  );
+}
+
+function FileBody({
+  path,
+  file,
+  view,
+  empty,
+  source,
+  preview,
+}: {
+  path: string;
   file: FileContent | undefined;
   view: FileView;
   empty: "tree" | "none";
+  source: (text: string) => React.ReactNode;
+  preview: (text: string) => React.ReactNode;
 }) {
   if (!path)
     return (
@@ -280,19 +532,7 @@ function FileBody({
       return <Notice>Too large to show ({formatSize(file.size)}).</Notice>;
     case "text":
       if (view === "preview" && isHtml(path)) return <HtmlPreview path={path} html={file.text} />;
-      return view === "preview" && isMarkdown(path) ? (
-        <MarkdownPreview frameId={frameId} path={path} text={file.text} />
-      ) : (
-        <div data-frame-body="" className="h-full select-text">
-          <CodeView
-            frameId={frameId}
-            path={path}
-            text={file.text}
-            wrap={isMarkdown(path)}
-            lines={lines}
-          />
-        </div>
-      );
+      return view === "preview" && isMarkdown(path) ? preview(file.text) : source(file.text);
   }
 }
 

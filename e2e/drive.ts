@@ -1382,6 +1382,199 @@ if (step === "lists") {
   await host.getByLabel("Guest access").selectOption("edit");
 }
 
+// Comments on a file frame (ADR 0006): people write them from the gutter,
+// they stay with the frame, follow their lines as the file changes, and only
+// their author or the host changes them. Against the project of finding 12.
+if (step === "comments") {
+  const dir = process.env.DIR ?? "/tmp/canvas-comments";
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const wait = (ms = 800) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await addFrame(host, "Files");
+  const id = (await frame.getAttribute("data-frame"))!;
+  await place(host, id, { x: 0, y: 0, w: 900, h: 640 });
+  const frameOf = (page: Page) => page.locator(`[data-frame="${id}"]`);
+  const pick = async (page: Page, path: string) => {
+    await frameOf(page).getByPlaceholder("Search").fill(path.split("/").at(-1)!);
+    await frameOf(page).locator(`[role=treeitem][data-item-path="${path}"]`).click();
+    await frameOf(page).getByPlaceholder("Search").fill("");
+  };
+  const comments = () =>
+    host.evaluate(
+      (frameId) => [...(window as any).room.doc.getMap(`comments:${frameId}`).values()],
+      id,
+    ) as Promise<Array<Record<string, any>>>;
+  /** Hover a line, click the gutter's "+", write, save. */
+  const comment = async (page: Page, line: number, body: string) => {
+    const at = frameOf(page).locator(`[data-line="${line}"]`).first();
+    await at.waitFor({ timeout: 10000 });
+    const box = (await at.boundingBox())!;
+    await page.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 3 });
+    await frameOf(page).locator("[data-utility-button]").click();
+    await frameOf(page).getByLabel("Comment", { exact: true }).fill(body);
+    await page.keyboard.press("Control+Enter");
+  };
+  const card = (page: Page, text: string) =>
+    frameOf(page).locator("[data-comment]", { hasText: text });
+
+  await pick(host, "src/values.ts");
+  await frameOf(guest).locator('[data-line="10"]').first().waitFor({ timeout: 10000 });
+  check((await frameOf(host).locator("[data-comments-button]").count()) === 0, "no comments: no header button");
+
+  await comment(host, 10, "Why is this **ten**?");
+  await card(guest, "Why is this").waitFor({ timeout: 10000 });
+  check(
+    (await card(guest, "Why is this").locator("strong").innerText()) === "ten",
+    "the guest sees the host's comment, markdown rendered",
+  );
+
+  // The guest comments on a range: select 20–22 by the line numbers, then "+".
+  await frameOf(guest).locator('[data-column-number="20"]').first().click();
+  await frameOf(guest).locator('[data-column-number="22"]').first().click({ modifiers: ["Shift"] });
+  await comment(guest, 22, "guest note");
+  await card(host, "guest note").waitFor({ timeout: 10000 });
+  let all = await comments();
+  const guestNote = all.find((c) => c.body === "guest note")!;
+  check(guestNote.start === 20 && guestNote.end === 22, `the guest's range: L${guestNote.start}-${guestNote.end}`);
+  check(guestNote.quote.split("\n").length === 3, "it quotes its three lines");
+  check(guestNote.author.name === "Ada" && guestNote.author.kind === "person", "by Ada");
+  await wait();
+  await shot(host, "100-host-comments");
+  await shot(guest, "100-guest-comments");
+
+  // Their own, and the host everyone's.
+  const canEdit = async (page: Page, text: string) => {
+    await card(page, text).hover();
+    return card(page, text).getByTitle("Edit comment").isVisible();
+  };
+  check(!(await canEdit(guest, "Why is this")), "the guest can't edit the host's comment");
+  check(await canEdit(guest, "guest note"), "the guest can edit their own");
+  check(await canEdit(host, "guest note"), "the host can edit the guest's");
+  await card(guest, "guest note").getByTitle("Edit comment").click();
+  await frameOf(guest).getByLabel("Comment", { exact: true }).fill("guest note, edited");
+  await frameOf(guest).getByRole("button", { name: "Save" }).click();
+  await card(host, "guest note, edited").waitFor({ timeout: 10000 });
+  check(true, "an edit reaches the host");
+
+  // The header button and the tree.
+  const button = frameOf(guest).locator("[data-comments-button]");
+  check((await button.innerText()).trim() === "2", "the header counts 2 comments");
+  const row = frameOf(host).locator('[role=treeitem][data-item-path="src/values.ts"]');
+  await frameOf(host).getByPlaceholder("Search").fill("values.ts");
+  check((await row.innerText()).includes("● 2"), `the tree badges the file: ${await row.innerText()}`);
+  await frameOf(host).getByPlaceholder("Search").fill("");
+
+  // Another file: the comments stay with the frame; picking one goes back to it.
+  await pick(host, "docs/readme.md");
+  await frameOf(guest).locator(".prose-canvas h1").waitFor({ timeout: 10000 });
+  check((await button.innerText()).trim() === "2", "they stay when the frame shows another file");
+  await button.click();
+  await guest.locator("[data-comments-popover]").waitFor();
+  await shot(guest, "101-guest-comments-popover");
+  await guest.locator("[data-comments-popover] [data-comment-link]", { hasText: "guest note" }).click();
+  await frameOf(host).locator('[data-line="22"]').first().waitFor({ timeout: 10000 });
+  let now = (await framesOf(host)).find((f) => f.id === id)!;
+  check(
+    now.path === "src/values.ts" && now.lines?.start === 20 && now.lines?.end === 22,
+    `picking a comment opens its file at its lines: ${now.path} L${now.lines?.start}-${now.lines?.end}`,
+  );
+
+  // A markdown file's comment shows in the source: picking it switches from the preview.
+  await pick(host, "docs/readme.md");
+  await host.waitForTimeout(500);
+  await host.evaluate((frameId) => {
+    const map = (window as any).room.doc.getMap("frames").get(frameId);
+    map.set("view", "source");
+  }, id);
+  await comment(host, 5, "a list item");
+  await pick(host, "src/values.ts");
+  await frameOf(host).locator("[data-comments-button]").click();
+  await host.locator("[data-comments-popover] [data-comment-link]", { hasText: "a list item" }).click();
+  await card(guest, "a list item").waitFor({ timeout: 10000 });
+  now = (await framesOf(host)).find((f) => f.id === id)!;
+  check(now.path === "docs/readme.md" && (now.view ?? null) === null && !!now.lines, "the markdown file opens in source");
+
+  // The file changes on disk: comments follow their lines, or go outdated.
+  await pick(host, "src/values.ts");
+  await card(host, "Why is this").waitFor({ timeout: 10000 });
+  const file = `${dir}/src/values.ts`;
+  // From git: a run that failed half-way leaves the file changed.
+  const original = Bun.spawnSync(["git", "show", "HEAD:src/values.ts"], { cwd: dir }).stdout.toString();
+  await Bun.write(file, original);
+  await Bun.write(file, `// one\n// two\n// three\n${original}`);
+  await frameOf(guest).locator('[data-comment-line="13"]').waitFor({ timeout: 10000 });
+  all = await comments();
+  check(all.find((c) => c.body.startsWith("Why"))!.start === 13, "lines moved down 3: the comment follows");
+  await Bun.write(file, `// one\n// two\n// three\n${original.replace("value10 = 10", "value10 = 100")}`);
+  await card(guest, "Why is this").locator("text=outdated").waitFor({ timeout: 10000 });
+  await wait();
+  all = await comments();
+  check(all.find((c) => c.body.startsWith("Why"))!.outdated === true, "its line changed: outdated");
+  check(
+    (await frameOf(guest).locator('[data-comment-line="0"] [data-comment]').count()) === 1,
+    "an outdated comment shows above the first line",
+  );
+  await shot(guest, "102-guest-outdated");
+  await Bun.write(file, original);
+  await frameOf(guest).locator('[data-comment-line="10"]').waitFor({ timeout: 10000 });
+  await wait();
+  all = await comments();
+  check(!all.find((c) => c.body.startsWith("Why"))!.outdated, "the line is back: no longer outdated");
+
+  // The tree toolbar: only files with comments.
+  await frameOf(host).getByTitle("Only files with comments").click();
+  await wait();
+  const rows = await frameOf(host)
+    .locator("[role=treeitem][data-item-type=file]")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-item-path")));
+  check(
+    JSON.stringify(rows.sort()) === JSON.stringify(["docs/readme.md", "src/values.ts"]),
+    `filtered tree: ${rows.join(", ")}`,
+  );
+  await shot(host, "103-host-filtered-tree");
+  await frameOf(host).getByTitle("Show every file").click();
+  await frameOf(host).getByTitle("Hide files").click();
+  await frameOf(host).getByTitle("Show files").waitFor();
+  check(true, "hiding the tree puts Show files in the header");
+  await frameOf(host).getByTitle("Show files").click();
+
+  // Deleting: the host deletes the guest's.
+  await card(host, "guest note, edited").hover();
+  await card(host, "guest note, edited").getByTitle("Delete comment").click();
+  await wait();
+  check((await card(guest, "guest note").count()) === 0, "the host deletes the guest's comment");
+
+  // View guests read comments, but can't write them.
+  await host.getByLabel("Guest access").selectOption("view");
+  await wait(1500);
+  const box = (await frameOf(guest).locator('[data-line="30"]').first().boundingBox())!;
+  await guest.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 3 });
+  await wait(300);
+  check((await frameOf(guest).locator("[data-utility-button]").count()) === 0, "view guest: no +");
+  await host.getByLabel("Guest access").selectOption("edit");
+
+  // Comments are the frame's: a new frame has none, and they go with it.
+  await frameOf(host).locator('[role=treeitem][data-item-path="src/values.ts"]').waitFor();
+  await frameOf(host)
+    .locator('[role=treeitem][data-item-path="src/values.ts"]')
+    .click({ modifiers: ["ControlOrMeta"] });
+  await wait();
+  const other = (await framesOf(host)).find((f) => f.id !== id)!;
+  check(
+    (await host.locator(`[data-frame="${other.id}"] [data-comments-button]`).count()) === 0,
+    "a file opened in a new frame has no comments",
+  );
+  await frameOf(host).getByTitle("Remove frame").click();
+  await wait();
+  check((await comments()).length === 0, "removing the frame removes its comments");
+}
+
 // Page and canvas serve of different releases: both host and guest are told.
 // Run the dev server with VITE_CANVAS_VERSION and a staged release of the CLI
 // (scripts/build-release.ts) of another version; EXPECT is the skew.

@@ -1,6 +1,6 @@
-import type { FileContents, SelectedLineRange } from "@pierre/diffs";
+import type { FileContents, LineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import { File, Virtualizer, type FileOptions } from "@pierre/diffs/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import type { LineRange } from "@/lib/board";
@@ -48,6 +48,10 @@ const MAX_REMOTE_LINES = 2000;
  *
  * `lines` is the frame's own range (an agent pointed it there): highlighted
  * for everyone and scrolled to whenever it, or the file, changes.
+ *
+ * `notes` go below lines (0: above the first) — comments. With `onGutter`,
+ * hovering a line shows a "+" that asks for a note on it, or on the lines
+ * selected.
  */
 export function CodeView({
   frameId,
@@ -55,12 +59,18 @@ export function CodeView({
   text,
   wrap,
   lines,
+  notes,
+  renderNote,
+  onGutter,
 }: {
   frameId: string;
   path: string;
   text: string;
   wrap: boolean;
   lines?: LineRange | null;
+  notes?: ReadonlyArray<number>;
+  renderNote?: (line: number) => ReactNode;
+  onGutter?: (range: LineRange) => void;
 }) {
   const room = useRoom();
   const peers = usePeers();
@@ -84,10 +94,30 @@ export function CodeView({
     if (style.current) style.current.textContent = remote;
   }, [remote]);
 
+  // A new list re-renders the file, dropping the "+" mid-hover: keep it while the lines are the same.
+  const noteKey = notes?.join(",") ?? "";
+  const annotations = useMemo<LineAnnotation[]>(
+    () => (noteKey ? noteKey.split(",").map((line) => ({ lineNumber: Number(line) })) : []),
+    [noteKey],
+  );
+  const gutter = useRef(onGutter);
+  useEffect(() => {
+    gutter.current = onGutter;
+  });
+  const commenting = !!onGutter;
+
   const options = useMemo<FileOptions<undefined, undefined>>(
     () => ({
       ...BASE,
       overflow: wrap ? "wrap" : "scroll",
+      ...(commenting && {
+        enableGutterUtility: true,
+        onGutterUtilityClick: (range: SelectedLineRange) =>
+          gutter.current?.({
+            start: Math.min(range.start, range.end),
+            end: Math.max(range.start, range.end),
+          }),
+      }),
       onLineSelected: (range: SelectedLineRange | null) =>
         room.setPresence({
           selection: range && {
@@ -105,7 +135,7 @@ export function CodeView({
         if (style.current.parentNode !== node.shadowRoot) node.shadowRoot.append(style.current);
       },
     }),
-    [room, frameId, path, wrap],
+    [room, frameId, path, wrap, commenting],
   );
 
   // Our lines go with the file we selected them in.
@@ -153,7 +183,13 @@ export function CodeView({
   return (
     <div ref={box} className="h-full">
       <Virtualizer className="h-full overflow-auto" contentStyle={CONTENT}>
-        <File file={file} options={options} style={STYLE} />
+        <File
+          file={file}
+          options={options}
+          style={STYLE}
+          lineAnnotations={annotations}
+          renderAnnotation={renderNote && ((note) => renderNote(note.lineNumber))}
+        />
       </Virtualizer>
     </div>
   );

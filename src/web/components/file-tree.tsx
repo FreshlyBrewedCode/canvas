@@ -1,3 +1,4 @@
+import type { FileTreeRowDecoration } from "@pierre/trees";
 import { FileTree as TreeView, useFileTree } from "@pierre/trees/react";
 import { memo, useEffect, useRef } from "react";
 
@@ -9,9 +10,9 @@ function ancestors(path: string): string[] {
   return parts.map((_, i) => `${parts.slice(0, i + 1).join("/")}/`);
 }
 
-/** The folders to open: all of a list's, else those above the file shown. */
-function expandedFor(order: ReadonlyArray<string> | undefined, path: string): string[] {
-  return order ? [...new Set(order.flatMap(ancestors))] : ancestors(path);
+/** The folders to open: all of a list's (or all there are), else those above the file shown. */
+function expandedFor(all: ReadonlyArray<string> | undefined, path: string): string[] {
+  return all ? [...new Set(all.flatMap(ancestors))] : ancestors(path);
 }
 
 /** Select `path` alone, e.g. after a read-only viewer clicked elsewhere. */
@@ -53,6 +54,8 @@ export const FileTree = memo(function FileTree({
   onOpen,
   order,
   badge,
+  badgeKey,
+  expandAll = false,
   readOnly = false,
 }: {
   /** null while the host's list hasn't arrived. */
@@ -63,27 +66,32 @@ export const FileTree = memo(function FileTree({
   /** Keep this order (an agent's list), all folders open; else the tree's own. */
   order?: ReadonlyArray<string>;
   /** A row's badge, e.g. its lines. */
-  badge?: (path: string) => string | null;
+  badge?: (path: string) => string | Extract<FileTreeRowDecoration, { text: string }> | null;
+  /** Changes whenever badges do, to redraw them. */
+  badgeKey?: string;
+  /** Open every folder, e.g. for a few files picked out of many. */
+  expandAll?: boolean;
   /** Show the selection, don't let it change. */
   readOnly?: boolean;
 }) {
   const current = useRef(selected);
-  const latest = useRef({ order, badge, readOnly });
+  const opened = order ?? (expandAll ? paths : null) ?? undefined;
+  const latest = useRef({ order, opened, badge, readOnly });
   useEffect(() => {
     current.current = selected;
-    latest.current = { order, badge, readOnly };
+    latest.current = { order, opened, badge, readOnly };
   });
   const { model } = useFileTree({
     paths: paths ?? [],
-    initialExpandedPaths: expandedFor(order, selected),
+    initialExpandedPaths: expandedFor(opened, selected),
     initialSelectedPaths: selected ? [selected] : [],
     flattenEmptyDirectories: true,
     search: true,
     density: "compact",
     ...(order && { sort: listOrder(order), initialExpansion: "open" as const }),
     renderRowDecoration: ({ row }) => {
-      const text = row.kind === "file" ? latest.current.badge?.(row.path) : null;
-      return text ? { text } : null;
+      const badge = row.kind === "file" ? latest.current.badge?.(row.path) : null;
+      return typeof badge === "string" ? { text: badge } : (badge ?? null);
     },
     onSelectionChange: (picked) => {
       if (latest.current.readOnly) {
@@ -100,16 +108,22 @@ export const FileTree = memo(function FileTree({
   useEffect(() => {
     if (!paths) return;
     // A list's order is fixed when the tree is made; a new one needs a new tree (see the key).
-    const expanded = expandedFor(latest.current.order, current.current);
+    const opened = latest.current.order ?? (latest.current.opened ? paths : undefined);
+    const expanded = expandedFor(opened, current.current);
     model.resetPaths(paths, { initialExpandedPaths: expanded });
     // The tree finds initial folders by its default order, so a list's miss: open them here.
-    if (latest.current.order)
+    if (opened)
       for (const dir of expanded) {
         const handle = model.getItem(dir);
         if (handle && "expand" in handle && !handle.isExpanded()) handle.expand();
       }
     restore(model, current.current);
   }, [model, paths]);
+
+  // Badges are drawn as rows render; have them drawn again.
+  useEffect(() => {
+    if (badgeKey !== undefined) model.setComposition(model.getComposition());
+  }, [model, badgeKey]);
 
   // Someone else opened another file in this frame: follow it.
   useEffect(() => {
