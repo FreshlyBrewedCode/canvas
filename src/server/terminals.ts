@@ -6,6 +6,17 @@
 
 const SCROLLBACK = 200_000;
 
+/**
+ * The shell must lead a session of its own, with the PTY as its controlling
+ * terminal, as in any terminal emulator. `Bun.spawn` leaves it in the session
+ * of `canvas serve` (Bun 1.4): Ctrl-C reaches nothing, and whatever opens
+ * `/dev/tty` — fzf's Ctrl-R, sudo, ssh prompts — gets the terminal `canvas
+ * serve` runs in, where it is stopped as a background job. util-linux
+ * `setsid -c` does both; where it is missing (macOS) the shell runs as before.
+ */
+const SETSID = Bun.which("setsid");
+const SESSION = SETSID ? [SETSID, "-c"] : [];
+
 interface Term {
   terminal: Bun.Terminal;
   scrollback: string;
@@ -19,6 +30,7 @@ export class Terminals {
     private readonly dir: string,
     private readonly onData: (id: string, data: string) => void,
     private readonly onExit: (id: string, code: number | null) => void,
+    private readonly shell = process.env.SHELL ?? "bash",
   ) {}
 
   /** Open (or re-attach to) a terminal; returns the scrollback to replay. */
@@ -42,8 +54,7 @@ export class Terminals {
       }),
     };
     this.terms.set(id, term);
-    const shell = process.env.SHELL ?? "bash";
-    const proc = Bun.spawn([shell, "-l"], {
+    const proc = Bun.spawn([...SESSION, this.shell, "-l"], {
       cwd: this.dir,
       terminal: term.terminal,
       env: { ...process.env, TERM: "xterm-256color" },

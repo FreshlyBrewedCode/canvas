@@ -35,6 +35,9 @@ canvas is a prototype. These are known, and not bugs to report.
 
 - **Terminals** do not survive a restart of `canvas serve`, and keep running after their frame is
   removed, until `canvas serve` stops.
+- **Terminals need `setsid`** (util-linux, on every Linux) to be a real terminal for the shell.
+  Without it, as on macOS, Ctrl-C does not reach programs, and ones that open the terminal
+  themselves — fzf's Ctrl-R, `sudo` and `ssh` prompts — hang.
 - **Browser frames** load pages per viewer: a dev server on the host's `localhost` is not visible
   to guests, who see a notice.
 - **HTML previews** are one file: relative assets and links don't load.
