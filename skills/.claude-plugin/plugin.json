@@ -1,0 +1,5 @@
+{
+  "name": "canvas",
+  "description": "Skills canvas gives the agents it runs.",
+  "skills": "./"
+}

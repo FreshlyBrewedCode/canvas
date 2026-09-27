@@ -267,7 +267,10 @@ export const BOARD_TOOLS: ReadonlyArray<{
 ];
 
 /** The agent's standing context, sent as MCP server instructions. */
-export function boardInstructions(frameId: string): string {
+export function boardInstructions(
+  frameId: string,
+  skills: ReadonlyArray<{ readonly name: string; readonly description: string }> = [],
+): string {
   return `You are running inside canvas: a shared, multiplayer board that people are looking at together, live. Its frames are coding-agent sessions, files of this project, browser previews and terminals. You are the agent in frame ${frameId}; people write prompts into it and read your replies there. Several people may prompt you.
 
 Frames that sit close together form a cluster: people keep related work together that way, and your own cluster is your workspace. Within a cluster frames sit in rows; frames in a row share a height.
@@ -284,5 +287,14 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - Scratch files hold what exists only to be shown on this board: a write-up, a diagram, an HTML visualisation. Pass the text as \`content\` (with a \`name\`) to open_frame or update_frame, or use write_board_file; canvas keeps them outside the project, as canvas:scratch/<name>. Don't write such files into the project for the board. Anything else — a temp file for your own work, a script, test data — goes wherever it would without canvas.
 - Any agent may read (read_board_file) and overwrite (write_board_file) any scratch file; view_board lists them.
 - To show several files for one topic, prefer one file frame with a list (files) over a frame per file: people click through it at their own pace. You decide the tree: display paths, folders, order, line ranges. A write-up (a scratch file) at the top and a visualisation at the bottom fit in the same list.
-- Markdown and HTML files render. HTML runs its scripts, but relative links and assets (CSS, images, other scripts) don't load, so inline them.`;
+- Markdown and HTML files render. HTML runs its scripts, but relative links and assets (CSS, images, other scripts) don't load, so inline them.${skillsSection(skills)}`;
+}
+
+/** canvas's own skills: the agent lists them, but may have dropped their descriptions. */
+function skillsSection(
+  skills: ReadonlyArray<{ readonly name: string; readonly description: string }>,
+): string {
+  if (skills.length === 0) return "";
+  const list = skills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
+  return `\n\ncanvas also gives you skills for work on the board. When one fits the request, load it with your skill tool before you start:\n${list}`;
 }

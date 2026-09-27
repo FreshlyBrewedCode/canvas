@@ -13,6 +13,7 @@ import { AgentManager, detectAgents } from "./agents";
 import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
 import { Scratch } from "./scratch";
+import { canvasSkills } from "./skills";
 import { Store } from "./store";
 import { Terminals } from "./terminals";
 
@@ -51,6 +52,7 @@ export async function serve(options: ServeOptions) {
       host.send(JSON.stringify({ t: "board-call", ...call } satisfies ServerToClient));
       return true;
     },
+    skills: canvasSkills(),
   });
   process.on("exit", () => boardMcp.stop());
 

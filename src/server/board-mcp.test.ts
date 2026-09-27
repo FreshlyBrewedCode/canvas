@@ -28,6 +28,7 @@ describe("BoardMcp", () => {
       return true;
     },
     timeoutMs: 200,
+    skills: [{ name: "code-tour", description: "Give a code tour. Use when asked for one." }],
   });
   afterAll(() => mcp.stop());
 
@@ -58,6 +59,9 @@ describe("BoardMcp", () => {
     const { body } = await rpc("initialize", { protocolVersion: "2025-06-18" });
     expect(body.result.protocolVersion).toBe("2025-06-18");
     expect(body.result.instructions).toContain("frame frame1");
+    expect(body.result.instructions).toContain(
+      "- code-tour: Give a code tour. Use when asked for one.",
+    );
     expect(body.result.capabilities.tools).toBeDefined();
   });
 
