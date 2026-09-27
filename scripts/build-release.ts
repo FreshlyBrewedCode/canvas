@@ -8,7 +8,8 @@
 // Bun at runtime; `bin/canvas.js` is the guard and launcher. The web app is
 // not in it — the release workflow deploys that to ui.canvas.frebreco.de, and
 // `src/server/web-url.ts` picks the build matching the version stamped here.
-// So only `src/cli.ts`, `src/server/` and `src/shared/` are staged, and the
+// So only `src/cli.ts`, `src/server/` and `src/shared/` are staged, with
+// `skills/`, which every agent session loads (`src/server/agents.ts`), and the
 // manifest carries only the dependencies they need, not React and friends.
 //
 // Usage: bun scripts/build-release.ts [version] [--smoke-test]
@@ -32,7 +33,7 @@ const REPOSITORY_URL = "git+https://github.com/FreshlyBrewedCode/canvas.git";
 const DESCRIPTION = "A multiplayer canvas for coding agents that run on your machine.";
 
 /** What `canvas serve` is made of, relative to the repo root. */
-const SOURCES = ["src/cli.ts", "src/server", "src/shared"];
+const SOURCES = ["src/cli.ts", "src/server", "src/shared", "skills"];
 
 /**
  * Packages the server needs without importing them: `agents.ts` resolves
@@ -214,7 +215,7 @@ const manifest = {
   engines: { bun: ">=1.4.1" },
   homepage: "https://canvas.frebreco.de",
   repository: { type: "git", url: REPOSITORY_URL },
-  files: ["bin", "src", "README.md", "LICENSE"],
+  files: ["bin", "src", "skills", "README.md", "LICENSE"],
   dependencies,
 };
 

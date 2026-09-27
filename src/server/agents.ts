@@ -46,6 +46,7 @@ import type {
   SessionSnapshot,
 } from "../shared/protocol";
 import { fromAcp, pendingChanges, settingsOf } from "./agent-config";
+import { SKILLS_DIR } from "./skills";
 import { trimEvent } from "./trim-event";
 
 interface AgentDefinition extends AgentInfo {
@@ -78,6 +79,8 @@ export function detectAgents(): ReadonlyArray<AgentDefinition> {
         claudeCode: {
           options: {
             allowedTools: BOARD_TOOL_NAMES.map((name) => `mcp__${BOARD_SERVER_NAME}__${name}`),
+            // canvas's own skills; the host's stay available beside them.
+            plugins: [{ type: "local", path: SKILLS_DIR, skipMcpDiscovery: true }],
           },
         },
       },
@@ -93,6 +96,8 @@ export function detectAgents(): ReadonlyArray<AgentDefinition> {
           model: opencodeModel,
           // Shell commands ask, so a person approves anything the agent runs.
           permission: { bash: "ask" },
+          // canvas's own skills; the host's stay available beside them.
+          skills: { paths: [SKILLS_DIR] },
         }),
       },
     },

@@ -19,6 +19,11 @@ canvas
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
   MCP server instructions, never a replaced system prompt (finding 06). Layout rules — clusters
   and rows read off positions — are pure geometry in `src/shared/layout.ts`
+- agent skills (finding 12): `skills/` ships with the package; every session gets it as a Claude
+  plugin (`.claude-plugin/plugin.json` points `skills` at the folder itself) and an opencode
+  skills path, and the board priming names each skill. A new skill is a `skills/<name>/SKILL.md`
+  whose `name` is the folder's; nothing to register. Its description is priming too: keep it
+  short, with its trigger. User-visible: add it to `site/content/docs/skills.md`
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends
