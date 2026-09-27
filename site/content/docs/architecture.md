@@ -9,7 +9,8 @@ canvas has two halves: **`canvas serve`**, a local server on the host's machine,
 app**, a static single-page app served from `ui.canvas.frebreco.de`. There is no canvas backend in
 between. Each release channel has its own build of the web app, matching its `canvas serve`: a
 stable release opens `ui.canvas.frebreco.de`, a pre-release (`@frebreco/canvas@next`) opens
-`ui.canvas.frebreco.de/next`.
+`ui.canvas.frebreco.de/next`. When a page and `canvas serve` are different releases (a tab left
+open across a release, or an older CLI), a strip under the top bar says which one to update.
 
 ```
 guest ──┐

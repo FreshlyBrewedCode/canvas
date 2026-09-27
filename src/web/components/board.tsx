@@ -8,7 +8,9 @@ import {
   Minus,
   MousePointer2,
   Plus,
+  RotateCw,
   SquareTerminal,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -32,6 +34,7 @@ import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-contex
 import { readSelection } from "@/lib/selection";
 import { useSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
+import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
@@ -106,6 +109,7 @@ export function Board() {
   return (
     <div className="flex h-full flex-col">
       <TopBar />
+      <VersionNotice />
       <div
         ref={wrapRef}
         data-board=""
@@ -396,6 +400,60 @@ function describeConfig(
 }
 
 // ---------------------------------------------------------------------------
+
+/** The page and `canvas serve` are different releases: say which to update. */
+function VersionNotice() {
+  const room = useRoomState();
+  const [dismissed, setDismissed] = useState(false);
+  const serve = room.roomState?.version;
+  const skew = versionSkew(PAGE_VERSION, serve);
+  if (!skew || dismissed) return null;
+  const channel = PAGE_VERSION?.includes("-") ? "next" : "latest";
+  const theirs = room.isHost ? "canvas serve" : "the host's canvas serve";
+  return (
+    <div
+      data-version-notice={skew}
+      data-status="ready"
+      className="bg-status-ready/10 border-status-ready/45 flex shrink-0 items-center gap-3 border-b px-3 py-1.5 text-xs"
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-[var(--status)]" />
+      {skew === "page-older" ? (
+        <>
+          <span>
+            This page is canvas {PAGE_VERSION}, {theirs} is {serve}. Reload to get the page that
+            matches it.
+          </span>
+          <Button size="sm" variant="outline" onClick={() => location.reload()}>
+            <RotateCw /> Reload
+          </Button>
+        </>
+      ) : room.isHost ? (
+        <span>
+          canvas serve is {serve}, older than this page ({PAGE_VERSION}); some things won't work.
+          Restart it with{" "}
+          <code className="bg-muted rounded px-1 font-mono">
+            bunx @frebreco/canvas@{channel} serve
+          </code>
+          .
+        </span>
+      ) : (
+        <span>
+          The host's canvas serve is {serve}, older than this page ({PAGE_VERSION}); some things may
+          not work until they update it.
+        </span>
+      )}
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="ml-auto"
+        title="Dismiss"
+        onClick={() => setDismissed(true)}
+      >
+        <X />
+      </Button>
+    </div>
+  );
+}
 
 function TopBar() {
   const room = useRoomState();

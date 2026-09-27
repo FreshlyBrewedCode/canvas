@@ -54,6 +54,7 @@ const { server, room } = await serve({
   port: Number(values.port),
   hostname: tlsHost ? "0.0.0.0" : "127.0.0.1",
   ...(tlsHost && { tls: { cert: values.cert, key: values.key } }),
+  ...(manifest.version && { version: manifest.version }),
 });
 
 const serverUrl = tlsHost ? `wss://${tlsHost}:${server.port}` : `ws://127.0.0.1:${server.port}`;
