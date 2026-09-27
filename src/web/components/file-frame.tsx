@@ -89,13 +89,13 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   useEffect(() => {
     if (list && !hadList.current) {
       setAllFiles(false);
-      tree.current?.expand();
+      if (tree.current) openTree(tree.current);
     }
     hadList.current = !!list;
   }, [list]);
 
   const toggleTree = () => {
-    if (tree.current?.isCollapsed()) tree.current.expand();
+    if (tree.current?.isCollapsed()) openTree(tree.current);
     else tree.current?.collapse();
   };
 
@@ -327,9 +327,9 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
             panelRef={tree}
             collapsible
             collapsedSize={0}
-            minSize="18"
+            minSize={`${TREE_MIN}`}
             maxSize="60"
-            defaultSize={treeOpen ? "32" : "0"}
+            defaultSize={treeOpen ? `${TREE_DEFAULT}` : "0"}
             onResize={() => setTreeOpen(!tree.current?.isCollapsed())}
             className="bg-muted/30"
           >
@@ -373,6 +373,17 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
     </FrameShell>
   );
 }
+
+/**
+ * Expand a collapsed tree. A tree that was never open has no size to go back
+ * to, and would open at its minimum, names cut off: open it at its default.
+ */
+function openTree(panel: PanelImperativeHandle) {
+  panel.expand();
+  if (panel.getSize().asPercentage < TREE_MIN + 0.5) panel.resize(`${TREE_DEFAULT}`);
+}
+const TREE_MIN = 18;
+const TREE_DEFAULT = 32;
 
 function ToolbarButton({
   title,
