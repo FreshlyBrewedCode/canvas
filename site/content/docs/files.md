@@ -41,9 +41,10 @@ visualisation at the bottom.
   and source for everyone.
 
 An HTML preview runs the page's scripts, sandboxed: the page can't reach the board or your
-browser's storage for canvas. It is one file: links and assets relative to it (CSS, images, other
-scripts) don't load, so inline them. The page keeps its own scroll, and selections don't show in
-it.
+browser's storage for canvas. Its [links](/docs/board#links) work: a link to another HTML file
+opens in the same frame, so a few pages make a small site. Assets relative to it (CSS, images,
+other scripts) don't load, so inline them. The page keeps its own scroll, and selections don't
+show in it.
 
 Files over 1 MiB are **too large to show**; binary files are **not shown**. A path that does not
 exist yet waits, and shows the file as soon as something writes it.

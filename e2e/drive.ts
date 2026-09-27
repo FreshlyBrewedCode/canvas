@@ -1715,4 +1715,102 @@ if (step === "takeover") {
   await guest.getByText("host online").waitFor({ timeout: 30000 });
   check(true, "the guest sees the host again");
 }
+// Links to places on the board (ADR 0007): chips in markdown, lines and
+// headings for the one who clicks, Back, web links in a new tab, linked HTML
+// pages in one frame, a page's own posts ignored, a guest's deep link. Wants
+// the project of finding 14.
+if (step === "links") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const presence = (p: Page) =>
+    p.evaluate(() => (window as any).room.awareness.getLocalState() as any);
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+    const YMap = frames.constructor;
+    const readme = new YMap();
+    const frame = { type: "file", path: "README.md", title: "README.md", x: 40, y: 40, w: 640, h: 560, z: 1 };
+    for (const [k, v] of Object.entries(frame)) readme.set(k, v);
+    frames.set("readme01", readme);
+  });
+  const readme = host.locator('[data-frame="readme01"]');
+  const chip = (text: string) => readme.locator("[data-board-link]", { hasText: text });
+  await chip("a.ts:120-125").waitFor({ timeout: 15000 });
+  const chips = await readme.locator("[data-board-link]").allInnerTexts();
+  check(chips.includes("src/b.ts:40"), `inline code naming a file is a chip (${chips})`);
+  const codes = await readme.locator("code").allInnerTexts();
+  check(codes.includes("foo.bar") && codes.includes("src/nope.ts:3"), "other code stays code");
+  await shot(host, "95-links-readme");
+
+  const secrets = new URL(host.url()).hash;
+  await chip("a.ts:120-125").click();
+  await host.waitForTimeout(1200);
+  const a = (await framesOf(host)).find((f) => f.path === "src/a.ts");
+  check(a?.view === "source" && !a.lines, "a file no frame shows opens beside, in source, no shared lines");
+  const mine = await presence(host);
+  check(mine.selection?.start === 120 && mine.selection?.end === 125, "the lines are my selection");
+  check(mine.focus?.frameId === a?.id, "and I occupy the frame");
+  check(new URL(host.url()).hash.startsWith(secrets), "the page URL keeps the room's secrets");
+  await shot(host, "96-links-lines");
+  const fit = () => host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await fit();
+
+  await chip("Bottom").click();
+  await host.waitForTimeout(600);
+  const scrolled = () => readme.locator("[data-frame-body]").evaluate((e) => e.scrollTop);
+  check((await scrolled()) > 0, "a heading of the same file scrolls to it");
+  await readme.locator("[data-frame-body]").evaluate((e) => (e.scrollTop = 0));
+  await fit();
+  await chip("Install").click();
+  await host.waitForTimeout(1200);
+  const guide = (await framesOf(host)).find((f) => f.path === "docs/guide.md");
+  const guideTop = await host
+    .locator(`[data-frame="${guide?.id}"] [data-frame-body]`)
+    .evaluate((e) => e.scrollTop);
+  check(!!guide && guideTop > 0, "a heading of another file opens it there");
+  await host.goBack();
+  await host.waitForTimeout(800);
+  check((await scrolled()) > 0, "Back goes to the heading before");
+
+  await fit();
+  const [tab] = await Promise.all([
+    host.context().waitForEvent("page", { timeout: 5000 }).catch(() => null),
+    readme.locator("a", { hasText: "example" }).click(),
+  ]);
+  check(!!tab && new URL(host.url()).pathname === "/", "a web link opens a tab, the board stays");
+  await tab?.close();
+
+  await fit();
+  await chip("index").click();
+  await host.waitForTimeout(2500); // the page's own posts go out meanwhile
+  let frames = await framesOf(host);
+  const page = frames.find((f) => f.path === "pages/index.html")!;
+  check(!frames.some((f) => f.path === "src/b.ts"), "the page's own posts go nowhere");
+  const iframe = host.locator(`[data-frame="${page.id}"] iframe`).contentFrame();
+  await iframe.locator("#two").click();
+  await host.waitForTimeout(800);
+  frames = await framesOf(host);
+  check(frames.find((f) => f.id === page.id)?.path === "pages/two.html", "a page's link opens in its frame");
+  await iframe.locator("#one").click();
+  await host.waitForTimeout(2500);
+  check((await presence(host)).focus?.frameId === page.id, "nor right after a click");
+  await iframe.locator("#anchor").click();
+  await host.waitForTimeout(400);
+  check((await iframe.locator("#down").count()) === 1, "an in-page anchor stays in the page");
+  await iframe.locator("body").evaluate(() => scrollTo(0, 0));
+  await iframe.locator("#code").click();
+  await host.waitForTimeout(1000);
+  check((await presence(host)).selection?.start === 60, "a page's link to lines of a file");
+  await shot(host, "97-links-page");
+
+  const u = new URL(guestLink);
+  await guest.goto(`${u.origin}/?room=${u.searchParams.get("room")}${u.hash}&frame=${a?.id}&lines=30-33`);
+  await guest.getByText("host online").waitFor({ timeout: 30000 });
+  await guest.waitForTimeout(3000);
+  const theirs = await presence(guest);
+  check(theirs.selection?.start === 30 && theirs.selection?.end === 33, "a guest's deep link to lines");
+  await shot(guest, "98-links-guest-deep");
+}
 await browser.close();

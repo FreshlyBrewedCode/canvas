@@ -24,6 +24,7 @@ order: 5
 | **guest**         | Anyone on the board who opened the guest link                               |
 | **guest access**  | What guests may do, set by the host per board: view, edit or trusted        |
 | **guest link**    | The link that joins a board as a guest. Safe to share with the people you invite |
+| **link**          | A markdown or HTML link to a place on the board: a frame, a file, lines, a heading, a comment. [Board](/docs/board#links) |
 | **host**          | The person who runs `canvas serve` and opens the host link                  |
 | **host link**     | The link `canvas serve` prints. Controls the machine: never share it        |
 | **occupant**      | The person or agent holding a frame. [Focus](/docs/focus)                   |

@@ -12,6 +12,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { AgentSettings } from "@/components/agent-settings";
+import { MARKDOWN_LINKS, urlTransform } from "@/components/board-link";
 import { CollabEditor } from "@/components/collab-editor";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
@@ -293,7 +294,9 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
     case "text":
       return (
         <div data-sel-key={row.key} className="prose-canvas text-sm">
-          <Markdown remarkPlugins={[remarkGfm]}>{row.content}</Markdown>
+          <Markdown remarkPlugins={REMARK} components={MARKDOWN_LINKS} urlTransform={urlTransform}>
+            {row.content}
+          </Markdown>
         </div>
       );
     case "thinking":
@@ -343,6 +346,8 @@ function RowView({ row, frameId }: { row: Row; frameId: string }) {
 }
 
 /** A board tool as each agent names it (`mcp__canvas__open_frame`, `canvas_open_frame`). */
+const REMARK = [remarkGfm];
+
 const BOARD_TOOL = new RegExp(
   `^(?:mcp__${BOARD_SERVER_NAME}__|${BOARD_SERVER_NAME}_)(${BOARD_TOOL_NAMES.join("|")})$`,
 );

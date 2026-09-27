@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fitRects, toBoard, zoomAbout, type Point, type Transform } from "@/lib/viewport";
+import { fitRects, inView, toBoard, zoomAbout, type Point, type Transform } from "@/lib/viewport";
 
 /** Must match the `background-size` in the `.bg-dot-grid` CSS class. */
 const DOT_GRID_SIZE = 22;
@@ -16,6 +16,8 @@ export interface BoardViewport {
   zoomBy: (factor: number) => void;
   zoomTo: (scale: number) => void;
   fit: (rects: ReadonlyArray<{ x: number; y: number; w: number; h: number }>) => void;
+  /** Bring a rectangle into view: fit it, unless it is there to read already. */
+  show: (rect: { x: number; y: number; w: number; h: number }) => void;
   centre: () => Point;
 }
 
@@ -190,6 +192,12 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     fit: (rects) => {
       const { width, height } = size();
       const fitted = fitRects(rects, width, height);
+      if (fitted) apply(fitted);
+    },
+    show: (rect) => {
+      const { width, height } = size();
+      if (inView(transformRef.current, rect, width, height)) return;
+      const fitted = fitRects([rect], width, height);
       if (fitted) apply(fitted);
     },
     centre: () => {

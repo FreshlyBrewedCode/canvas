@@ -380,7 +380,13 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - Any agent may read (read_board_file) and overwrite (write_board_file) any scratch file; view_board lists them.
 - To show several files for one topic, prefer one file frame with a list (files) over a frame per file: people click through it at their own pace. You decide the tree: display paths, folders, order, line ranges. A write-up (a scratch file) at the top and a visualisation at the bottom fit in the same list.
 - People (and agents) comment on lines of files in a file frame. view_board says which frames have comments; view_frame lists them, with ids. You aren't told when someone comments: look when asked to, e.g. to address feedback. add_comment leaves one of yours; edit_comment and delete_comment change agents' comments, never people's. update_frame with a comment's id shows its file at its lines. A comment is "outdated" when its lines changed since; it shows what they were.
-- Markdown and HTML files render. HTML runs its scripts, but relative links and assets (CSS, images, other scripts) don't load, so inline them.${skillsSection(skills)}`;
+- Markdown and HTML files render. HTML runs its scripts, but relative assets (CSS, images, other scripts) don't load, so inline them. Links do work (see below).
+
+Your replies, comments, markdown and HTML can link to places on the board with ordinary markdown links (or <a href> in HTML). A click takes that person there, opening a file frame if no frame shows the file:
+- A file, from the project root: [session.ts](src/auth/session.ts); lines of it: [session.ts:42-60](src/auth/session.ts#L42-L60); a markdown heading: [Setup](docs/guide.md#setup); a scratch file: [overview](canvas:scratch/overview.md). \`path:line\` in inline code becomes a link too, if the file exists.
+- A frame, by its id from view_board: [the review](#frame=<id>); a file or lines in it: #frame=<id>&path=src/a.ts&lines=10-20; a comment: #frame=<id>&comment=<comment id>.
+- In a markdown or HTML file, relative paths are from that file. HTML pages can link each other: a link to another HTML file opens in the same frame, so several scratch pages make a small site.
+Link to what you talk about when it's on the board or in the project; don't link to everything.${skillsSection(skills)}`;
 }
 
 /** canvas's own skills: the agent lists them, but may have dropped their descriptions. */

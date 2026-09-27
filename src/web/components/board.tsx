@@ -15,10 +15,12 @@ import {
 import { useEffect, useState } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
+import { GoProvider } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { FileFrame } from "@/components/file-frame";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
+import { useBoardNavigation } from "@/hooks/use-board-navigation";
 import { useBoardViewport } from "@/hooks/use-board-viewport";
 import {
   addFrame,
@@ -47,6 +49,7 @@ export function Board() {
   const readOnly = room.isHost
     ? room.serverStatus === "replaced"
     : room.roomState?.access === "view";
+  const go = useBoardNavigation(room, viewport, readOnly);
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
   useEffect(() => {
@@ -107,67 +110,69 @@ export function Board() {
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar />
-      <VersionNotice />
-      <div
-        ref={wrapRef}
-        data-board=""
-        className="bg-dot-grid relative min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
-      >
-        <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
-          {frames.map((frame) => (
-            <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
-          ))}
-          <SnapGhost />
-          <Pointers />
-        </div>
-
-        {!readOnly && <Toolbar onCreate={create} />}
-        <Approvals />
-        <HostElsewhere />
-        {frames.length === 0 && <EmptyBoard readOnly={readOnly} />}
-
+    <GoProvider value={go}>
+      <div className="flex h-full flex-col">
+        <TopBar />
+        <VersionNotice />
         <div
-          data-hud=""
-          className="bg-card/90 absolute right-3 bottom-3 flex items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur"
+          ref={wrapRef}
+          data-board=""
+          className="bg-dot-grid relative min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
         >
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => viewport.zoomBy(1 / 1.25)}
-            title="Zoom out"
+          <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
+            {frames.map((frame) => (
+              <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
+            ))}
+            <SnapGhost />
+            <Pointers />
+          </div>
+
+          {!readOnly && <Toolbar onCreate={create} />}
+          <Approvals />
+          <HostElsewhere />
+          {frames.length === 0 && <EmptyBoard readOnly={readOnly} />}
+
+          <div
+            data-hud=""
+            className="bg-card/90 absolute right-3 bottom-3 flex items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur"
           >
-            <Minus />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-14 font-mono tabular-nums"
-            title="Reset to 100%"
-            onClick={() => viewport.zoomTo(1)}
-          >
-            {Math.round(scale * 100)}%
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => viewport.zoomBy(1.25)}
-            title="Zoom in"
-          >
-            <Plus />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Fit board to view"
-            onClick={() => viewport.fit(frames)}
-          >
-            <Maximize2 />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => viewport.zoomBy(1 / 1.25)}
+              title="Zoom out"
+            >
+              <Minus />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-14 font-mono tabular-nums"
+              title="Reset to 100%"
+              onClick={() => viewport.zoomTo(1)}
+            >
+              {Math.round(scale * 100)}%
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => viewport.zoomBy(1.25)}
+              title="Zoom in"
+            >
+              <Plus />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Fit board to view"
+              onClick={() => viewport.fit(frames)}
+            >
+              <Maximize2 />
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+    </GoProvider>
   );
 }
 

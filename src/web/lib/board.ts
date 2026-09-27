@@ -20,6 +20,20 @@ export type FrameType = "agent" | "file" | "browser" | "terminal";
 /** How a file frame shows its file; null is the file's default (preview for markdown). */
 export type FileView = "preview" | "source";
 
+export const isMarkdown = (path: string) => /\.(md|markdown|mdx)$/i.test(path);
+export const isHtml = (path: string) => /\.html?$/i.test(path);
+/** Files with a rendered view, which they open in. */
+export const hasPreview = (path: string) => isMarkdown(path) || isHtml(path);
+
+/** How a file frame shows its file now. Lines only show in the source: a range asked for means it. */
+export function fileView(frame: {
+  readonly path: string;
+  readonly view?: FileView | null;
+  readonly lines?: LineRange | null;
+}): FileView {
+  return frame.view ?? (hasPreview(frame.path) && !frame.lines ? "preview" : "source");
+}
+
 interface FrameBase {
   readonly id: string;
   readonly x: number;

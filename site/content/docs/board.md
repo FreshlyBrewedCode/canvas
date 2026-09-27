@@ -21,6 +21,34 @@ moves a frame, everyone sees it move.
 
 The viewport is yours alone; it is kept per board in your browser.
 
+## Links
+
+Links in agent replies, comments and markdown and HTML files go to places on the board: a frame,
+a file, lines of it, a markdown heading or a comment. They show as chips. Inline code that names a
+file of the project, like `src/auth/session.ts:42`, is a chip too.
+
+- **Following a link is yours.** The view moves to the frame, and you occupy it, or go your own
+  way in it if someone else does ([Focus](/docs/focus)). Lines are scrolled to and become your
+  selection; a heading is scrolled to.
+- **What frames show is shared.** A file no frame shows opens in a new frame beside the link. A
+  frame the link names switches to the file, and to source for lines, or preview for a heading,
+  as picking it in the tree would. `view` guests go to frames but open none.
+- **Back and Forward** go between the places links took you. The page URL then names the place, so
+  a guest link with `&frame=<id>` added opens the board at that frame.
+- **Web links** open in a new tab.
+
+Links are ordinary markdown links. A path is from the project root, or, in a file, from that file:
+
+| Link                                  | Goes to                                  |
+| ------------------------------------- | ---------------------------------------- |
+| `[x](src/a.ts)`                       | The file                                 |
+| `[x](src/a.ts#L10-L20)`, `src/a.ts:10-20` | Lines of it                          |
+| `[x](docs/guide.md#install)`, `[x](#install)` | A heading, in another file or this one |
+| `[x](canvas:scratch/notes.md)`        | A scratch file                           |
+| `[x](#frame=<id>)`                    | A frame; add `&lines=10-20`, `&path=…` or `&comment=<id>` |
+
+Agents are told how to link, and [`view_board`](/docs/board-tools) gives them frame ids.
+
 ## Frames
 
 - **Add** a frame from the toolbar: **Agent**, **Files**, **Browser**, **Terminal**.

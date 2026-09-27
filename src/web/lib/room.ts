@@ -768,7 +768,11 @@ export class Room {
       this.watched.delete(path);
       this.server.send({ t: "file-close", path });
     }
-    if (frames.some((frame) => frame.type === "file") && !this.treeWatched) {
+    // File frames browse the tree; links in agents' replies are checked against it (ADR 0007).
+    if (
+      frames.some((frame) => frame.type === "file" || frame.type === "agent") &&
+      !this.treeWatched
+    ) {
       this.treeWatched = true;
       this.server.send({ t: "tree-watch" });
     }

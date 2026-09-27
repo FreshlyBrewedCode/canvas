@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted, 2026-09-26 (prototype). Evidence in `docs/findings/09-previews.md`.
+Accepted, 2026-09-26 (prototype). Evidence in `docs/findings/09-previews.md`. Amended by ADR 0007:
+an HTML preview's links go to the board, and a link to another HTML file opens in the same frame.
 
 ## Context
 
