@@ -10,6 +10,14 @@ import { cn } from "@/lib/utils";
 
 const REMARK = [remarkGfm];
 
+/** A body's text for a one-line preview: markdown's marks dropped. */
+const plain = (markdown: string) =>
+  markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`~]+|^\s*(#+|>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const linesLabel = ({ start, end }: { start: number; end: number }) =>
   start === end ? `L${start}` : `L${start}–${end}`;
 
@@ -215,7 +223,7 @@ export function CommentsButton({
                   <span className="shrink-0">{linesLabel(comment)}</span>
                   {comment.outdated && <Outdated />}
                 </span>
-                <span className="line-clamp-2">{comment.body}</span>
+                <span className="line-clamp-2">{plain(comment.body)}</span>
               </button>
             ))}
           </section>
