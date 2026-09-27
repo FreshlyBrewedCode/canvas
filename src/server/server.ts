@@ -21,6 +21,8 @@ export interface ServeOptions {
   readonly port: number;
   readonly hostname: string;
   readonly tls?: { readonly cert: string; readonly key: string };
+  /** The published version this runs as; none for a checkout. */
+  readonly version?: string;
 }
 
 export async function serve(options: ServeOptions) {
@@ -156,6 +158,7 @@ export async function serve(options: ServeOptions) {
         ws.send(
           JSON.stringify({
             t: "welcome",
+            version: options.version ?? null,
             room: secrets,
             cwd: options.dir,
             agents: agentDefinitions.map(({ kind, label }) => ({ kind, label })),

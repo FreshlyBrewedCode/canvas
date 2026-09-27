@@ -16,7 +16,7 @@ export function useRoomState() {
   useSyncExternalStore(
     (onChange) => room.subscribe("room", onChange),
     () =>
-      `${room.serverStatus}:${room.hostOnline}:${room.roomState?.access}:${room.roomState?.hostPeerId}:${room.error}`,
+      `${room.serverStatus}:${room.hostOnline}:${room.roomState?.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}:${room.error}`,
   );
   return room;
 }

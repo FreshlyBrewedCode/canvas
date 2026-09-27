@@ -1382,6 +1382,28 @@ if (step === "lists") {
   await host.getByLabel("Guest access").selectOption("edit");
 }
 
+// Page and canvas serve of different releases: both host and guest are told.
+// Run the dev server with VITE_CANVAS_VERSION and a staged release of the CLI
+// (scripts/build-release.ts) of another version; EXPECT is the skew.
+if (step === "version") {
+  const expected = process.env.EXPECT ?? "page-older";
+  for (const [name, page] of [
+    ["host", host],
+    ["guest", guest],
+  ] as const) {
+    const notice = page.locator("[data-version-notice]");
+    await notice.waitFor({ timeout: 10000 });
+    const skew = await notice.getAttribute("data-version-notice");
+    console.log(`${skew === expected ? "ok  " : "FAIL"} ${name}: ${await notice.innerText()}`);
+    if (skew !== expected) process.exitCode = 1;
+    await shot(page, `95-${name}-${skew}`);
+  }
+  await host.locator("[data-version-notice]").getByTitle("Dismiss").click();
+  const gone = (await host.locator("[data-version-notice]").count()) === 0;
+  console.log(`${gone ? "ok  " : "FAIL"} dismissed`);
+  if (!gone) process.exitCode = 1;
+}
+
 // One host tab at a time: a second one takes over, "Use here" takes it back.
 if (step === "takeover") {
   const check = (ok: boolean, what: string) => {

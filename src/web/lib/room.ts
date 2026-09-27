@@ -661,6 +661,7 @@ export class Room {
           access: this.access,
           cwd: message.cwd,
           agents: message.agents,
+          version: message.version,
         };
         this.hostOnline = true;
         this.emit("room");

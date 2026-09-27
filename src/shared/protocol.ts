@@ -211,6 +211,8 @@ export type ClientToServer =
 export type ServerToClient =
   | {
       readonly t: "welcome";
+      /** The version `canvas serve` runs as; null for a checkout. */
+      readonly version: string | null;
       readonly room: RoomSecrets;
       readonly cwd: string;
       readonly agents: ReadonlyArray<AgentInfo>;
@@ -258,6 +260,8 @@ export interface RoomState {
   readonly access: GuestAccess;
   readonly cwd: string;
   readonly agents: ReadonlyArray<AgentInfo>;
+  /** `canvas serve`'s version, null for a checkout; absent from hosts older than it. */
+  readonly version?: string | null;
 }
 
 /** Requests a guest sends the host; the host answers `{ok}` or `{ok:false, error}`. */
