@@ -1384,7 +1384,7 @@ if (step === "lists") {
 
 // Comments on a file frame (ADR 0006): people write them from the gutter,
 // they stay with the frame, follow their lines as the file changes, and only
-// their author or the host changes them. Against the project of finding 12.
+// their author or the host changes them. Against the project of finding 13.
 if (step === "comments") {
   const dir = process.env.DIR ?? "/tmp/canvas-comments";
   const check = (ok: boolean, what: string) => {

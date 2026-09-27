@@ -29,6 +29,7 @@ import { BOARD_SERVER_NAME, BOARD_TOOLS, boardInstructions } from "../shared/boa
 import { linesOf, quoteOf } from "../shared/comments";
 import type { FileContent } from "../shared/protocol";
 import type { Scratch } from "./scratch";
+import type { Skill } from "./skills";
 
 export interface BoardCall {
   readonly callId: string;
@@ -43,6 +44,8 @@ export interface BoardMcpOptions {
   readonly scratch: Pick<Scratch, "create" | "write" | "read" | "list" | "remove">;
   /** Send a call to the host's browser; false if none is connected. */
   readonly relay: (call: BoardCall) => boolean;
+  /** canvas's skills, named in the priming. */
+  readonly skills?: ReadonlyArray<Skill>;
   readonly timeoutMs?: number;
 }
 
@@ -138,7 +141,7 @@ export class BoardMcp {
               : LATEST_PROTOCOL,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: BOARD_SERVER_NAME, version: "0.0.0" },
-          instructions: boardInstructions(sessionId),
+          instructions: boardInstructions(sessionId, this.options.skills),
         });
       case "ping":
         return reply({});

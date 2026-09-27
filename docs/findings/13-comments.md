@@ -1,4 +1,4 @@
-# 12 — Comments on file frames
+# 13 — Comments on file frames
 
 Date: 2026-09-27 · `e2e/drive.ts` `STEP=comments` (people) and `STEP=comments-agent` (agents),
 against a scratch repo (`src/values.ts`: 80 lines `export const valueN = N; // line N`,

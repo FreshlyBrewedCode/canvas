@@ -82,7 +82,8 @@ to leave other people's frames alone unless asked.
 
 canvas tells the agent what the board is, and how to behave on it, through the tool server's
 instructions. Agents show these next to their own system prompt, never instead of it, and they
-never appear in the thread.
+never appear in the thread. They also name canvas's [skills](/docs/skills), so an agent finds
+them among its own.
 
 ## Requirements
 

@@ -19,10 +19,15 @@ canvas
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
   MCP server instructions, never a replaced system prompt (finding 06). Layout rules — clusters
   and rows read off positions — are pure geometry in `src/shared/layout.ts`
-- comments (ADR 0006, finding 12): a file frame's comments live in `comments:<frameId>`, found
+- comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with
   `view_frame`, and `canvas serve` quotes the lines of theirs
+- agent skills (finding 12): `skills/` ships with the package; every session gets it as a Claude
+  plugin (`.claude-plugin/plugin.json` points `skills` at the folder itself) and an opencode
+  skills path, and the board priming names each skill. A new skill is a `skills/<name>/SKILL.md`
+  whose `name` is the folder's; nothing to register. Its description is priming too: keep it
+  short, with its trigger. User-visible: add it to `site/content/docs/skills.md`
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends
@@ -53,7 +58,7 @@ canvas
     takeover|version`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `preview` an HTML file and a loopback server, finding 09, `comments`/
-    `comments-agent` the repo of finding 12; `IDLE_MS` gives slow agents longer than 4 min per
+    `comments-agent` the repo of finding 13; `IDLE_MS` gives slow agents longer than 4 min per
     prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit

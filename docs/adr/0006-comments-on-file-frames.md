@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-09-27 (prototype). Evidence in `docs/findings/12-comments.md`.
+Accepted, 2026-09-27 (prototype). Evidence in `docs/findings/13-comments.md`.
 
 ## Context
 
