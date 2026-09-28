@@ -20,7 +20,7 @@
  * board's host key (see `host-key.ts`).
  */
 
-import { joinRoom, selfId, type Room as TrysteroRoom } from "trystero";
+import { getRelaySockets, joinRoom, selfId, type Room as TrysteroRoom } from "trystero";
 import * as Y from "yjs";
 import {
   Awareness,
@@ -50,6 +50,7 @@ import {
   type Occupant,
 } from "./focus";
 import { runBoardTool } from "./board-tools";
+import { relayState, type ConnectionEvent, type RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
 import { loadAuthorId, type BoardLink, type Identity } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
@@ -114,6 +115,7 @@ export interface LineSelection {
 type Topic =
   | "room"
   | "approvals"
+  | "connection"
   | "peers"
   | "focus"
   | "tree"
@@ -122,6 +124,7 @@ type Topic =
   | `file:${string}`;
 
 const APP_ID = "canvas-prototype-v1";
+const LOG_LIMIT = 300;
 const TERM_SCROLLBACK = 200_000;
 const json = <T>(value: T) => value as never;
 
@@ -139,7 +142,10 @@ export class Room {
   approvals: Approval[] = [];
   /** Everyone else's presence; a new array on every change. */
   peerList: Presence[] = [];
-  error: string | null = null;
+  /** What happened to the connection, and every error (`connection.ts`); a new array on every change. */
+  log: ConnectionEvent[] = [];
+  /** When we joined the trystero room. */
+  joinedAt: number | null = null;
 
   private readonly sessions = new Map<string, MirroredSession>();
   private readonly terminals = new Map<string, string>();
@@ -165,6 +171,8 @@ export class Room {
   private readonly focusViews = new Map<string, FrameFocus>();
   /** Host: which frame each agent works on, published as our presence. */
   private agentClaims: AgentClaim[] = [];
+  private relayStates = new Map<string, RelayInfo["state"]>();
+  private relayWatch: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     readonly link: BoardLink,
@@ -190,6 +198,13 @@ export class Room {
         url,
         (message) => this.onServer(message),
         (status) => {
+          // Every retry passes through "connecting": only its outcome is news.
+          if (status !== this.serverStatus && status !== "connecting")
+            this.record({
+              level: status === "open" ? "info" : "warn",
+              source: "serve",
+              text: `canvas serve: ${status}`,
+            });
           this.serverStatus = status;
           if (status === "replaced") this.stepDown();
           if (status !== "open") {
@@ -401,25 +416,29 @@ export class Room {
   private join() {
     if (this.trystero) return;
     const room = joinRoom({ appId: APP_ID, password: this.link.key }, this.link.roomId, {
-      onJoinError: ({ error }) => {
-        this.error = error;
-        this.emit("room");
-      },
+      onJoinError: ({ error, peerId }) =>
+        this.record({ level: "error", source: "peer", text: error, peerId }),
     });
     this.trystero = room;
+    this.joinedAt = Date.now();
+    this.record({ level: "info", source: "relay", text: "joined the room" });
+    this.watchRelays();
     const actions = this.makeActions(room);
     this.actions = actions;
 
     room.onPeerJoin = (peerId) => {
+      this.record({ level: "info", source: "peer", text: "peer connected", peerId });
       void actions.presence.send(encodeAwarenessUpdate(this.awareness, [this.doc.clientID]), {
         target: peerId,
       });
       if (this.isHost) void this.greet(peerId);
     };
     room.onPeerLeave = (peerId) => {
+      this.record({ level: "info", source: "peer", text: "peer left", peerId });
       removeAwarenessStates(this.awareness, [...(this.peerClients.get(peerId) ?? [])], "leave");
       this.peerClients.delete(peerId);
       if (peerId === this.roomState?.hostPeerId && !this.isHost) {
+        this.record({ level: "warn", source: "host", text: "host left", peerId });
         this.hostOnline = false;
         this.emit("room");
       }
@@ -433,7 +452,16 @@ export class Room {
     actions.hello.onMessage = async (message, { peerId }) => {
       const { signature, state, vector } = message as unknown as Hello;
       if (this.isHost) return;
-      if (!(await verifyHost(this.link.hostPublicKey, this.link.roomId, peerId, signature))) return;
+      if (!(await verifyHost(this.link.hostPublicKey, this.link.roomId, peerId, signature))) {
+        this.record({
+          level: "error",
+          source: "host",
+          text: "a peer claimed to be the host, but its signature doesn't match this link's host key",
+          peerId,
+        });
+        return;
+      }
+      this.record({ level: "info", source: "host", text: "host verified", peerId });
       this.hostOnline = true;
       this.roomState = state;
       this.emit("room");
@@ -473,6 +501,47 @@ export class Room {
 
     actions.request.onRequest = async (request, { peerId }) =>
       json(await this.onGuestRequest(peerId, request as unknown as GuestRequest));
+  }
+
+  // -------------------------------------------------------------------------
+  // connection details (`connection.ts`)
+
+  private record(event: Omit<ConnectionEvent, "at">) {
+    this.log = [...this.log.slice(1 - LOG_LIMIT), { at: Date.now(), ...event }];
+    this.emit("connection");
+  }
+
+  /** The signalling relays trystero has sockets for, and their state. */
+  relays(): RelayInfo[] {
+    const sockets = getRelaySockets() as Record<string, WebSocket>;
+    return Object.entries(sockets).map(([url, socket]) => ({
+      url,
+      state: relayState(socket.readyState),
+    }));
+  }
+
+  /** The connected peers' WebRTC connections, by peer id. */
+  peerConnections(): Record<string, RTCPeerConnection> {
+    return this.trystero?.getPeers() ?? {};
+  }
+
+  /** trystero reconnects relays by itself and says nothing: log what changes. */
+  private watchRelays() {
+    if (this.relayWatch) return;
+    this.relayWatch = setInterval(() => {
+      if (!this.trystero) return;
+      for (const { url, state } of this.relays()) {
+        const was = this.relayStates.get(url);
+        if (was === state || state === "closing") continue;
+        this.relayStates.set(url, state);
+        if (state === "connecting" && was === undefined) continue;
+        this.record({
+          level: state === "open" ? "info" : "warn",
+          source: "relay",
+          text: `${url} ${state === "open" ? "open" : state === "closed" ? "closed" : "reconnecting"}`,
+        });
+      }
+    }, 1000);
   }
 
   private fromHost(peerId: string) {
@@ -703,8 +772,7 @@ export class Room {
       case "board-call":
         return this.runBoardCall(message);
       case "error":
-        this.error = message.message;
-        return this.emit("room");
+        return this.record({ level: "error", source: "serve", text: message.message });
     }
   }
 
@@ -886,6 +954,8 @@ export class Room {
   private stepDown() {
     void this.trystero?.leave();
     this.trystero = null;
+    this.joinedAt = null;
+    this.record({ level: "info", source: "relay", text: "left the room: another tab is the host" });
     this.actions = null;
     const clients = [...this.peerClients.values()].flatMap((ids) => [...ids]);
     removeAwarenessStates(this.awareness, clients, "leave");
@@ -929,6 +999,7 @@ export class Room {
   }
 
   destroy() {
+    if (this.relayWatch) clearInterval(this.relayWatch);
     this.server?.close();
     void this.trystero?.leave();
     this.awareness.destroy();

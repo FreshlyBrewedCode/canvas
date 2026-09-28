@@ -1813,4 +1813,91 @@ if (step === "links") {
   check(theirs.selection?.start === 30 && theirs.selection?.end === 33, "a guest's deep link to lines");
   await shot(guest, "98-links-guest-deep");
 }
+
+// The connection dialog (finding 15): what host and guest see when it works,
+// and the headline for each way it fails — WebRTC blocked (no ICE path), and
+// the signalling relays blocked.
+if (step === "connection") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const dialog = async (page: Page) => {
+    await page.locator("[data-connection-indicator]").click();
+    return page.locator("[data-connection-dialog]");
+  };
+  const headline = (page: Page) => page.locator("[data-connection-headline]");
+  const waitHeadline = async (page: Page, title: string, ms = 30000) => {
+    try {
+      await headline(page).getByText(title).waitFor({ timeout: ms });
+      return true;
+    } catch {
+      console.log("  headline:", await headline(page).innerText().catch(() => "?"));
+      return false;
+    }
+  };
+
+  for (const [name, page] of [
+    ["host", host],
+    ["guest", guest],
+  ] as const) {
+    const d = await dialog(page);
+    check(await waitHeadline(page, "Connected to one peer"), `${name}: connected to one peer`);
+    // The route comes from WebRTC stats, read once a second while open.
+    await d.getByText(/direct|relayed/).first().waitFor({ timeout: 5000 });
+    check(true, `${name}: the peer's route shows`);
+    await d.locator("[data-network-test]").waitFor({ timeout: 10000 });
+    check(true, `${name}: network test ran (${await d.locator("[data-network-test]").innerText()})`);
+    await d.getByText("Details").click();
+    await d.getByText("Peer connections").waitFor();
+    // The report is for sending around: it must not carry the link's secrets.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await d.getByRole("button", { name: "Copy report" }).click();
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const parsed = JSON.parse(text) as { peers: unknown[]; log: unknown[] };
+    check(parsed.peers.length === 1 && parsed.log.length > 0, `${name}: the report has peers and the log`);
+    const secrets = [f.get("k")!, f.get("token")!, f.get("pk")!];
+    check(!secrets.some((secret) => text.includes(secret)), `${name}: the report has no keys or tokens`);
+    await shot(page, `96-${name}-connection`);
+    await page.keyboard.press("Escape");
+  }
+
+  // WebRTC blocked: only TURN candidates allowed, and no TURN server — as on
+  // a network that blocks UDP. Peers find each other, then fail.
+  const blocked = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: "dark" });
+  await blocked.addInitScript(() => {
+    const Native = RTCPeerConnection;
+    // @ts-expect-error replacing the constructor
+    window.RTCPeerConnection = function (config?: RTCConfiguration) {
+      return new Native({ ...config, iceServers: [], iceTransportPolicy: "relay" });
+    };
+    window.RTCPeerConnection.prototype = Native.prototype;
+  });
+  const noRtc = await blocked.newPage();
+  await noRtc.goto(guestLink);
+  await dialog(noRtc);
+  check(
+    await waitHeadline(noRtc, "Found peers, but couldn't connect to them", 60000),
+    "WebRTC blocked: found peers but couldn't connect",
+  );
+  check(
+    (await noRtc.locator("[data-connection-indicator]").getAttribute("data-status")) === "blocked",
+    "WebRTC blocked: the indicator turns red",
+  );
+  await shot(noRtc, "97-webrtc-blocked");
+  await blocked.close();
+
+  // Signalling blocked: every relay socket is refused.
+  const offline = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: "dark" });
+  await offline.routeWebSocket(/^wss:/, (ws) => ws.close());
+  const noRelay = await offline.newPage();
+  await noRelay.goto(guestLink);
+  await dialog(noRelay);
+  check(
+    await waitHeadline(noRelay, "No signalling relay reachable", 20000),
+    "relays blocked: no signalling relay reachable",
+  );
+  await shot(noRelay, "98-relays-blocked");
+  await offline.close();
+}
 await browser.close();

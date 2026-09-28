@@ -2,7 +2,7 @@
 title: Glossary
 description: The terms these docs use, and what each one means.
 section: Technical
-order: 5
+order: 6
 ---
 
 | Term              | Meaning                                                                    |
@@ -34,6 +34,7 @@ order: 5
 | **row**           | Frames in a cluster whose top edges line up; they share a height            |
 | **scratch file**  | A file an agent wrote for the board only, kept in `.canvas/scratch/`, shown as `canvas:scratch/<name>`. [Board tools](/docs/board-tools#scratch-files) |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |
+| **signalling relay** | A public Nostr relay through which browsers find each other before they connect directly. [Connection](/docs/connection) |
 | **skill**         | Instructions an agent loads when a request calls for them. canvas gives its own to every agent session. [Skills](/docs/skills) |
 | **terminal frame**| A shell on the host's machine. [Terminal](/docs/terminal)                   |
 | **web app**       | The browser UI at `ui.canvas.frebreco.de`                                   |
