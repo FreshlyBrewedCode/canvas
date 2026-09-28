@@ -94,8 +94,8 @@ export function detectAgents(): ReadonlyArray<AgentDefinition> {
         OPENCODE_CONFIG_CONTENT: JSON.stringify({
           // The starting model; people pick another in the frame.
           model: opencodeModel,
-          // Shell commands ask, so a person approves anything the agent runs.
-          permission: { bash: "ask" },
+          // No permission policy: opencode's defaults (ask outside the
+          // project) and the host's own opencode config decide.
           // canvas's own skills; the host's stay available beside them.
           skills: { paths: [SKILLS_DIR] },
         }),
