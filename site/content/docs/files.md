@@ -15,7 +15,7 @@ for example because an agent edited it, everyone sees the new content.
 - A new files frame opens with its **file tree**. Pick a file, or search the tree.
 - **⌘/Ctrl-click** a file in the tree to open it in a new frame.
 - The toolbar above the search hides the tree; **Show files** in the header brings it back. The
-  tree is yours alone; the file shown is shared.
+  tree is yours, or follows whoever [occupies](/docs/focus) the frame; the file shown is shared.
 
 The tree lists the [shared set](/docs/security#the-shared-set): the files `canvas serve` lets out.
 Anything outside it cannot be opened. It also lists the [scratch files](/docs/board-tools#scratch-files)

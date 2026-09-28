@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { agentColor, resolveOccupants, type FocusState } from "./focus";
+import { agentColor, CLOSED_TREE, resolveOccupants, type FocusState } from "./focus";
 
 const person = (
   name: string,
@@ -35,6 +35,15 @@ describe("resolveOccupants", () => {
     });
   });
 
+  test("a person's tree panel goes with them; an agent has none", () => {
+    const tree = { ...CLOSED_TREE, panel: "all", of: "all", expanded: ["src/"], top: 80 };
+    const occupants = resolveOccupants([
+      [1, person("Ada", { ...at("f1", 10), tree }, [{ sessionId: "a1", frameId: "f2", since: 5 }])],
+    ]);
+    expect(occupants.get("f1")?.tree).toEqual(tree);
+    expect(occupants.get("f2")?.tree).toBeNull();
+  });
+
   test("the earlier claim wins; a tie goes to the lower client id", () => {
     const later = resolveOccupants([
       [1, person("Ada", at("f1", 20))],
@@ -59,6 +68,7 @@ describe("resolveOccupants", () => {
       name: "claude-1",
       color: agentColor("a1"),
       scroll: null,
+      tree: null,
     });
   });
 

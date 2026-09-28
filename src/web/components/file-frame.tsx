@@ -28,6 +28,7 @@ import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
+import { useFollowTreePanel, type TreePanel } from "@/hooks/use-follow-tree";
 import {
   addFrame,
   allFrames,
@@ -70,7 +71,7 @@ const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 /**
  * A file of the host's working dir, read-only (ADR 0002). Which file and how
  * it is shown (markdown and HTML: rendered or source) are shared; the tree panel is
- * each viewer's own. Changes on disk — typically an agent's — flow in live.
+ * each viewer's own, and follows the frame's occupant (`useFollowTreePanel`). Changes on disk — typically an agent's — flow in live.
  *
  * An agent may give the frame a list of files (ADR 0005): the tree then shows
  * the list, at its display paths, and each viewer can switch to all files,
@@ -91,6 +92,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   const [allFiles, setAllFiles] = useState(false);
   const showList = !!list && (!allFiles || !canBrowse);
   const [treeOpen, setTreeOpen] = useState((canBrowse && !frame.path) || !!list);
+  const [treeSize, setTreeSize] = useState(0);
   const tree = useRef<PanelImperativeHandle>(null);
 
   // An agent gave the frame a list: show it.
@@ -254,6 +256,21 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   );
 
   const hasTree = canBrowse || !!list;
+  // Which tree the panel shows; the `FileTree`s are keyed by it.
+  const treeKey = `${showList ? "list" : "all"}${filtering ? "-commented" : ""}`;
+  const detachTree = useFollowTreePanel(
+    frame.id,
+    { panel: hasTree && treeOpen ? treeKey : null, size: treeOpen ? treeSize : 0 },
+    (occupant: TreePanel) => {
+      const panel = tree.current;
+      if (!panel) return;
+      if (!occupant.panel) return panel.collapse();
+      if (list && canBrowse) setAllFiles(occupant.panel.startsWith("all"));
+      if (counts.size > 0) setCommentedOnly(occupant.panel.endsWith("-commented"));
+      openTree(panel);
+      if (occupant.size) panel.resize(`${occupant.size}`);
+    },
+  );
   const toolbar = (
     <div className="flex h-8 shrink-0 items-center gap-0.5 border-b px-1.5" data-tree-toolbar="">
       <ToolbarButton title="Hide files" onClick={toggleTree}>
@@ -323,7 +340,10 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
               className="size-6"
               title="Show files"
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={toggleTree}
+              onClick={() => {
+                detachTree();
+                toggleTree();
+              }}
             >
               <PanelLeftOpen />
             </Button>
@@ -340,17 +360,22 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
             minSize={`${TREE_MIN}`}
             maxSize="60"
             defaultSize={treeOpen ? `${TREE_DEFAULT}` : "0"}
-            onResize={() => setTreeOpen(!tree.current?.isCollapsed())}
+            onResize={(size) => {
+              setTreeOpen(!tree.current?.isCollapsed());
+              setTreeSize(Math.round(size.asPercentage * 10) / 10);
+            }}
             className="bg-muted/30"
           >
             {/* Collapsed panels keep their content laid out; don't let it leak. */}
             {treeOpen && (
-              <div className="flex h-full flex-col">
+              <div className="flex h-full flex-col" onPointerDownCapture={detachTree}>
                 {toolbar}
                 <div className="min-h-0 flex-1">
                   {showList ? (
                     <FileTree
-                      key={filtering ? "list-commented" : "list"}
+                      key={treeKey}
+                      frameId={frame.id}
+                      of={treeKey}
                       paths={shownList!}
                       selected={selectedEntry}
                       onOpen={openEntry}
@@ -361,7 +386,9 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
                     />
                   ) : (
                     <FileTree
-                      key={filtering ? "all-commented" : "all"}
+                      key={treeKey}
+                      frameId={frame.id}
+                      of={treeKey}
                       paths={shownAll}
                       selected={frame.path}
                       onOpen={open}
@@ -374,7 +401,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
               </div>
             )}
           </ResizablePanel>
-          <ResizableHandle />
+          <ResizableHandle onPointerDownCapture={detachTree} />
           <ResizablePanel minSize="30">{body}</ResizablePanel>
         </ResizablePanelGroup>
       ) : (

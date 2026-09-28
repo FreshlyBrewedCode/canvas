@@ -1016,6 +1016,139 @@ if (step === "focus") {
   );
   await shot(guest, "54-focus-terminal");
 }
+// A file frame's tree panel follows its occupant: open or closed, its width,
+// its folders, search and scroll (finding 18). Wants a repo with nested folders.
+if (step === "focus-tree") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 800) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const a = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  await place(host, a, { path: "README.md", title: "README.md", x: 0, y: 0, w: 900, h: 600 });
+  for (const page of [host, guest]) {
+    await page.locator(`[data-frame="${a}"]`).getByText("hi").waitFor({ timeout: 10000 });
+    await page.locator("[data-hud]").getByTitle("Fit board to view").click();
+  }
+  await settle();
+
+  const frame = (page: Page) => page.locator(`[data-frame="${a}"]`);
+  /** The tree panel as a viewer sees it; null when closed. */
+  const tree = (page: Page) =>
+    frame(page).evaluate((el) => {
+      const toolbar = el.querySelector("[data-tree-toolbar]");
+      if (!toolbar) return null;
+      const view = [...el.querySelectorAll("*")].find((node) =>
+        node.shadowRoot?.querySelector("[data-file-tree-virtualized-scroll]"),
+      )!.shadowRoot!;
+      const scroller = view.querySelector("[data-file-tree-virtualized-scroll]")!;
+      const rows = view.querySelectorAll<HTMLElement>(
+        '[aria-expanded="true"][data-item-path]:not([data-file-tree-sticky-row])',
+      );
+      const input = view.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
+      const panel = toolbar.parentElement!.getBoundingClientRect().width;
+      return {
+        expanded: [...new Set([...rows].map((row) => row.dataset.itemPath!))].sort().join(" "),
+        top: Math.round(scroller.scrollTop),
+        search: input?.value ?? "",
+        width: Math.round((100 * panel) / el.getBoundingClientRect().width),
+      };
+    });
+  const following = (page: Page) => frame(page).evaluate((el) => el.hasAttribute("data-following"));
+  const row = (page: Page, path: string) =>
+    frame(page).locator(`[data-item-path="${path}"]:not([data-file-tree-sticky-row])`).first();
+  const same = async (what: string) => {
+    const [h, g] = [await tree(host), await tree(guest)];
+    check(JSON.stringify(h) === JSON.stringify(g), `${what} (host ${JSON.stringify(h)}, guest ${JSON.stringify(g)})`);
+    return h;
+  };
+
+  // A new files frame opens with its tree. Host hides it (pressing A claims it): the guest's goes.
+  check((await tree(guest)) !== null, "guest's tree starts open");
+  await frame(host).getByTitle("Hide files").click();
+  await settle();
+  check(await following(guest), "guest follows Karl in A");
+  check((await tree(guest)) === null, "guest's tree closes with Karl's");
+
+  // Host opens it again: the guest's opens too, as wide.
+  await frame(host).getByTitle("Show files").click();
+  await settle();
+  const opened = await same("guest's tree opens with Karl's");
+  check(!!opened, "the tree is open");
+
+  // Host opens folders: the guest's open too.
+  for (const path of ["src/", "src/alpha/", "src/alpha/two/", "src/gamma/", "src/gamma/three/"]) {
+    await row(host, path).click();
+    await settle(250);
+  }
+  await settle();
+  const folders = await same("guest's folders follow Karl's");
+  check(!!folders?.expanded.includes("src/gamma/three/"), "folders are open");
+  await shot(guest, "180-tree-follows-folders");
+
+  // Host scrolls the tree.
+  const at = (await row(host, "src/").boundingBox())!;
+  await host.mouse.move(at.x + 20, at.y + 5);
+  await host.mouse.wheel(0, 300);
+  await settle();
+  const scrolled = await same("guest's tree scrolls with Karl's");
+  check((scrolled?.top ?? 0) > 0, "the tree is scrolled");
+
+  // Host collapses a folder, then searches.
+  await host.mouse.wheel(0, -1000);
+  await settle(300);
+  await row(host, "src/alpha/").click();
+  await settle();
+  await same("guest's folder closes with Karl's");
+  const search = frame(host).locator("[data-file-tree-search-input]");
+  await search.click();
+  await search.fill("f7");
+  await settle();
+  const searched = await same("guest searches what Karl searches");
+  check(searched?.search === "f7", "the search is shown");
+  await shot(guest, "181-tree-follows-search");
+  await search.fill("");
+  await host.keyboard.press("Escape");
+  await settle();
+
+  // Guest opens a folder themselves: detached, their tree is their own.
+  await row(guest, "src/beta/").click();
+  await settle();
+  check(!(await following(guest)), "guest opening a folder stops following");
+  await row(host, "src/gamma/").click();
+  await settle();
+  const [h, g] = [await tree(host), await tree(guest)];
+  check(
+    !!g?.expanded.includes("src/beta/") && !!g.expanded.includes("src/gamma/") && !h?.expanded.includes("src/gamma/"),
+    `detached guest keeps their own folders (host ${h?.expanded}, guest ${g?.expanded})`,
+  );
+
+  // Guest clicks Karl's badge: following again, the tree is Karl's again.
+  await frame(guest).locator("[data-occupant-badge]").click();
+  await settle();
+  check(await following(guest), "badge click follows again");
+  await same("guest's tree is Karl's again");
+
+  // Host widens the panel.
+  const handle = frame(host).locator('[data-slot="resizable-handle"]');
+  const hb = (await handle.boundingBox())!;
+  await host.mouse.move(hb.x + 1, hb.y + hb.height / 2);
+  await host.mouse.down();
+  await host.mouse.move(hb.x + 120, hb.y + hb.height / 2, { steps: 8 });
+  await host.mouse.up();
+  await settle();
+  const wider = await same("guest's panel widens with Karl's");
+  check((wider?.width ?? 0) > (opened?.width ?? 0), `the panel is wider (${opened?.width} → ${wider?.width})`);
+
+  // Host hides the tree: the guest's closes.
+  await frame(host).getByTitle("Hide files").click();
+  await settle();
+  check((await tree(guest)) === null, "guest's tree closes with Karl's");
+}
 // A real agent occupies the frame it opens until its turn ends; its thread
 // scrolls with whoever occupies the agent frame.
 if (step === "focus-agent") {

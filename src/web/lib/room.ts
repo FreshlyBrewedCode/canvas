@@ -46,11 +46,13 @@ import type {
 } from "../../shared/protocol";
 import { allFrames, type Frame } from "./board";
 import {
+  CLOSED_TREE,
   resolveOccupants,
   type AgentClaim,
   type Focus,
   type FrameScroll,
   type Occupant,
+  type TreeView,
 } from "./focus";
 import { runBoardTool } from "./board-tools";
 import { drawingImage, prepareDrawCall } from "./drawing-kit";
@@ -296,6 +298,11 @@ export class Room {
     return this.occupants.get(frameId)?.scroll ?? null;
   }
 
+  /** The occupant's tree panel, for following it. */
+  occupantTree(frameId: string): TreeView | null {
+    return this.occupants.get(frameId)?.tree ?? null;
+  }
+
   /**
    * Pressed on a frame (or, with null, on the board): claim it if nobody
    * else is there; if someone is, follow them and hold no frame ourselves.
@@ -316,6 +323,17 @@ export class Room {
     const last = mine.scroll;
     if (last?.key === scroll.key && last.top === scroll.top && !!last.end === !!scroll.end) return;
     this.setPresence({ focus: { ...mine, scroll } });
+  }
+
+  /** We occupy the frame: tell followers how we have its tree panel. */
+  publishTree(frameId: string, patch: Partial<TreeView>) {
+    const mine = this.localFocus();
+    if (mine?.frameId !== frameId) return;
+    const last = mine.tree ?? CLOSED_TREE;
+    const tree = { ...last, ...patch };
+    // The first one always goes out: no tree is "no say", a closed one is closed.
+    if (mine.tree && JSON.stringify(tree) === JSON.stringify(last)) return;
+    this.setPresence({ focus: { ...mine, tree } });
   }
 
   /** We scrolled a frame someone else occupies: stop following them there. */

@@ -5,6 +5,9 @@
  * An agent occupies the frame it last opened or changed until its turn ends;
  * the host's browser publishes those claims for it.
  *
+ * A file frame's tree panel follows too (`TreeView`): whether it is open,
+ * which tree it shows, its folders, search and scroll.
+ *
  * Claims are presence, not board state: they go with whoever made them. When
  * two claim a frame at once, the earlier claim wins (ties: the lower Yjs
  * client id), and a person always wins over an agent.
@@ -19,11 +22,36 @@ export interface FrameScroll {
   readonly end?: boolean;
 }
 
+/** How the occupant has a file frame's tree panel. */
+export interface TreeView {
+  /** Which tree the panel shows (`list`, `all`, `-commented` for commented files only); null: closed. */
+  readonly panel: string | null;
+  /** The panel's width, in % of the frame. */
+  readonly size: number;
+  /** Which tree `expanded`, `search` and `top` are of: only the same tree follows. */
+  readonly of: string | null;
+  /** The folders open, of those showing. */
+  readonly expanded: ReadonlyArray<string>;
+  readonly search: string | null;
+  readonly top: number;
+}
+
+export const CLOSED_TREE: TreeView = {
+  panel: null,
+  size: 0,
+  of: null,
+  expanded: [],
+  search: null,
+  top: 0,
+};
+
 export interface Focus {
   readonly frameId: string;
   /** When it was claimed (ms since epoch), to settle two claims. */
   readonly since: number;
   readonly scroll: FrameScroll | null;
+  /** File frames: the tree panel. */
+  readonly tree?: TreeView | null;
 }
 
 /** What the host publishes for each agent that is working on a frame. */
@@ -49,6 +77,7 @@ export interface Occupant {
   readonly since: number;
   readonly clientId: number;
   readonly scroll: FrameScroll | null;
+  readonly tree: TreeView | null;
 }
 
 /** Every occupied frame and its occupant, from everyone's presence (ours included). */
@@ -72,6 +101,7 @@ export function resolveOccupants(
         since: state.focus.since,
         clientId,
         scroll: state.focus.scroll,
+        tree: state.focus.tree ?? null,
       });
     for (const claim of state.agents ?? [])
       offer(claim.frameId, {
@@ -82,6 +112,7 @@ export function resolveOccupants(
         since: claim.since,
         clientId,
         scroll: null,
+        tree: null,
       });
   }
   return occupants;
