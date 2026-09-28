@@ -2,7 +2,7 @@
 title: Limits
 description: What canvas does not do, yet.
 section: Technical
-order: 4
+order: 5
 ---
 
 canvas is a prototype. These are known, and not bugs to report.
@@ -15,6 +15,8 @@ canvas is a prototype. These are known, and not bugs to report.
   old one turns read-only until you press **Use here** there.
 - **Peer discovery uses public Nostr relays.** Some are down at any time; discovery usually
   succeeds through the others.
+- **No relay of your own, and no TURN.** A network that blocks the Nostr relays, or blocks WebRTC
+  (UDP), keeps people from connecting. The [connection dialog](/docs/connection) says which.
 
 ## Guests
 

@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
+import { ConnectionIndicator } from "@/components/connection-dialog";
 import { GoProvider } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { FileFrame } from "@/components/file-frame";
@@ -466,16 +467,6 @@ function TopBar() {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(room.identity.name);
 
-  const connection = room.isHost
-    ? room.serverStatus === "open"
-      ? { label: "connected to canvas serve", tone: "complete" }
-      : room.serverStatus === "replaced"
-        ? { label: "host in another tab", tone: "blocked" }
-        : { label: `canvas serve ${room.serverStatus ?? "…"}`, tone: "blocked" }
-    : room.hostOnline
-      ? { label: "host online", tone: "complete" }
-      : { label: "waiting for host…", tone: "ready" };
-
   return (
     <header className="bg-card flex h-12 shrink-0 items-center gap-3 border-b px-3">
       <span className="font-mono text-sm font-semibold">canvas</span>
@@ -485,11 +476,7 @@ function TopBar() {
       >
         {room.roomState?.cwd}
       </span>
-      <span className="flex items-center gap-1.5 text-xs" data-status={connection.tone}>
-        <span className="size-1.5 rounded-full bg-[var(--status)]" />
-        <span className="text-muted-foreground">{connection.label}</span>
-      </span>
-      {room.error && <span className="text-destructive truncate text-xs">{room.error}</span>}
+      <ConnectionIndicator />
 
       <div className="ml-auto flex items-center gap-2">
         <div className="flex -space-x-1">

@@ -16,9 +16,18 @@ export function useRoomState() {
   useSyncExternalStore(
     (onChange) => room.subscribe("room", onChange),
     () =>
-      `${room.serverStatus}:${room.hostOnline}:${room.roomState?.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}:${room.error}`,
+      `${room.serverStatus}:${room.hostOnline}:${room.roomState?.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}`,
   );
   return room;
+}
+
+/** The connection log; the dialog polls the rest (`use-connection.ts`). */
+export function useConnectionLog() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("connection", onChange),
+    () => room.log,
+  );
 }
 
 export function useApprovals() {
