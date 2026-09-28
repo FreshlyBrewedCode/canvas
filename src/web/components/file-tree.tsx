@@ -2,6 +2,7 @@ import type { FileTreeRowDecoration } from "@pierre/trees";
 import { FileTree as TreeView, useFileTree } from "@pierre/trees/react";
 import { memo, useEffect, useRef } from "react";
 
+import { useFollowTree } from "@/hooks/use-follow-tree";
 import { listOrder } from "@/lib/file-list";
 
 /** Every directory above a path, as the tree names them (`a/`, `a/b/`). */
@@ -43,7 +44,7 @@ const TREE_STYLE = {
  * A file tree: the shared set's files (ADR 0002), or an agent's list at its
  * display paths (ADR 0005). Picking a file opens it in this frame;
  * ⌘/Ctrl-click opens it in a new one. `view` guests only ever get a list,
- * read-only.
+ * read-only. In a frame, it follows the frame's occupant (`useFollowTree`).
  *
  * Memoized, and `onOpen` must be stable: pressing on a frame raises it, and a
  * re-render of the tree between pointer down and up loses the click.
@@ -57,6 +58,8 @@ export const FileTree = memo(function FileTree({
   badgeKey,
   expandAll = false,
   readOnly = false,
+  frameId,
+  of = "",
 }: {
   /** null while the host's list hasn't arrived. */
   paths: ReadonlyArray<string> | null;
@@ -73,6 +76,10 @@ export const FileTree = memo(function FileTree({
   expandAll?: boolean;
   /** Show the selection, don't let it change. */
   readOnly?: boolean;
+  /** The frame it is in, to follow its occupant. */
+  frameId?: string;
+  /** Which of the frame's trees this is (`TreeView.of`). */
+  of?: string;
 }) {
   const current = useRef(selected);
   const opened = order ?? (expandAll ? paths : null) ?? undefined;
@@ -103,6 +110,8 @@ export const FileTree = memo(function FileTree({
       if (picked.length === 1 && files.length === 1) onOpen(files[0]!, false);
     },
   });
+
+  useFollowTree(model, frameId, of);
 
   // The host re-sends the list whenever files come and go; an agent changes its list.
   useEffect(() => {

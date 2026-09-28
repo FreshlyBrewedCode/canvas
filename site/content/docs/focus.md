@@ -20,10 +20,13 @@ occupant: "look at this" needs no line numbers.
 ## Follow
 
 While you follow a frame's occupant, its content scrolls with theirs: agent threads, source and
-preview in files frames, and terminal scrollback. Browser frames and the file tree keep their own
-scroll.
+preview in files frames, and terminal scrollback. Browser frames keep their own scroll.
 
-- **Scrolling yourself** stops following, for you only. The ring goes, and the avatar fades.
+A files frame's tree follows too: whether it is open and how wide, list or all files, which folders
+are open, the search, and its scroll.
+
+- **Scrolling yourself** stops following, for you only. So does doing anything in the tree:
+  opening a folder, searching, hiding it. The ring goes, and the avatar fades.
 - **Click the avatar** to follow again.
 - A new occupant is followed again.
 

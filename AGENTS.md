@@ -46,7 +46,8 @@ canvas
   `Dockerfile` is the relay alone. User docs: `site/content/docs/relay.md`
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
-  frame they last opened or changed until their turn ends
+  frame they last opened or changed until their turn ends. A file frame's tree panel follows too
+  (finding 18, `hooks/use-follow-tree.ts`)
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied
@@ -72,10 +73,10 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|resume|focus|focus-agent|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|resume|focus|focus-agent|focus-tree|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
-    finding 08, `preview` an HTML file and a loopback server, finding 09, `comments`/
+    finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
     `comments-agent` the repo of finding 13, `links` the one of finding 14, `relay` a `canvas relay`
     and `serve --relay`; `IDLE_MS` gives slow agents longer than 4 min per
     prompt)

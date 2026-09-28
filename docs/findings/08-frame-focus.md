@@ -26,7 +26,8 @@ who was working where. Scroll was each viewer's own, so "look at this" meant say
   same view (`thread`, `source:<path>`, `preview:<path>`, `term`) and re-apply when their own
   content changes. `end` keeps a follower at their own bottom as a thread streams. Covered: agent
   threads, file source (virtualized) and markdown preview, terminals (in lines, via xterm's
-  API). Browser frames (cross-origin) and the file tree keep their own scroll.
+  API). Browser frames (cross-origin) and the file tree keep their own scroll (the tree follows
+  since finding 18).
 - **Detaching is local**: a wheel, touch, scroll key or scrollbar press in a followed frame stops
   following there, for that viewer only. The ring goes and the avatar fades. Clicking the avatar
   follows again. Detachment is tied to the occupant: a new occupant is followed again.
