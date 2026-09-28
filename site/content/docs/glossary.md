@@ -2,7 +2,7 @@
 title: Glossary
 description: The terms these docs use, and what each one means.
 section: Technical
-order: 6
+order: 7
 ---
 
 | Term              | Meaning                                                                    |
@@ -12,6 +12,7 @@ order: 6
 | **approval**      | The host's yes or no to something an edit guest wants to run. [Guests](/docs/guests#approvals) |
 | **board**         | The shared surface all frames live on. One per project                      |
 | **board tools**   | `view_board`, `view_frame`, `open_frame`, `update_frame`, `close_frame`, `read_board_file`, `write_board_file`, `add_comment`, `edit_comment`, `delete_comment`: how agents see and change the board. [Board tools](/docs/board-tools) |
+| **canvas relay**  | A server you run that carries a board's traffic where browsers can't connect directly. [Relay](/docs/relay) |
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
 | **cluster**       | Frames within 48 px of each other. [Board](/docs/board#layout)              |
@@ -24,6 +25,7 @@ order: 6
 | **guest**         | Anyone on the board who opened the guest link                               |
 | **guest access**  | What guests may do, set by the host per board: view, edit or trusted        |
 | **guest link**    | The link that joins a board as a guest. Safe to share with the people you invite |
+| **issuer key**    | A name and secret a relay's operator gives a host or team; `canvas serve` signs relay tokens with it. [Relay](/docs/relay) |
 | **link**          | A markdown or HTML link to a place on the board: a frame, a file, lines, a heading, a comment. [Board](/docs/board#links) |
 | **host**          | The person who runs `canvas serve` and opens the host link                  |
 | **host link**     | The link `canvas serve` prints. Controls the machine: never share it        |
@@ -31,10 +33,11 @@ order: 6
 | **outdated comment** | A comment whose lines are gone from the file. It shows above the first line, with what they read. [Files](/docs/files#comments) |
 | **permission**    | An agent asking before a tool call. Only the host answers                   |
 | **prompt draft**  | The shared composer of an agent frame, written by several people at once    |
+| **relay token**   | Admits one board to a canvas relay for 30 days; the host's tab and guest links carry one. [Relay](/docs/relay) |
 | **row**           | Frames in a cluster whose top edges line up; they share a height            |
 | **scratch file**  | A file an agent wrote for the board only, kept in `.canvas/scratch/`, shown as `canvas:scratch/<name>`. [Board tools](/docs/board-tools#scratch-files) |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |
-| **signalling relay** | A public Nostr relay through which browsers find each other before they connect directly. [Connection](/docs/connection) |
+| **signalling relay** | A server through which browsers find each other before they connect directly: public Nostr relays, or a canvas relay. [Connection](/docs/connection) |
 | **skill**         | Instructions an agent loads when a request calls for them. canvas gives its own to every agent session. [Skills](/docs/skills) |
 | **terminal frame**| A shell on the host's machine. [Terminal](/docs/terminal)                   |
 | **web app**       | The browser UI at `ui.canvas.frebreco.de`                                   |

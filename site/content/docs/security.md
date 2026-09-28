@@ -31,11 +31,26 @@ design is about **who can make `canvas serve` act, and through what**:
 | Link        | Holds                                          | Gives                              |
 | ----------- | ---------------------------------------------- | ---------------------------------- |
 | Host link   | Room id, room key, host public key, server URL, token | Control of `canvas serve`: agents, shells, files |
-| Guest link  | Room id, room key, host public key             | A seat on the board, with the guest access |
+| Guest link  | Room id, room key, host public key; with a relay, its URL and a relay token | A seat on the board, with the guest access |
 
 Secrets travel in the URL fragment, which the browser never sends to the server hosting the web
 app. The room key also encrypts the signalling that goes through the public Nostr relays. Anyone
 holding the guest link can join; there are no per-person accounts or roles.
+
+## With a canvas relay
+
+A board on a [canvas relay](/docs/relay) sends everything through a server someone runs. The
+browsers encrypt every message with a key derived from the room key, so the relay:
+
+- can't read or change the board, agent threads, terminals or files;
+- can't pose as the host (guests still check its signature) or as anyone else;
+- can't replay a request, such as a prompt, to run it twice;
+- does see who is on which board (their IP addresses), when, and how much they send, and can drop
+  or delay traffic.
+
+There is no forward secrecy: someone who records the relay's traffic and later holds a guest link
+can read what they recorded. Relay tokens admit one board for 30 days. The relay's operator can
+revoke an issuer key, which ends every token it signed.
 
 The web app's code runs with your host link's secrets in it. Using the hosted web app means
 trusting whoever serves it; you can point `--web-url` at a copy you serve yourself.
@@ -84,10 +99,11 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
   comments, and the host anyone's. Edit guests' board changes still reach everyone unchecked, so a
   modified client can change or delete any comment, as it can any frame. A comment keeps the lines
   it is about, so those lines are in the board document for everyone on it.
-- **Peers see each other's IP addresses**, as with any WebRTC connection.
+- **Peers see each other's IP addresses**, as with any WebRTC connection. Through a relay's
+  transport they don't; the relay does.
 
 ## Not covered
 
-No audit, no rate limits, no per-guest identity (peer ids are not cryptographically bound; the
+No audit, no rate limits (except on a canvas relay), no per-guest identity (peer ids are not cryptographically bound; the
 host signature binds only the host role), no way to revoke a guest link other than deleting
 `.canvas/` for new links. See [Limits](/docs/limits).

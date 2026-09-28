@@ -157,6 +157,19 @@ export interface RoomSecrets {
   readonly hostPrivateKey: JsonWebKey;
 }
 
+/** How a board uses its `canvas relay` (ADR 0008): for everything, or only to meet. */
+export type RelayVia = "transport" | "signal";
+
+/** What the host's browser needs for the board's relay, signed fresh for each host tab. */
+export interface WelcomeRelay {
+  readonly url: string;
+  readonly via: RelayVia;
+  /** The host tab's own token. */
+  readonly hostToken: string;
+  /** The token guest links carry. */
+  readonly guestToken: string;
+}
+
 /**
  * Close code of a host browser's WebSocket when another one connected: one
  * host tab at a time, and the replaced one must not reconnect by itself, or
@@ -219,6 +232,8 @@ export type ServerToClient =
       /** base64 Yjs update of the persisted board, if any. */
       readonly board: string | null;
       readonly sessions: ReadonlyArray<SessionSnapshot>;
+      /** The board's `canvas relay`, if it uses one (ADR 0008). */
+      readonly relay?: WelcomeRelay | null;
     }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }

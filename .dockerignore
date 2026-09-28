@@ -1,0 +1,4 @@
+*
+!src/shared
+!src/server/relay*.ts
+src/**/*.test.ts

@@ -27,6 +27,20 @@ jobs:
       - name: Stage the release package
         run: bun scripts/build-release.ts 0.0.0-development --smoke-test
 
+  # The `canvas relay` image (ADR 0008): it builds, and answers /health.
+  relay-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -t canvas-relay .
+
+      - run: |
+          docker run -d --name relay -p 4419:4419 -e CANVAS_RELAY_KEYS=ci:secret canvas-relay
+          for i in $(seq 20); do curl -fs http://127.0.0.1:4419/health && exit 0; sleep 1; done
+          docker logs relay
+          exit 1
+
   # `site/` is its own package; this proves a PR still builds the site that
   # site.yml deploys once it lands on main.
   site:

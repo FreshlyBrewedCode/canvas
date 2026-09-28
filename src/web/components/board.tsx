@@ -118,7 +118,7 @@ export function Board() {
         <div
           ref={wrapRef}
           data-board=""
-          className="bg-dot-grid relative min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
+          className="bg-dot-grid relative isolate min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
         >
           <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
             {frames.map((frame) => (
@@ -508,7 +508,7 @@ function TopBar() {
           size="sm"
           variant="outline"
           onClick={() => {
-            void navigator.clipboard.writeText(guestLink(room.link));
+            void navigator.clipboard.writeText(guestLink(room.link, undefined, room.guestRelay()));
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}

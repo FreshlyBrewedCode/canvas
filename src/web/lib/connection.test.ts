@@ -26,6 +26,7 @@ const peer = (peerId: string, patch: Partial<PeerInfo> = {}): PeerInfo => ({
 const guest = (patch: Partial<ConnectionSnapshot> = {}): ConnectionSnapshot => ({
   now: 100_000,
   isHost: false,
+  transport: "p2p",
   serveStatus: null,
   joinedAt: 100_000 - RELAY_GRACE_MS - 1,
   relays: [{ url: "wss://a", state: "open" }],
