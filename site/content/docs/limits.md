@@ -2,7 +2,7 @@
 title: Limits
 description: What canvas does not do, yet.
 section: Technical
-order: 5
+order: 6
 ---
 
 canvas is a prototype. These are known, and not bugs to report.
@@ -15,8 +15,13 @@ canvas is a prototype. These are known, and not bugs to report.
   old one turns read-only until you press **Use here** there.
 - **Peer discovery uses public Nostr relays.** Some are down at any time; discovery usually
   succeeds through the others.
-- **No relay of your own, and no TURN.** A network that blocks the Nostr relays, or blocks WebRTC
-  (UDP), keeps people from connecting. The [connection dialog](/docs/connection) says which.
+- **Restrictive networks need a [canvas relay](/docs/relay).** Without one, a network that blocks
+  the Nostr relays or WebRTC keeps people from connecting; the [connection dialog](/docs/connection)
+  says which. There is no TURN support.
+- **A relay token lasts 30 days** from when the host's tab got it. After that, guests need a fresh
+  guest link.
+- **A board's relay is set when `canvas serve` starts.** Changing it gives everyone new guest
+  links.
 
 ## Guests
 

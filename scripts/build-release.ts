@@ -159,6 +159,50 @@ async function smokeTestServe(installed: string, work: string): Promise<void> {
   if (problem !== undefined) fail(problem);
 }
 
+/**
+ * Runs `canvas relay` from the installed copy and checks it answers `/health`:
+ * it loads only its own code, so a missing file shows here, not in serve's test.
+ */
+async function smokeTestRelay(installed: string, work: string): Promise<void> {
+  const child = Bun.spawn({
+    cmd: [
+      process.execPath,
+      join(installed, "bin", "canvas.js"),
+      "relay",
+      "--port",
+      "0",
+      "--host",
+      "127.0.0.1",
+    ],
+    cwd: work,
+    env: { ...process.env, CANVAS_RELAY_KEYS: "smoke:test" },
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+
+  async function inspect(): Promise<string | undefined> {
+    let stdout = "";
+    for await (const bytes of child.stdout as ReadableStream<Uint8Array>) {
+      stdout += new TextDecoder().decode(bytes);
+      if (stdout.includes("limits:")) break;
+    }
+    const port = /canvas relay on ws:\/\/127\.0\.0\.1:(\d+)/.exec(stdout)?.[1];
+    if (port === undefined) return `\`canvas relay\` printed no address.\n${stdout}`;
+    const health = await fetch(`http://127.0.0.1:${port}/health`).catch(() => null);
+    if (!health?.ok) return `\`canvas relay\` doesn't answer /health on ${port}.`;
+    return undefined;
+  }
+
+  let problem: string | undefined;
+  try {
+    problem = await inspect();
+  } finally {
+    child.kill();
+    await child.exited;
+  }
+  if (problem !== undefined) fail(problem);
+}
+
 async function smokeTest(dependencies: Record<string, string>): Promise<void> {
   const node = Bun.spawnSync(["node", join(PKG, "bin", "canvas.js")], {
     stdout: "pipe",
@@ -173,6 +217,7 @@ async function smokeTest(dependencies: Record<string, string>): Promise<void> {
     const installed = await install(work, dependencies);
     run([process.execPath, join(installed, "bin", "canvas.js")], work);
     await smokeTestServe(installed, work);
+    await smokeTestRelay(installed, work);
   } finally {
     await rm(work, { force: true, recursive: true });
   }

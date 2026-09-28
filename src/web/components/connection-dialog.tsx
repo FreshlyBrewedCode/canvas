@@ -146,7 +146,7 @@ function ConnectionDetails({ view, headline }: { view: ConnectionView; headline:
                 </Pill>
               </Row>
             )}
-            <Row label="Signalling relays">
+            <Row label={view.transport === "relay" ? "Relay" : "Signalling relays"}>
               <Pill tone={openRelays > 0 ? "complete" : view.joinedAt ? "blocked" : "pending"}>
                 {openRelays} of {view.relays.length} open
               </Pill>
@@ -212,7 +212,7 @@ function Details({ view, probe }: { view: ConnectionView; probe: ProbeResult | n
   const room = useRoomState();
   return (
     <>
-      <Section title="Signalling relays">
+      <Section title={view.transport === "relay" ? "Relay" : "Signalling relays"}>
         {view.relays.length === 0 ? (
           <p className="text-muted-foreground text-xs">None yet.</p>
         ) : (
@@ -254,7 +254,9 @@ function Details({ view, probe }: { view: ConnectionView; probe: ProbeResult | n
                     </Row>
                   </>
                 ) : (
-                  <Row label="route">no selected candidate pair yet</Row>
+                  <Row label="route">
+                    {peer.relayed ? "through canvas relay" : "no selected candidate pair yet"}
+                  </Row>
                 )}
               </dl>
             ))}
@@ -281,6 +283,7 @@ function Details({ view, probe }: { view: ConnectionView; probe: ProbeResult | n
       <Section title="Environment">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-[11px]">
           <Row label="role">{view.isHost ? "host" : "guest"}</Row>
+          <Row label="transport">{view.transport ?? "not joined"}</Row>
           <Row label="peer id">{room.selfId}</Row>
           <Row label="page">{PAGE_VERSION ?? "dev"}</Row>
           <Row label="canvas serve">{room.roomState?.version ?? "?"}</Row>
@@ -347,9 +350,11 @@ function PeerLine({ peer }: { peer: PeerInfo }) {
       <span className="font-medium">{peer.name ?? peer.peerId.slice(0, 6)}</span>
       {peer.host && <span className="text-muted-foreground">host</span>}
       <span className="text-muted-foreground ml-auto">
-        {peer.route
-          ? `${describeRoute(peer.route)}${peer.route.rtt === undefined ? "" : ` · ${peer.route.rtt} ms`}`
-          : "…"}
+        {peer.relayed
+          ? "through canvas relay"
+          : peer.route
+            ? `${describeRoute(peer.route)}${peer.route.rtt === undefined ? "" : ` · ${peer.route.rtt} ms`}`
+            : "…"}
       </span>
     </li>
   );
@@ -451,6 +456,7 @@ function report(
     at: new Date(view.now).toISOString(),
     headline,
     role: view.isHost ? "host" : "guest",
+    transport: view.transport,
     page: PAGE_VERSION ?? "dev",
     serve: serveVersion ?? null,
     serveStatus: view.serveStatus,

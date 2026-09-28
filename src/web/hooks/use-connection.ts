@@ -45,6 +45,7 @@ function baseline(room: Room): Omit<ConnectionView, "log"> {
   return {
     now: Date.now(),
     isHost: room.isHost,
+    transport: room.transportKind(),
     serveStatus: room.serverStatus,
     joinedAt: room.joinedAt,
     relays: room.relays(),
@@ -57,12 +58,25 @@ function baseline(room: Room): Omit<ConnectionView, "log"> {
 async function snapshot(room: Room, detailed: boolean): Promise<Omit<ConnectionView, "log">> {
   const names = new Map(room.peerList.map((p) => [p.user.peerId, p.user]));
   const stats: Record<string, Record<string, unknown>[]> = {};
+  const connections = room.peerConnections();
   const peers = await Promise.all(
-    Object.entries(room.peerConnections()).map(async ([peerId, pc]): Promise<PeerInfo> => {
+    room.peerIds().map(async (peerId): Promise<PeerInfo> => {
+      const pc = connections[peerId];
+      const user = names.get(peerId);
+      // Over the relay transport there is no WebRTC connection: the relay is the route.
+      if (!pc)
+        return {
+          peerId,
+          ...(user && { name: user.name }),
+          host: peerId === room.roomState?.hostPeerId,
+          connectionState: "connected",
+          iceConnectionState: "n/a",
+          route: null,
+          relayed: true,
+        };
       const report = detailed ? await pc.getStats().catch(() => null) : null;
       const entries = report ? ([...report.values()] as Record<string, unknown>[]) : [];
       stats[peerId] = entries;
-      const user = names.get(peerId);
       return {
         peerId,
         ...(user && { name: user.name }),

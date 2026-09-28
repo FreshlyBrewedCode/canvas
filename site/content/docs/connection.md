@@ -31,6 +31,7 @@ At the top, one line says what's wrong, or that all is well:
 | **Found peers, but couldn't connect to them**  | The relays work, but WebRTC doesn't: usual behind VPNs and firewalls that block UDP.              |
 | **Waiting for the host**                       | The relays work and nobody else is there yet. The host's browser may be closed.                   |
 | **Connected to … peers**                       | All is well. The dialog says, per person, whether the connection is direct or relayed.             |
+| **Can't reach the relay**                      | The board is on a [canvas relay](/docs/relay), and it doesn't answer or refused the link's token (it lasts 30 days). |
 
 Below that, an overview: `canvas serve` (host), whether the host is verified (guest), how many
 signalling relays are open, and a **network test**. The test asks public STUN servers for this
@@ -44,3 +45,8 @@ happened to the connection since the page loaded.
 
 **Copy report** copies all of it as JSON, to send to whoever helps you debug. It has no keys or
 tokens, but it has IP addresses.
+
+## When it keeps failing
+
+A board on a [canvas relay](/docs/relay) avoids both failures: every browser keeps one `wss://`
+connection to the relay, as it would to any web app.

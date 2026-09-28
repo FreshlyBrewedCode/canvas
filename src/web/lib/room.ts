@@ -1,6 +1,7 @@
 /**
- * One board session in the browser: the Yjs doc, presence, the trystero room
- * and — for the host — the link to `canvas serve`.
+ * One board session in the browser: the Yjs doc, presence, the transport to
+ * the other peers (`transport/`, ADR 0008) and — for the host — the link to
+ * `canvas serve`.
  *
  * Topology. Presence (cursors, selections, frame focus) is a full mesh: every peer
  * broadcasts to every other. Everything with authority is a star around the
@@ -20,7 +21,7 @@
  * board's host key (see `host-key.ts`).
  */
 
-import { getRelaySockets, joinRoom, selfId, type Room as TrysteroRoom } from "trystero";
+import { selfId } from "trystero";
 import * as Y from "yjs";
 import {
   Awareness,
@@ -40,6 +41,7 @@ import type {
   ServerToClient,
   SessionHead,
   SessionMeta,
+  WelcomeRelay,
 } from "../../shared/protocol";
 import { allFrames, type Frame } from "./board";
 import {
@@ -50,10 +52,12 @@ import {
   type Occupant,
 } from "./focus";
 import { runBoardTool } from "./board-tools";
-import { relayState, type ConnectionEvent, type RelayInfo } from "./connection";
+import type { ConnectionEvent, RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
-import { loadAuthorId, type BoardLink, type Identity } from "./link";
+import { loadAuthorId, type BoardLink, type Identity, type RelayLink } from "./link";
 import { ServerLink, type LinkStatus } from "./server-link";
+import { openTransport } from "./transport/open";
+import type { Transport } from "./transport/transport";
 
 export interface Approval {
   readonly id: string;
@@ -144,8 +148,10 @@ export class Room {
   peerList: Presence[] = [];
   /** What happened to the connection, and every error (`connection.ts`); a new array on every change. */
   log: ConnectionEvent[] = [];
-  /** When we joined the trystero room. */
+  /** When we joined the room. */
   joinedAt: number | null = null;
+  /** Host: the board's relay (ADR 0008) as `canvas serve` set it up for this tab. */
+  private relaySetup: WelcomeRelay | null = null;
 
   private readonly sessions = new Map<string, MirroredSession>();
   private readonly terminals = new Map<string, string>();
@@ -156,7 +162,7 @@ export class Room {
   private readonly peerClients = new Map<string, Set<number>>();
   private readonly server: ServerLink | null = null;
   private hostPrivateKey: JsonWebKey | null = null;
-  private trystero: TrysteroRoom | null = null;
+  private transport: Transport | null = null;
   private actions: ReturnType<Room["makeActions"]> | null = null;
   private access: GuestAccess = "edit";
   /** Paths opened with the server since the link came up. */
@@ -399,29 +405,36 @@ export class Room {
   }
 
   // -------------------------------------------------------------------------
-  // trystero
+  // peers (`transport/`)
 
-  private makeActions(room: TrysteroRoom) {
+  private makeActions(transport: Transport) {
     return {
-      hello: room.makeAction("hello"),
-      state: room.makeAction("state"),
-      broadcast: room.makeAction("hostcast"),
-      update: room.makeAction<Uint8Array>("yupdate"),
-      sync: room.makeAction<Uint8Array>("ysync"),
-      presence: room.makeAction<Uint8Array>("presence"),
-      request: room.makeAction("request", { kind: "request" }),
+      hello: transport.channel("hello"),
+      state: transport.channel("state"),
+      broadcast: transport.channel("hostcast"),
+      update: transport.channel<Uint8Array>("yupdate"),
+      sync: transport.channel<Uint8Array>("ysync"),
+      presence: transport.channel<Uint8Array>("presence"),
+      request: transport.requests("request"),
     };
   }
 
   private join() {
-    if (this.trystero) return;
-    const room = joinRoom({ appId: APP_ID, password: this.link.key }, this.link.roomId, {
-      onJoinError: ({ error, peerId }) =>
-        this.record({ level: "error", source: "peer", text: error, peerId }),
-    });
-    this.trystero = room;
+    if (this.transport) return;
+    const relay = this.isHost
+      ? this.relaySetup && { ...this.relaySetup, token: this.relaySetup.hostToken }
+      : this.link.relay;
+    const room = openTransport(this.link, relay, APP_ID, (error, peerId) =>
+      this.record({
+        level: "error",
+        source: peerId ? "peer" : "relay",
+        text: error,
+        ...(peerId && { peerId }),
+      }),
+    );
+    this.transport = room;
     this.joinedAt = Date.now();
-    this.record({ level: "info", source: "relay", text: "joined the room" });
+    this.record({ level: "info", source: "relay", text: `joined the room (${room.kind})` });
     this.watchRelays();
     const actions = this.makeActions(room);
     this.actions = actions;
@@ -511,25 +524,31 @@ export class Room {
     this.emit("connection");
   }
 
-  /** The signalling relays trystero has sockets for, and their state. */
+  /** How peers reach each other here (ADR 0008), once joined. */
+  transportKind() {
+    return this.transport?.kind ?? null;
+  }
+
+  /** The relays the transport uses — signalling, or the one carrying everything — and their state. */
   relays(): RelayInfo[] {
-    const sockets = getRelaySockets() as Record<string, WebSocket>;
-    return Object.entries(sockets).map(([url, socket]) => ({
-      url,
-      state: relayState(socket.readyState),
-    }));
+    return [...(this.transport?.diagnostics().relays ?? [])];
   }
 
-  /** The connected peers' WebRTC connections, by peer id. */
-  peerConnections(): Record<string, RTCPeerConnection> {
-    return this.trystero?.getPeers() ?? {};
+  /** The peers we can reach now. */
+  peerIds(): string[] {
+    return this.transport?.peers() ?? [];
   }
 
-  /** trystero reconnects relays by itself and says nothing: log what changes. */
+  /** The connected peers' WebRTC connections, by peer id; none over the relay transport. */
+  peerConnections(): Readonly<Record<string, RTCPeerConnection>> {
+    return this.transport?.diagnostics().connections ?? {};
+  }
+
+  /** Transports reconnect relays by themselves and say nothing: log what changes. */
   private watchRelays() {
     if (this.relayWatch) return;
     this.relayWatch = setInterval(() => {
-      if (!this.trystero) return;
+      if (!this.transport) return;
       for (const { url, state } of this.relays()) {
         const was = this.relayStates.get(url);
         if (was === state || state === "closing") continue;
@@ -607,7 +626,7 @@ export class Room {
         typeof origin === "object" && origin !== null && "peer" in origin
           ? (origin.peer as string)
           : null;
-      const targets = Object.keys(this.trystero?.getPeers() ?? {}).filter((id) => id !== from);
+      const targets = this.peerIds().filter((id) => id !== from);
       if (targets.length) void this.actions?.update.send(update, { target: targets });
       if (origin !== "server") this.scheduleSave();
       this.syncResources();
@@ -719,6 +738,7 @@ export class Room {
     switch (message.t) {
       case "welcome": {
         this.hostPrivateKey = message.room.hostPrivateKey;
+        this.relaySetup = message.relay ?? null;
         if (message.board)
           Y.applyUpdate(
             this.doc,
@@ -738,8 +758,7 @@ export class Room {
         this.emit("room");
         this.join();
         this.syncResources();
-        for (const peerId of Object.keys(this.trystero?.getPeers() ?? {}))
-          void this.sendSnapshot(peerId);
+        for (const peerId of this.peerIds()) void this.sendSnapshot(peerId);
         return;
       }
       case "agent-meta":
@@ -942,6 +961,13 @@ export class Room {
     });
   }
 
+  /** The relay guest links name, with the guest token; null for a board without one. */
+  guestRelay(): RelayLink | null {
+    if (!this.isHost) return this.link.relay;
+    const setup = this.relaySetup;
+    return setup && { url: setup.url, via: setup.via, token: setup.guestToken };
+  }
+
   /** Host: be the host again after another tab took over (it steps down in turn). */
   takeOver() {
     this.server?.takeOver();
@@ -952,8 +978,8 @@ export class Room {
    * that has `canvas serve`; the next welcome joins it again.
    */
   private stepDown() {
-    void this.trystero?.leave();
-    this.trystero = null;
+    this.transport?.leave();
+    this.transport = null;
     this.joinedAt = null;
     this.record({ level: "info", source: "relay", text: "left the room: another tab is the host" });
     this.actions = null;
@@ -1001,7 +1027,7 @@ export class Room {
   destroy() {
     if (this.relayWatch) clearInterval(this.relayWatch);
     this.server?.close();
-    void this.trystero?.leave();
+    this.transport?.leave();
     this.awareness.destroy();
   }
 }

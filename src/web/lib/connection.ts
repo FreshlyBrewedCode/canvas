@@ -82,6 +82,8 @@ export interface PeerInfo {
   readonly connectionState: string;
   readonly iceConnectionState: string;
   readonly route: Route | null;
+  /** Reached through the relay transport, not WebRTC (ADR 0008). */
+  readonly relayed?: boolean;
 }
 
 type Stat = Record<string, unknown> & { id: string; type: string };
@@ -167,6 +169,8 @@ export function readProbe(probe: ProbeResult): { tone: Tone; text: string } {
 export interface ConnectionSnapshot {
   readonly now: number;
   readonly isHost: boolean;
+  /** How peers reach each other; null before joining. */
+  readonly transport: "p2p" | "relay-signal" | "relay" | null;
   /** Host only. */
   readonly serveStatus: LinkStatus | null;
   /** When we joined the room; null before (the host joins once `canvas serve` answers). */
@@ -217,6 +221,15 @@ export function diagnose(snapshot: ConnectionSnapshot): Headline {
   if (joinedAt === null) return { tone: "pending", title: "Joining the room…", detail: "" };
 
   const openRelays = relays.filter((r) => r.state === "open").length;
+  if (snapshot.transport === "relay" && openRelays === 0)
+    return now - joinedAt < RELAY_GRACE_MS
+      ? { tone: "pending", title: "Connecting to the relay…", detail: "" }
+      : {
+          tone: "blocked",
+          title: "Can't reach the relay",
+          detail:
+            "This board goes through a canvas relay, and it doesn't answer, or refused this link's token (see the errors below). Is it running, and is the link less than 30 days old?",
+        };
   if (openRelays === 0 && peers.length === 0) {
     if (now - joinedAt < RELAY_GRACE_MS)
       return {
@@ -228,7 +241,9 @@ export function diagnose(snapshot: ConnectionSnapshot): Headline {
       tone: "blocked",
       title: "No signalling relay reachable",
       detail:
-        "Peers find each other through public Nostr relays over wss://, and none of them answers. A proxy or firewall on this network probably blocks them.",
+        snapshot.transport === "relay-signal"
+          ? "Peers find each other through this board's canvas relay, and it doesn't answer, or refused this link's token."
+          : "Peers find each other through public Nostr relays over wss://, and none of them answers. A proxy or firewall on this network probably blocks them.",
     };
   }
 
@@ -278,6 +293,12 @@ export function diagnose(snapshot: ConnectionSnapshot): Headline {
       tone: "complete",
       title: "Connected, no guests yet",
       detail: "Share the guest link to invite people.",
+    };
+  if (snapshot.transport === "relay")
+    return {
+      tone: "complete",
+      title: `Connected to ${peers.length === 1 ? "one peer" : `${peers.length} peers`}`,
+      detail: "Through the board's canvas relay, end-to-end encrypted with the board key.",
     };
   const relayed = peers.filter(
     (p) => p.route && describeRoute(p.route).startsWith("relayed"),
