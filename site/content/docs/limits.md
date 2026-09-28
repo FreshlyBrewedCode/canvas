@@ -36,7 +36,7 @@ canvas is a prototype. These are known, and not bugs to report.
 - **Permission prompts add up**: opencode asks for every shell command.
 - **Tool call arguments** are not shown in the thread, only the tool's title.
 - **Tool output is cut** to its first 3,000 and last 1,000 characters, and images a tool returns
-  (a screenshot the agent reads) show as a placeholder. The agent itself gets them in full.
+  (a screenshot the agent reads, a drawing) show as a placeholder. The agent itself gets them in full.
 - **Agents prompt other agents only through people**: an agent frame an agent opens gets a draft.
 
 ## Frames

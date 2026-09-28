@@ -99,6 +99,8 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
   comments, and the host anyone's. Edit guests' board changes still reach everyone unchecked, so a
   modified client can change or delete any comment, as it can any frame. A comment keeps the lines
   it is about, so those lines are in the board document for everyone on it.
+- **A drawing** is whatever edit guests and agents put in it, like any board data. Embedded web
+  pages in it don't load, and its links go through the board's own link handling.
 - **Peers see each other's IP addresses**, as with any WebRTC connection. Through a relay's
   transport they don't; the relay does.
 

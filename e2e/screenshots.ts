@@ -8,6 +8,7 @@
 //   STEP=shots  everything else, on the board setup left
 //   STEP=snap   a drag with its snap preview
 //   STEP=comments  comments on login.ts (the one setup left, else a new frame)
+//   STEP=drawing  a drawing: Karl sketches, Ada looks on, an agent adds a flowchart
 import { chromium, type Locator, type Page } from "playwright";
 
 const hostLink = process.argv[2]!;
@@ -341,6 +342,75 @@ if (step === "comments") {
   console.log("frame at", JSON.stringify(await frameOf(host, login).boundingBox()));
   await shot(host, "files-comments");
   await host.keyboard.press("Escape");
+}
+
+if (step === "drawing") {
+  await host.evaluate(() => {
+    const map = (window as any).room.doc.getMap("frames");
+    for (const id of [...map.keys()]) map.delete(id);
+  });
+  const agent = await addFrame(host, "Agent");
+  await place(host, agent, { x: 0, y: 0, w: 480, h: 760 });
+  await frameOf(host, agent).locator("[data-pick-agent=claude]").click();
+  const drawing = await addFrame(host, "Drawing");
+  await place(host, drawing, { x: 504, y: 0, w: 1040, h: 760, title: "login flow" });
+  await fit(host, guest);
+
+  // Karl sketches a browser window and a question, with Ada's pointer on the frame.
+  await frameOf(host, drawing).locator("[data-drawing-edit]").click();
+  await frameOf(host, drawing).locator("[data-drawing-editor] .excalidraw").waitFor({ timeout: 20000 });
+  await wait(1000);
+  const box = (await frameOf(host, drawing).locator("[data-drawing-editor]").boundingBox())!;
+  // Right of the style panel, which opens on the left with a tool.
+  const at = (x: number, y: number) => [box.x + 300 + x, box.y + y] as const;
+  const stroke = async (points: Array<[number, number]>) => {
+    await host.mouse.move(...at(...points[0]!));
+    await host.mouse.down();
+    for (const point of points.slice(1)) await host.mouse.move(...at(...point), { steps: 10 });
+    await host.mouse.up();
+  };
+  await host.mouse.click(box.x + box.width - 80, box.y + box.height - 160);
+  await host.keyboard.press("r");
+  await host.mouse.move(...at(120, 130));
+  await host.mouse.down();
+  await host.mouse.move(...at(330, 290), { steps: 10 });
+  await host.mouse.up();
+  await host.keyboard.press("p");
+  await stroke([[120, 160], [330, 160]]);
+  await stroke([[140, 200], [240, 200]]);
+  await stroke([[140, 230], [290, 230]]);
+  await host.keyboard.press("t");
+  await host.mouse.click(...at(130, 320));
+  await host.keyboard.type("login page");
+  await host.keyboard.press("Escape");
+  await wait(400);
+  const guestBox = (await frameOf(guest, drawing).boundingBox())!;
+  await guest.mouse.move(guestBox.x + guestBox.width * 0.45, guestBox.y + guestBox.height * 0.35, {
+    steps: 5,
+  });
+  await wait(1200);
+  await shot(host, "drawing-edit");
+  await host.mouse.click(8, 500);
+  await wait(500);
+
+  // The agent adds how a login goes, next to the sketch.
+  await frameOf(host, agent)
+    .locator("[data-agent-settings]")
+    .getByText("starting agent…")
+    .waitFor({ state: "detached", timeout: 60000 });
+  await host.locator(`[data-frame="${agent}"] .cm-content`).click();
+  await host.keyboard.type(
+    "Look at the drawing next to you: I sketched the login page. Add a mermaid flowchart of " +
+      "what happens after it is submitted in this project, from the route to the session " +
+      "cookie. Keep it to five boxes or so, and your reply short.",
+  );
+  await host.keyboard.press("Control+Enter");
+  await approveUntilIdle(agent, "drawing-agent");
+  await guest.mouse.move(40, 860);
+  await fit(host, guest);
+  await wait(1500);
+  await shot(host, "drawing");
+  await shot(guest, "drawing-guest");
 }
 
 await browser.close();

@@ -154,7 +154,7 @@ export async function serve(options: ServeOptions) {
       case "term-resize":
         return terminals.resize(message.id, message.cols, message.rows);
       case "board-result":
-        return boardMcp.result(message.callId, message.ok, message.text);
+        return boardMcp.result(message.callId, message.ok, message.text, message.images);
     }
   };
 

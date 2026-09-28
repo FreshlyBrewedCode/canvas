@@ -12,14 +12,15 @@ instead of pasting code into its reply.
 | Tool           | Does                                                                     |
 | -------------- | ------------------------------------------------------------------------ |
 | `view_board`   | Lists the agent's own cluster row by row, and summarises the others      |
-| `view_frame`   | Shows one frame in full; for a files frame, its list and its comments    |
-| `open_frame`   | Opens a frame: a file (optionally at a line range), a new scratch file, a list of files, a browser, a terminal, an agent |
+| `view_frame`   | Shows one frame in full; for a files frame, its list and its comments; a drawing as an image and its shapes |
+| `open_frame`   | Opens a frame: a file (optionally at a line range), a new scratch file, a list of files, a browser, a terminal, an agent, a drawing |
 | `update_frame` | Points a files frame at another file, lines, a comment or a new scratch file, replaces its list, switches preview/source (markdown, HTML), changes a URL, renames, moves |
 | `close_frame`  | Removes a frame                                                          |
 | `read_board_file` | Reads a scratch file                                                  |
 | `write_board_file` | Creates a scratch file, or overwrites one                            |
 | `add_comment`  | Comments on lines of a file, in a files frame                            |
 | `edit_comment`, `delete_comment` | Change an agent's comment                              |
+| `draw`         | Adds shapes, text, arrows or a mermaid diagram to a drawing, changes or removes them |
 
 ![The login code, opened by the agent at lines 5–15, next to its frame](./screenshots/files-lines.webp)
 
@@ -70,6 +71,21 @@ frame".
   them as the file changes.
 - An agent edits and deletes agents' comments, never people's.
 - `update_frame` with a comment's id shows its file at its lines.
+
+## Drawings
+
+Agents see a [drawing](/docs/drawing) with `view_frame`: an image of it, and a list of its shapes
+with their labels, places and ids, and what each arrow connects. They draw with `draw`:
+
+- **Shapes, text and arrows**, placed in the drawing's coordinates. An arrow between two shapes
+  names them, and is drawn between them.
+- **A mermaid diagram**: a flowchart, sequence or class diagram, placed below what is there, as
+  shapes people can then move and change.
+- **Changes**: a shape given again by its id replaces it; `delete` removes shapes, with their
+  labels; `clear` removes everything.
+
+Agents are told to leave people's sketches alone unless asked. The image needs a model with image
+input; others work from the list alone.
 
 ## Placement
 

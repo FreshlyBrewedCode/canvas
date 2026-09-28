@@ -1,4 +1,4 @@
-import { Bot, FileCode, Globe, MessageSquare, SquareTerminal } from "lucide-react";
+import { Bot, FileCode, Globe, MessageSquare, Shapes, SquareTerminal } from "lucide-react";
 import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
 import { defaultUrlTransform, type Components } from "react-markdown";
 import type * as Y from "yjs";
@@ -145,6 +145,7 @@ const FRAME_ICONS: Record<FrameType, typeof FileCode> = {
   file: FileCode,
   browser: Globe,
   terminal: SquareTerminal,
+  drawing: Shapes,
 };
 
 /**

@@ -30,6 +30,8 @@ const shots: Record<string, Crop> = {
   snap: { left: 280, top: 1140, width: 2320, height: 660 },
   "topbar-host": null,
   "topbar-guest": null,
+  drawing: null,
+  "drawing-edit": null,
 };
 
 for (const [name, crop] of Object.entries(shots)) {

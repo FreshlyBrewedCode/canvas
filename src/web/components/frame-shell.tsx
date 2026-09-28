@@ -1,4 +1,4 @@
-import { Bot, FileCode, Globe, SquareTerminal, X } from "lucide-react";
+import { Bot, FileCode, Globe, Shapes, SquareTerminal, X } from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { LinkScope } from "@/components/board-link";
@@ -25,7 +25,13 @@ import {
   type Rect,
 } from "../../shared/layout";
 
-const ICONS = { agent: Bot, file: FileCode, browser: Globe, terminal: SquareTerminal };
+const ICONS = {
+  agent: Bot,
+  file: FileCode,
+  browser: Globe,
+  terminal: SquareTerminal,
+  drawing: Shapes,
+};
 
 /**
  * The chrome every frame shares: drag by the header, resize from the corner.

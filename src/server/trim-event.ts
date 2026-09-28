@@ -5,8 +5,9 @@
  *
  *  - a text chunk repeats the whole message so far in `content`; the thread
  *    is folded from `delta` alone, so the repeat goes;
- *  - images a tool returns (a screenshot the agent read) stay as a
- *    placeholder with their size;
+ *  - images a tool returns (a screenshot the agent read, a drawing) stay as
+ *    a placeholder with their size, as image content or as a data URL
+ *    (opencode's attachments);
  *  - tool output and arguments are cut to their start and end.
  */
 
@@ -48,7 +49,7 @@ function cut(text: string): string {
 
 /** Tool output is a string, JSON when it has more than text: drop image data from it. */
 function withoutImages(content: string): string {
-  if (!content.includes('"image"')) return content;
+  if (!content.includes('"image"') && !content.includes("data:image/")) return content;
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -63,6 +64,10 @@ function withoutImages(content: string): string {
       found = true;
       const size = JSON.stringify(value).length;
       return { type: "image", omitted: `${Math.round(size / 1024)} KB` };
+    }
+    if (typeof value.url === "string" && value.url.startsWith("data:image/")) {
+      found = true;
+      return { ...value, url: `data:… (${Math.round(value.url.length / 1024)} KB omitted)` };
     }
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v)]));
   };

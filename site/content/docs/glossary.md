@@ -11,17 +11,18 @@ order: 7
 | **agent settings**| An agent session's model, reasoning effort, mode and so on, as the agent offers them |
 | **approval**      | The host's yes or no to something an edit guest wants to run. [Guests](/docs/guests#approvals) |
 | **board**         | The shared surface all frames live on. One per project                      |
-| **board tools**   | `view_board`, `view_frame`, `open_frame`, `update_frame`, `close_frame`, `read_board_file`, `write_board_file`, `add_comment`, `edit_comment`, `delete_comment`: how agents see and change the board. [Board tools](/docs/board-tools) |
+| **board tools**   | `view_board`, `view_frame`, `open_frame`, `update_frame`, `close_frame`, `read_board_file`, `write_board_file`, `add_comment`, `edit_comment`, `delete_comment`, `draw`: how agents see and change the board. [Board tools](/docs/board-tools) |
 | **canvas relay**  | A server you run that carries a board's traffic where browsers can't connect directly. [Relay](/docs/relay) |
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
 | **cluster**       | Frames within 48 px of each other. [Board](/docs/board#layout)              |
 | **code tour**     | A files frame an agent makes to walk through code: a guide, then the files at their lines. [Skills](/docs/skills#code-tour) |
 | **comment**       | A markdown note on lines of a file, kept by the files frame it was written in. [Files](/docs/files#comments) |
+| **drawing frame** | An Excalidraw whiteboard everyone draws on, agents included. [Drawing](/docs/drawing) |
 | **file list**     | Files an agent picked for a files frame's tree, at display paths it chose. [Files](/docs/files#lists) |
 | **files frame**   | A frame showing one project file, read-only and live. [Files](/docs/files)  |
 | **follow**        | Scrolling with a frame's occupant. [Focus](/docs/focus)                     |
-| **frame**         | One thing on the board: an agent, a file, a terminal or a browser           |
+| **frame**         | One thing on the board: an agent, a file, a terminal, a browser or a drawing |
 | **guest**         | Anyone on the board who opened the guest link                               |
 | **guest access**  | What guests may do, set by the host per board: view, edit or trusted        |
 | **guest link**    | The link that joins a board as a guest. Safe to share with the people you invite |

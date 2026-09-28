@@ -20,13 +20,14 @@ export const BOARD_TOOL_NAMES = [
   "add_comment",
   "edit_comment",
   "delete_comment",
+  "draw",
 ] as const;
 export type BoardToolName = (typeof BOARD_TOOL_NAMES)[number];
 
 /** The MCP server's name, as agents prefix its tools (`mcp__canvas__…`, `canvas_…`). */
 export const BOARD_SERVER_NAME = "canvas";
 
-export type FrameKind = "file" | "browser" | "terminal" | "agent";
+export type FrameKind = "file" | "browser" | "terminal" | "agent" | "drawing";
 export type PlaceSide = "left" | "right" | "above" | "below";
 
 export interface ViewBoardArgs {
@@ -63,7 +64,15 @@ interface FileList {
   readonly files?: ReadonlyArray<FileListEntry>;
 }
 
-export interface OpenFrameArgs extends Placement, FileTarget, ScratchContent, FileList {
+/** What to draw (ADR 0009): the host's browser turns it into Excalidraw elements. */
+interface DrawContent {
+  /** Excalidraw element skeletons (`web/lib/drawing.ts` checks them). */
+  readonly elements?: ReadonlyArray<Record<string, unknown>>;
+  readonly mermaid?: string;
+}
+
+export interface OpenFrameArgs
+  extends Placement, FileTarget, ScratchContent, FileList, DrawContent {
   readonly type: FrameKind;
   readonly title?: string;
   readonly url?: string;
@@ -103,6 +112,13 @@ export interface EditCommentArgs {
 export interface DeleteCommentArgs {
   readonly frame: string;
   readonly comment: string;
+}
+
+export interface DrawArgs extends DrawContent {
+  readonly frame: string;
+  /** Ids of elements to remove. */
+  readonly delete?: ReadonlyArray<string>;
+  readonly clear?: boolean;
 }
 
 export interface CloseFrameArgs {
@@ -190,6 +206,68 @@ const fileList = {
   },
 };
 
+const idRef = { type: "object", properties: { id: { type: "string" } }, required: ["id"] };
+
+const drawContent = {
+  elements: {
+    type: "array",
+    description:
+      "Excalidraw elements to add, in the drawing's coordinates (view_frame gives the extent of " +
+      "what is there; y grows downwards). Shapes: rectangle, ellipse, diamond with x, y, width, " +
+      "height and a label. Text: x, y, text. Arrows and lines: x, y and points relative to them; " +
+      "an arrow between two shapes needs only start and end — the ids of shapes of this call or " +
+      "already drawn — and is routed between them. Give an id of your own to connect to a shape " +
+      "of the same call; an existing element's id replaces that element.",
+    items: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["rectangle", "ellipse", "diamond", "text", "arrow", "line"],
+        },
+        id: { type: "string" },
+        x: { type: "number" },
+        y: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" },
+        label: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          description: "A shape's or an arrow's text.",
+        },
+        text: { type: "string", description: "text: its text." },
+        fontSize: { type: "number", description: "text: default 20." },
+        points: {
+          type: "array",
+          items: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 },
+          description: "arrow, line: [[0,0],[dx,dy],…], relative to x, y.",
+        },
+        start: { ...idRef, description: "arrow: the shape it starts at." },
+        end: { ...idRef, description: "arrow: the shape it points to." },
+        strokeColor: { type: "string", description: "Hex, e.g. #e03131." },
+        backgroundColor: { type: "string", description: "Hex; default transparent." },
+        fillStyle: { type: "string", enum: ["solid", "hachure", "cross-hatch"] },
+        strokeWidth: { type: "number", description: "1, 2 (default) or 4." },
+        strokeStyle: { type: "string", enum: ["solid", "dashed", "dotted"] },
+        roundness: {
+          type: "object",
+          properties: { type: { type: "number" } },
+          description: "{type: 3}: rounded corners.",
+        },
+        link: { type: "string", description: "A URL, or a board link." },
+      },
+      required: ["type"],
+    },
+  },
+  mermaid: {
+    type: "string",
+    description:
+      "A mermaid flowchart, sequence or class diagram, turned into shapes and placed below what " +
+      "is drawn. The easiest way to draw anything with more than a few boxes.",
+  },
+};
+
 export const BOARD_TOOLS: ReadonlyArray<{
   readonly name: BoardToolName;
   readonly description: string;
@@ -216,7 +294,8 @@ export const BOARD_TOOLS: ReadonlyArray<{
     description:
       "Look at one frame in full. For a file frame: what it shows, its list of files, and its " +
       "comments — people's and agents' notes on lines of its files, with ids, authors and lines. " +
-      "view_board says which frames have comments.",
+      "view_board says which frames have comments. For a drawing: an image of it, and its " +
+      "elements with ids, labels, places and what arrows connect.",
     inputSchema: {
       type: "object",
       properties: { frame: { type: "string", description: "Id of the frame." } },
@@ -231,17 +310,20 @@ export const BOARD_TOOLS: ReadonlyArray<{
       "or a scratch file: content you pass, kept by canvas outside the project. A file frame can " +
       "also carry a list of files (files): one frame to click through, instead of many. " +
       "browser: a URL, loaded by each viewer's own browser. terminal: an idle shell people can " +
-      "type into. agent: another agent session; `draft` pre-fills its prompt, a person sends it.",
+      "type into. agent: another agent session; `draft` pre-fills its prompt, a person sends it. " +
+      "drawing: a whiteboard people sketch on together, optionally with elements or mermaid " +
+      "to start it (see draw).",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["file", "browser", "terminal", "agent"] },
+        type: { type: "string", enum: ["file", "browser", "terminal", "agent", "drawing"] },
         ...fileTarget,
         ...scratchContent,
         ...fileList,
         url: { type: "string", description: "browser: an http(s) URL." },
         agent: { type: "string", description: "agent: which agent runs it (see view_board)." },
         draft: { type: "string", description: "agent: a prompt draft for people to send." },
+        ...drawContent,
         title: { type: "string", description: "Frame title. Default: from what it shows." },
         ...placement,
       },
@@ -356,6 +438,27 @@ export const BOARD_TOOLS: ReadonlyArray<{
       required: ["frame", "comment"],
     },
   },
+  {
+    name: "draw",
+    description:
+      "Change a drawing frame: add elements, a mermaid diagram, replace elements (an element with " +
+      "an existing id), remove elements (delete) or everything (clear). Look at it first " +
+      "(view_frame): people may have drawn there. Everyone sees the change live.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        frame: { type: "string", description: "Id of the drawing frame." },
+        ...drawContent,
+        delete: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids of elements to remove (view_frame lists them); labels go with shapes.",
+        },
+        clear: { type: "boolean", description: "Remove everything first." },
+      },
+      required: ["frame"],
+    },
+  },
 ];
 
 /** The agent's standing context, sent as MCP server instructions. */
@@ -363,7 +466,7 @@ export function boardInstructions(
   frameId: string,
   skills: ReadonlyArray<{ readonly name: string; readonly description: string }> = [],
 ): string {
-  return `You are running inside canvas: a shared, multiplayer board that people are looking at together, live. Its frames are coding-agent sessions, files of this project, browser previews and terminals. You are the agent in frame ${frameId}; people write prompts into it and read your replies there. Several people may prompt you.
+  return `You are running inside canvas: a shared, multiplayer board that people are looking at together, live. Its frames are coding-agent sessions, files of this project, browser previews, terminals and drawings. You are the agent in frame ${frameId}; people write prompts into it and read your replies there. Several people may prompt you.
 
 Frames that sit close together form a cluster: people keep related work together that way, and your own cluster is your workspace. Within a cluster frames sit in rows; frames in a row share a height.
 
@@ -380,6 +483,7 @@ The ${BOARD_SERVER_NAME} tools let you see and change the board: ${BOARD_TOOL_NA
 - Any agent may read (read_board_file) and overwrite (write_board_file) any scratch file; view_board lists them.
 - To show several files for one topic, prefer one file frame with a list (files) over a frame per file: people click through it at their own pace. You decide the tree: display paths, folders, order, line ranges. A write-up (a scratch file) at the top and a visualisation at the bottom fit in the same list.
 - People (and agents) comment on lines of files in a file frame. view_board says which frames have comments; view_frame lists them, with ids. You aren't told when someone comments: look when asked to, e.g. to address feedback. add_comment leaves one of yours; edit_comment and delete_comment change agents' comments, never people's. update_frame with a comment's id shows its file at its lines. A comment is "outdated" when its lines changed since; it shows what they were.
+- A drawing frame is an Excalidraw whiteboard people sketch on together. view_frame shows it to you as an image, with its elements as text; draw adds shapes, text, arrows or a mermaid diagram, changes or removes elements. Use one to sketch an architecture or a flow with people, or when asked to draw; a mermaid flowchart is quickest for more than a few boxes. People's sketches in it are theirs: add next to them, don't redraw them unless asked.
 - Markdown and HTML files render. HTML runs its scripts, but relative assets (CSS, images, other scripts) don't load, so inline them. Links do work (see below).
 
 Your replies, comments, markdown and HTML can link to places on the board with ordinary markdown links (or <a href> in HTML). A click takes that person there, opening a file frame if no frame shows the file:

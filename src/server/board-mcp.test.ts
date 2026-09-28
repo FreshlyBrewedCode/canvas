@@ -24,7 +24,12 @@ describe("BoardMcp", () => {
       calls.push(call);
       // The host's browser answers a moment later; it refuses frame "gone".
       const ok = call.tool !== "close_frame" && (call.args as { frame?: string }).frame !== "gone";
-      setTimeout(() => mcp.result(call.callId, ok, `ran ${call.tool}`), 5);
+      // A drawing comes back as an image too (ADR 0009).
+      const images =
+        call.tool === "view_frame" && (call.args as { frame?: string }).frame === "sketch"
+          ? [{ data: "iVBORw0KGgo=", mimeType: "image/png" as const }]
+          : [];
+      setTimeout(() => mcp.result(call.callId, ok, `ran ${call.tool}`, images), 5);
       return true;
     },
     timeoutMs: 200,
@@ -78,6 +83,7 @@ describe("BoardMcp", () => {
       "add_comment",
       "edit_comment",
       "delete_comment",
+      "draw",
     ]);
   });
 
@@ -274,5 +280,14 @@ describe("BoardMcp", () => {
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
     });
     expect(response.status).toBe(202);
+  });
+
+  test("passes a drawing's image on as image content", async () => {
+    const result = await call("view_frame", { frame: "sketch" });
+    expect(result.content).toEqual([
+      { type: "text", text: "ran view_frame" },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" } as never,
+    ]);
+    expect((await call("view_frame", { frame: "files" })).content).toHaveLength(1);
   });
 });
