@@ -55,8 +55,9 @@ Settings are kept with the session and applied again when the agent restarts.
 
 ## Permissions
 
-Agents ask before some tool calls: Claude Code in its **Manual** mode, opencode before every
-shell command. The request appears in the thread, under the tool call it gates. **Only the host
+Agents ask before some tool calls: Claude Code in its **Manual** mode, opencode by its own
+permission settings (by default, before touching files outside the project; your `opencode.json`
+can change that). The request appears in the thread, under the tool call it gates. **Only the host
 can answer it**, whatever the guest access; guests see that it waits for the host.
 
 | Host                                          | Guest                                           |

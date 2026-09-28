@@ -26,6 +26,10 @@ and "Ada" as guest) against `vite` on `https://dev.example.ts.net:4417` and
 - **Permission fatigue.** opencode is configured with `bash: "ask"`, and it asks for every
   `ls`/`mkdir`/`git status`. Good for demonstrating the model, tedious in use — a per-session
   "allow always" (ACP `allow_always`, which the card already offers) or an allowlist is needed.
+  *Later:* canvas no longer sets a permission policy for opencode. Its defaults (everything
+  allowed, `external_directory` and `doom_loop` ask) and the host's `opencode.json` decide; the
+  inline config outranked the host's own rules. Checked over ACP with opencode 1.18.31: `ls` runs,
+  `cat /etc/hostname` asks.
 - **Host must be online.** Everything flows through the host's browser (ADR 0001).
 - **Browser frames load per viewer.** The URL is shared, the page is not — `localhost:3000`
   means each viewer's own machine. Sharing the host's dev server with guests would need a
