@@ -85,8 +85,7 @@ with their labels, places and ids, and what each arrow connects. They draw with 
   labels; `clear` removes everything.
 
 Agents are told to leave people's sketches alone unless asked. The image needs a model with image
-input; others work from the list alone. canvas starts Claude Code with its tool search off, so the
-board tools are always at hand.
+input; others work from the list alone.
 
 ## Placement
 

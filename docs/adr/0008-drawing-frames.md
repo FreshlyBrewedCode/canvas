@@ -46,4 +46,3 @@ the viewer's own business (ADR 0004).
 - Agents' drawings and people's are the same elements; people move and restyle what an agent drew.
 - Elements are never removed from the doc, only marked, as Excalidraw keeps them.
 - Models without image input still work with drawings, but miss freehand strokes.
-- Claude Code runs with its tool search off, so the board tools are always loaded (finding 15).

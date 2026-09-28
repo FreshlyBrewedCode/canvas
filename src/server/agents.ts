@@ -73,9 +73,6 @@ export function detectAgents(): ReadonlyArray<AgentDefinition> {
       label: "Claude Code",
       needs: "claude",
       command: ["bun", claudeAcpBin],
-      // Tool search defers MCP tools until the model looks them up, and smaller
-      // models then call the board tools without their arguments (finding 15).
-      env: { ENABLE_TOOL_SEARCH: "false" },
       // The board tools run without asking: they only change the board,
       // which the host's browser already lets the agent do (finding 06).
       sessionMeta: {

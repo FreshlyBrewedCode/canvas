@@ -105,13 +105,14 @@ it", "add a red ellipse 'you' with an arrow from the agent box", "remove them ag
 | Mermaid flowchart below it        | yes                              | yes                                  |
 | Red ellipse, arrow bound to box   | yes; the box keeps its old arrows | yes, in one `draw`                  |
 | Removes them, sketch untouched    | yes                              | yes                                  |
-| Result, last runs                 | 9/9, three runs in a row         | 8/9 (the image)                      |
+| Result                            | 9/9 when it loads the tools (below) | 8/9 (the image)                   |
 
 - **Claude Code's tool search.** Claude Code defers MCP tools until the model looks them up. Haiku
   sometimes called `view_frame` without loading it, with no arguments ("no frame undefined"),
   then gave up on the drawing or wrote the diagram into a scratch file instead: 2 of 4 runs.
-  Launched with `ENABLE_TOOL_SEARCH=false`, the board tools are always loaded: 3 of 3 runs clean,
-  with fewer calls. A missing `frame` or `type` now says so.
+  With `ENABLE_TOOL_SEARCH=false` it passed 3 of 3, but canvas leaves Claude Code's settings
+  alone: this is a weak model's slip, not the tools'. A missing `frame` or `type` now says so,
+  for the model to recover.
 - **`<br>` in mermaid labels.** Claude breaks labels with `<br>`, which came out as text;
   converted to newlines.
 - **Big Pickle's arguments.** It sent numbers as strings (`"x":"465"`) and, while the element
