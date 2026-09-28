@@ -1,10 +1,10 @@
-# 15 — Drawing frames (Excalidraw)
+# 17 — Drawing frames (Excalidraw)
 
 Date: 2026-09-27 · a throwaway spike (two Excalidraw instances in a `scale(0.5)` container, two
 linked Y.Docs, Playwright), then `e2e/drive.ts` `STEP=drawing` (people) and `STEP=drawing-agent`
 (agents) against the demo project of `e2e/screenshots-demo.sh`. Host "Karl" and guest "Ada" (edit
 access), Chromium via Playwright. Claude Code on Haiku 4.5, opencode on OpenCode Zen's Big Pickle.
-Docs shots: `e2e/screenshots.ts` `STEP=drawing`. Decision: ADR 0008.
+Docs shots: `e2e/screenshots.ts` `STEP=drawing`. Decision: ADR 0009.
 Versions: `@excalidraw/excalidraw` 0.18.1, `@excalidraw/mermaid-to-excalidraw` 2.2.2.
 
 ## Question

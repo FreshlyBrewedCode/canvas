@@ -7,8 +7,9 @@ order: 1
 
 canvas has two halves: **`canvas serve`**, a local server on the host's machine, and the **web
 app**, a static single-page app served from `ui.canvas.frebreco.de`. There is no canvas backend in
-between. Each release channel has its own build of the web app, matching its `canvas serve`: a
-stable release opens `ui.canvas.frebreco.de`, a pre-release (`@frebreco/canvas@next`) opens
+between, unless the host puts the board on a [canvas relay](#canvas-relay). Each release channel
+has its own build of the web app, matching its `canvas serve`: a stable release opens
+`ui.canvas.frebreco.de`, a pre-release (`@frebreco/canvas@next`) opens
 `ui.canvas.frebreco.de/next`. When a page and `canvas serve` are different releases (a tab left
 open across a release, or an older CLI), a strip under the top bar says which one to update.
 
@@ -42,6 +43,42 @@ A React app. It has no server of its own: the host link tells it where `canvas s
 peers find each other through [trystero](https://github.com/dmotz/trystero), which signals over
 public Nostr relays and then connects browsers directly over WebRTC.
 
+The board's code doesn't know how peers reach each other. It sees a **transport**: named messages
+to one peer or everyone, requests with replies, and peers joining and leaving. The link says which
+transport to use:
+
+| Transport       | Peers find each other through | and talk over                       |
+| --------------- | ----------------------------- | ----------------------------------- |
+| peer to peer    | public Nostr relays           | WebRTC, directly (the default)      |
+| relay signal    | the board's canvas relay      | WebRTC, directly                    |
+| relay transport | the board's canvas relay      | the canvas relay, end-to-end encrypted |
+
+## canvas relay
+
+For networks where browsers can't connect directly: corporate proxies, VPNs, firewalls. The host
+runs `canvas serve --relay wss://…`, and every browser on the board then keeps one WebSocket to the
+relay instead of connections to each other.
+
+```
+guest ──┐
+guest ──┼── wss:// ──▶ canvas relay ◀── wss:// ── host's browser ── WebSocket + token ──▶ canvas serve
+guest ──┘   (sealed with the board key: the relay forwards, it can't read)
+```
+
+- **Nothing moves to the relay but the wire.** Authority is still the host's browser (below), and
+  guests still verify the host's signature. The relay can't read the board, and can't pose as
+  anyone on it.
+- **Browsers seal every message** with AES-GCM under a key derived from the board's key. Each
+  message carries its sender, a counter and the time, so a relay can't pass one off as another's
+  or replay a request.
+- **Tokens let people in.** The relay's operator hands out issuer keys, and `canvas serve` signs
+  relay tokens with one: for the host's tab when it connects, and for guest links. Each admits one
+  board for 30 days. The relay checks them without storing anything.
+- **One relay serves many boards and hosts.** A board's room on the relay is derived from the
+  board's key, so the relay can't match it to a board's URL.
+
+Running one: [Relay](/docs/relay).
+
 ## Authority is a star, presence is a mesh
 
 - **The board** is a [Yjs](https://yjs.dev) document. Guests send their board updates to the host
@@ -51,7 +88,8 @@ public Nostr relays and then connects browsers directly over WebRTC.
 - **Anything that would run** on the host's machine is a request to the host's browser, checked
   against the guest access ([Guests](/docs/guests)).
 - **Presence** (pointers, selections, frame focus) goes peer to peer, since it carries no
-  authority.
+  authority. On a canvas relay's transport it goes from every browser to every other through the
+  relay.
 
 ## Agent threads
 

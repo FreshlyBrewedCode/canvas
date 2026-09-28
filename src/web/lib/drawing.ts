@@ -1,5 +1,5 @@
 /**
- * A drawing frame's elements (ADR 0008), in the board doc:
+ * A drawing frame's elements (ADR 0009), in the board doc:
  *
  *   drawing:<frameId>  Y.Map<elementId, DrawingElement>
  *

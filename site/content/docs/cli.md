@@ -1,12 +1,13 @@
 ---
 title: CLI
-description: canvas serve, its options and environment.
+description: canvas serve and canvas relay, their options and environment.
 section: Technical
 order: 3
 ---
 
 ```bash
 canvas serve [--dir .] [--port 4418] [--web-url URL] [--tls-host NAME] [--cert FILE] [--key FILE]
+             [--relay URL] [--relay-key NAME:SECRET] [--relay-via transport|signal]
 ```
 
 Starts `canvas serve` for a project and prints the host link. Run it with
@@ -21,12 +22,18 @@ Starts `canvas serve` for a project and prints the host link. Run it with
 | `--web-url`       | `https://ui.canvas.frebreco.de`, or `…/next` for a pre-release | The web app the host link opens |
 | `--tls-host`      | none                        | Serve `wss://` on this host name, on all interfaces       |
 | `--cert`, `--key` | `.certs/dev.crt`, `.certs/dev.key` in canvas's own directory | The certificate for `--tls-host` |
+| `--relay`         | none                        | Put the board on this [canvas relay](/docs/relay), `wss://…` |
+| `--relay-key`     | none                        | The issuer key the relay's operator gave you, `name:secret` |
+| `--relay-via`     | `transport`                 | `transport`: everything through the relay. `signal`: only finding each other |
 
 ## Environment
 
 | Variable                 | Effect                                                   |
 | ------------------------ | -------------------------------------------------------- |
 | `CANVAS_WEB_URL`         | Default for `--web-url`                                  |
+| `CANVAS_RELAY`           | Default for `--relay`                                    |
+| `CANVAS_RELAY_KEY`       | Default for `--relay-key`. Prefer it to the flag, which shows in process lists |
+| `CANVAS_RELAY_VIA`       | Default for `--relay-via`                                |
 | `CANVAS_OPENCODE_MODEL`  | opencode's model for new sessions (default `opencode-go/big-pickle`) |
 
 ## Hosting from another device
@@ -52,3 +59,15 @@ canvas serving /home/you/src/shop
 ```
 
 The link is the same on every start in the same directory, as long as `.canvas/room.json` exists.
+
+With `--relay`, it adds which relay peers use. The host link doesn't change: the host's tab gets
+its relay token from `canvas serve`.
+
+## canvas relay
+
+```bash
+canvas relay [--port 4419] [--host 0.0.0.0] [--cert FILE --key FILE]
+```
+
+Runs a [canvas relay](/docs/relay) for boards on networks where browsers can't connect directly.
+It needs `CANVAS_RELAY_KEYS`; every setting and deploying it are on [Relay](/docs/relay#settings).

@@ -24,7 +24,7 @@ describe("BoardMcp", () => {
       calls.push(call);
       // The host's browser answers a moment later; it refuses frame "gone".
       const ok = call.tool !== "close_frame" && (call.args as { frame?: string }).frame !== "gone";
-      // A drawing comes back as an image too (ADR 0008).
+      // A drawing comes back as an image too (ADR 0009).
       const images =
         call.tool === "view_frame" && (call.args as { frame?: string }).frame === "sketch"
           ? [{ data: "iVBORw0KGgo=", mimeType: "image/png" as const }]

@@ -1,5 +1,5 @@
 /**
- * What drawings need Excalidraw for (ADR 0008), loaded the first time a board
+ * What drawings need Excalidraw for (ADR 0009), loaded the first time a board
  * needs it: it is large (with mermaid), so boards without drawings never
  * load it. Its fonts come from this app (`vite.config.ts` copies them), not
  * from Excalidraw's CDN.

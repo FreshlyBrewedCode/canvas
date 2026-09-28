@@ -64,7 +64,7 @@ interface FileList {
   readonly files?: ReadonlyArray<FileListEntry>;
 }
 
-/** What to draw (ADR 0008): the host's browser turns it into Excalidraw elements. */
+/** What to draw (ADR 0009): the host's browser turns it into Excalidraw elements. */
 interface DrawContent {
   /** Excalidraw element skeletons (`web/lib/drawing.ts` checks them). */
   readonly elements?: ReadonlyArray<Record<string, unknown>>;

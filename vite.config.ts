@@ -18,7 +18,7 @@ const https =
     : undefined;
 
 /**
- * Excalidraw's fonts (drawing frames, ADR 0008), served by the app at
+ * Excalidraw's fonts (drawing frames, ADR 0009), served by the app at
  * `excalidraw/fonts/` rather than fetched from Excalidraw's CDN
  * (`web/lib/drawing-kit.ts` points it here).
  */

@@ -25,8 +25,8 @@ type Zoom = { value: number & { _brand: "normalizedZoom" } };
 void loadExcalidraw();
 
 /**
- * Excalidraw on a drawing frame's elements (ADR 0008), for the person
- * editing it. Excalidraw can't live under a CSS scale (finding 15): pointers
+ * Excalidraw on a drawing frame's elements (ADR 0009), for the person
+ * editing it. Excalidraw can't live under a CSS scale (finding 17): pointers
  * land off by the scale and its canvas covers a corner. So the board's zoom
  * is undone here, and Excalidraw zooms instead: at the board's scale, times
  * its own zoom.

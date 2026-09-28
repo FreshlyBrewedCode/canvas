@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
+import { ConnectionIndicator } from "@/components/connection-dialog";
 import { GoProvider } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { DrawingFrame } from "@/components/drawing-frame";
@@ -121,7 +122,7 @@ export function Board() {
         <div
           ref={wrapRef}
           data-board=""
-          className="bg-dot-grid relative min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
+          className="bg-dot-grid relative isolate min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
         >
           <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
             <BoardScale value={scale}>
@@ -477,16 +478,6 @@ function TopBar() {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(room.identity.name);
 
-  const connection = room.isHost
-    ? room.serverStatus === "open"
-      ? { label: "connected to canvas serve", tone: "complete" }
-      : room.serverStatus === "replaced"
-        ? { label: "host in another tab", tone: "blocked" }
-        : { label: `canvas serve ${room.serverStatus ?? "…"}`, tone: "blocked" }
-    : room.hostOnline
-      ? { label: "host online", tone: "complete" }
-      : { label: "waiting for host…", tone: "ready" };
-
   return (
     <header className="bg-card flex h-12 shrink-0 items-center gap-3 border-b px-3">
       <span className="font-mono text-sm font-semibold">canvas</span>
@@ -496,11 +487,7 @@ function TopBar() {
       >
         {room.roomState?.cwd}
       </span>
-      <span className="flex items-center gap-1.5 text-xs" data-status={connection.tone}>
-        <span className="size-1.5 rounded-full bg-[var(--status)]" />
-        <span className="text-muted-foreground">{connection.label}</span>
-      </span>
-      {room.error && <span className="text-destructive truncate text-xs">{room.error}</span>}
+      <ConnectionIndicator />
 
       <div className="ml-auto flex items-center gap-2">
         <div className="flex -space-x-1">
@@ -532,7 +519,7 @@ function TopBar() {
           size="sm"
           variant="outline"
           onClick={() => {
-            void navigator.clipboard.writeText(guestLink(room.link));
+            void navigator.clipboard.writeText(guestLink(room.link, undefined, room.guestRelay()));
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}

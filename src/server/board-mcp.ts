@@ -17,7 +17,7 @@
  * shared set: the browser keeps it to find the lines again as the file
  * changes.
  *
- * A drawing (ADR 0008) comes back as an image too, which goes to the agent
+ * A drawing (ADR 0009) comes back as an image too, which goes to the agent
  * as MCP image content.
  *
  * Scratch files (ADR 0005) never reach the browser as content: a call's

@@ -14,7 +14,7 @@ const DrawingEditor = lazy(() => import("@/components/drawing-editor"));
 const isDark = () => document.documentElement.classList.contains("dark");
 
 /**
- * An Excalidraw drawing everyone on the board shares (ADR 0008). At rest it
+ * An Excalidraw drawing everyone on the board shares (ADR 0009). At rest it
  * is a picture that zooms with the board like any frame; double-click (or
  * Edit) and it becomes Excalidraw for you, at the same view, until you click
  * outside the frame or press Done. Editing is yours: others see your changes

@@ -7,7 +7,7 @@ const hostLink = process.argv[2]!;
 const out = process.env.OUT ?? "/tmp/canvas-shots";
 const u = new URL(hostLink);
 const f = new URLSearchParams(u.hash.slice(1));
-const guestLink = `${u.origin}/?room=${u.searchParams.get("room")}#k=${f.get("k")}&pk=${f.get("pk")}`;
+let guestLink = "";
 
 const browser = await chromium.launch();
 const open = async (url: string, name: string, color: string) => {
@@ -40,6 +40,12 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${nam
 
 const host = await open(hostLink, "Karl", "#f97316");
 await host.getByText("connected to canvas serve").waitFor({ timeout: 15000 });
+// The guest link as a host shares it. On a relay (ADR 0008) it carries a
+// guest token only `canvas serve` can sign.
+await host.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+await host.getByRole("button", { name: "Copy guest link" }).click();
+guestLink = await host.evaluate(() => navigator.clipboard.readText());
+const g = new URLSearchParams(new URL(guestLink).hash.slice(1));
 const guest = await open(guestLink, "Ada", "#3b82f6");
 await guest.getByText("host online").waitFor({ timeout: 30000 });
 console.log("guest sees host");
@@ -1813,7 +1819,178 @@ if (step === "links") {
   check(theirs.selection?.start === 30 && theirs.selection?.end === 33, "a guest's deep link to lines");
   await shot(guest, "98-links-guest-deep");
 }
-// Drawing frames (ADR 0008): Excalidraw under the board's zoom, host and guest
+
+// The connection dialog (finding 15): what host and guest see when it works,
+// and the headline for each way it fails — WebRTC blocked (no ICE path), and
+// the signalling relays blocked.
+if (step === "connection") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const dialog = async (page: Page) => {
+    await page.locator("[data-connection-indicator]").click();
+    return page.locator("[data-connection-dialog]");
+  };
+  const headline = (page: Page) => page.locator("[data-connection-headline]");
+  const waitHeadline = async (page: Page, title: string, ms = 30000) => {
+    try {
+      await headline(page).getByText(title).waitFor({ timeout: ms });
+      return true;
+    } catch {
+      console.log("  headline:", await headline(page).innerText().catch(() => "?"));
+      return false;
+    }
+  };
+
+  for (const [name, page] of [
+    ["host", host],
+    ["guest", guest],
+  ] as const) {
+    const d = await dialog(page);
+    check(await waitHeadline(page, "Connected to one peer"), `${name}: connected to one peer`);
+    // The route comes from WebRTC stats, read once a second while open.
+    await d.getByText(/direct|relayed/).first().waitFor({ timeout: 5000 });
+    check(true, `${name}: the peer's route shows`);
+    await d.locator("[data-network-test]").waitFor({ timeout: 10000 });
+    check(true, `${name}: network test ran (${await d.locator("[data-network-test]").innerText()})`);
+    await d.getByText("Details").click();
+    await d.getByText("Peer connections").waitFor();
+    // The report is for sending around: it must not carry the link's secrets.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await d.getByRole("button", { name: "Copy report" }).click();
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const parsed = JSON.parse(text) as { peers: unknown[]; log: unknown[] };
+    check(parsed.peers.length === 1 && parsed.log.length > 0, `${name}: the report has peers and the log`);
+    const secrets = [f.get("k")!, f.get("token")!, f.get("pk")!];
+    check(!secrets.some((secret) => text.includes(secret)), `${name}: the report has no keys or tokens`);
+    await shot(page, `96-${name}-connection`);
+    await page.keyboard.press("Escape");
+  }
+
+  // WebRTC blocked: only TURN candidates allowed, and no TURN server — as on
+  // a network that blocks UDP. Peers find each other, then fail.
+  const blocked = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: "dark" });
+  await blocked.addInitScript(() => {
+    const Native = RTCPeerConnection;
+    // @ts-expect-error replacing the constructor
+    window.RTCPeerConnection = function (config?: RTCConfiguration) {
+      return new Native({ ...config, iceServers: [], iceTransportPolicy: "relay" });
+    };
+    window.RTCPeerConnection.prototype = Native.prototype;
+  });
+  const noRtc = await blocked.newPage();
+  await noRtc.goto(guestLink);
+  await dialog(noRtc);
+  check(
+    await waitHeadline(noRtc, "Found peers, but couldn't connect to them", 60000),
+    "WebRTC blocked: found peers but couldn't connect",
+  );
+  check(
+    (await noRtc.locator("[data-connection-indicator]").getAttribute("data-status")) === "blocked",
+    "WebRTC blocked: the indicator turns red",
+  );
+  await shot(noRtc, "97-webrtc-blocked");
+  await blocked.close();
+
+  // Signalling blocked: every relay socket is refused.
+  const offline = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: "dark" });
+  await offline.routeWebSocket(/^wss:/, (ws) => ws.close());
+  const noRelay = await offline.newPage();
+  await noRelay.goto(guestLink);
+  await dialog(noRelay);
+  check(
+    await waitHeadline(noRelay, "No signalling relay reachable", 20000),
+    "relays blocked: no signalling relay reachable",
+  );
+  await shot(noRelay, "98-relays-blocked");
+  await offline.close();
+}
+// A board on a `canvas relay` (ADR 0008), run with `serve --relay … [--relay-via signal]`.
+// A guest that can reach neither the Nostr relays nor (transport) WebRTC
+// joins, edits the board both ways and runs a request on the host; a token
+// that doesn't verify is refused.
+if (step === "relay") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const via = g.get("via");
+  check(via === "transport" || via === "signal", `the guest link names the relay (${via})`);
+  const headline = (page: Page) => page.locator("[data-connection-headline]");
+
+  await host.locator("[data-connection-indicator]").click();
+  await headline(host).getByText("Connected to one peer").waitFor({ timeout: 15000 });
+  const dialog = host.locator("[data-connection-dialog]");
+  if (via === "transport") await dialog.getByText("through canvas relay").first().waitFor();
+  else await dialog.getByText(/direct|relayed via TURN/).first().waitFor({ timeout: 10000 });
+  check(true, `host: connected to the guest (${via})`);
+  await dialog.getByText("Details").click();
+  await shot(host, `99-relay-${via}-host`);
+  await host.keyboard.press("Escape");
+  check(
+    Boolean(g.get("rt")?.includes(".g.")) && !hostLink.includes("rt="),
+    "the guest link carries a guest token; the host link none",
+  );
+
+  // Locked down: no Nostr relays, and for the transport no WebRTC at all.
+  const locked = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: "dark" });
+  await locked.routeWebSocket(/^wss:/, (ws) => ws.close());
+  if (via === "transport")
+    await locked.addInitScript(() => {
+      // @ts-expect-error replacing the constructor
+      window.RTCPeerConnection = function () {
+        throw new Error("WebRTC is blocked here");
+      };
+    });
+  await locked.addInitScript(() =>
+    localStorage.setItem("canvas.identity", JSON.stringify({ name: "Locked", color: "#22c55e" })),
+  );
+  const guarded = await locked.newPage();
+  guarded.on("pageerror", (e) => console.log("[locked] pageerror", e.message));
+  await guarded.goto(guestLink);
+  await guarded.getByText("host online").waitFor({ timeout: 30000 });
+  check(true, "a guest without Nostr" + (via === "transport" ? " or WebRTC" : "") + " reaches the host");
+
+  const fromHost = await addFrame(host, "Files");
+  const hostFrameId = await fromHost.getAttribute("data-frame");
+  await guarded.locator(`[data-frame="${hostFrameId}"]`).waitFor({ timeout: 10000 });
+  check(true, "the host's board edit reaches it");
+  const fromGuest = await addFrame(guarded, "Files");
+  const guestFrameId = await fromGuest.getAttribute("data-frame");
+  await host.locator(`[data-frame="${guestFrameId}"]`).waitFor({ timeout: 10000 });
+  check(true, "its board edit reaches the host");
+
+  // A request: typing into a terminal runs on the host's machine.
+  await host.getByLabel("Guest access").selectOption("trusted");
+  const term = await addFrame(host, "Terminal");
+  const termId = await term.getAttribute("data-frame");
+  await guarded.locator(`[data-frame="${termId}"] .xterm`).waitFor({ timeout: 10000 });
+  await new Promise((r) => setTimeout(r, 1500));
+  await guarded.locator(`[data-frame="${termId}"] .xterm`).click();
+  await guarded.keyboard.type("echo relay-$((6*7))\n");
+  await host.locator(`[data-frame="${termId}"]`).getByText("relay-42").first().waitFor({ timeout: 15000 });
+  await guarded.locator(`[data-frame="${termId}"]`).getByText("relay-42").first().waitFor({ timeout: 15000 });
+  check(true, "its terminal input runs on the host, and the output comes back");
+  await guarded.locator("[data-connection-indicator]").click();
+  await headline(guarded).waitFor();
+  await guarded.waitForTimeout(500);
+  await shot(guarded, `99-relay-${via}-locked-guest`);
+  await locked.close();
+
+  // A token that doesn't verify: the relay refuses it.
+  const forged = guestLink.replace(/rt=([^&]+)/, (_, t: string) => `rt=${t.slice(0, -4)}AAAA`);
+  const strangerContext = await browser.newContext({ viewport: { width: 1400, height: 900 }, colorScheme: "dark" });
+  const stranger = await strangerContext.newPage();
+  await stranger.goto(forged);
+  await stranger.locator("[data-connection-indicator]").click();
+  const refused = via === "transport" ? "Can't reach the relay" : "No signalling relay reachable";
+  await headline(stranger).getByText(refused).waitFor({ timeout: 20000 });
+  check(true, `a forged token is refused: "${refused}"`);
+  await shot(stranger, `99-relay-${via}-forged`);
+  await strangerContext.close();
+}
+// Drawing frames (ADR 0009): Excalidraw under the board's zoom, host and guest
 // drawing into one drawing at once, undo that stays yours, view guests.
 if (step === "drawing") {
   const check = (ok: boolean, what: string) => {
@@ -1947,7 +2124,7 @@ if (step === "drawing") {
   check((await elements(host, id)).length === 0, "removing the frame clears its elements");
 }
 
-// Agents and drawings (ADR 0008): view_frame shows the drawing as an image
+// Agents and drawings (ADR 0009): view_frame shows the drawing as an image
 // (Karl's freehand sketch is only in the image), draw adds a mermaid diagram,
 // shapes bound to what is there, and removes. AGENT=claude|opencode.
 if (step === "drawing-agent") {
@@ -2066,5 +2243,4 @@ if (step === "drawing-agent") {
   check(all.filter((e) => e.type === "freedraw").length === 3, "Karl's sketch is still there");
   await frame.screenshot({ path: `${out}/127-${kind}-drawing-thread.png` });
 }
-
 await browser.close();

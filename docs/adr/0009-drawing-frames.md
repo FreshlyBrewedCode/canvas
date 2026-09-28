@@ -1,8 +1,8 @@
-# 0008. Drawing frames are Excalidraw elements in the board doc
+# 0009. Drawing frames are Excalidraw elements in the board doc
 
 ## Status
 
-Accepted, 2026-09-27 (prototype). Evidence in `docs/findings/15-drawings.md`.
+Accepted, 2026-09-27 (prototype). Evidence in `docs/findings/17-drawings.md`.
 
 ## Context
 

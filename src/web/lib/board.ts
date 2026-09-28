@@ -63,7 +63,7 @@ export type Frame = FrameBase &
       }
     | { readonly type: "browser"; readonly url: string }
     | { readonly type: "terminal" }
-    /** An Excalidraw drawing; its elements are in `drawing:<id>` (ADR 0008). */
+    /** An Excalidraw drawing; its elements are in `drawing:<id>` (ADR 0009). */
     | { readonly type: "drawing" }
   );
 

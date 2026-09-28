@@ -8,13 +8,21 @@
 import type { ServerWebSocket } from "bun";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HOST_REPLACED, type ClientToServer, type ServerToClient } from "../shared/protocol";
+import {
+  HOST_REPLACED,
+  type ClientToServer,
+  type RelayVia,
+  type ServerToClient,
+  type WelcomeRelay,
+} from "../shared/protocol";
+import { relayRoom } from "../shared/relay-room";
 import { AgentManager, detectAgents } from "./agents";
 import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
 import { Scratch } from "./scratch";
 import { canvasSkills } from "./skills";
 import { Store } from "./store";
+import { signRelayToken, type Issuer } from "./relay-token";
 import { Terminals } from "./terminals";
 
 export interface ServeOptions {
@@ -24,12 +32,33 @@ export interface ServeOptions {
   readonly tls?: { readonly cert: string; readonly key: string };
   /** The published version this runs as; none for a checkout. */
   readonly version?: string;
+  /** Guests reach the board through this `canvas relay` (ADR 0008). */
+  readonly relay?: ServeRelay;
+}
+
+export interface ServeRelay {
+  readonly url: string;
+  readonly via: RelayVia;
+  /** The issuer key the relay's operator gave this host. */
+  readonly issuer: Issuer;
 }
 
 export async function serve(options: ServeOptions) {
   const store = new Store(options.dir);
   excludeFromGit(options.dir);
   const room = await store.room();
+  const relayRoomName = options.relay ? await relayRoom(room.key) : null;
+  // Signed for every host tab that connects: its token and the one its guest
+  // links carry are good for 30 days from then.
+  const relaySetup = (): WelcomeRelay | null =>
+    options.relay && relayRoomName
+      ? {
+          url: options.relay.url,
+          via: options.relay.via,
+          hostToken: signRelayToken(options.relay.issuer, relayRoomName, "host"),
+          guestToken: signRelayToken(options.relay.issuer, relayRoomName, "guest"),
+        }
+      : null;
   // The host tab: the board, and so every board tool call, lives there.
   let host: ServerWebSocket<unknown> | null = null;
   const broadcast = (message: ServerToClient) => host?.send(JSON.stringify(message));
@@ -166,6 +195,7 @@ export async function serve(options: ServeOptions) {
             agents: agentDefinitions.map(({ kind, label }) => ({ kind, label })),
             board: board ? Buffer.from(board).toString("base64") : null,
             sessions: agents.snapshots(),
+            relay: relaySetup(),
           } satisfies ServerToClient),
         );
       },
