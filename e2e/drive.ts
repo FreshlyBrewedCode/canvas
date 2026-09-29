@@ -2496,4 +2496,81 @@ if (step === "pan") {
   check(await editor.isVisible(), "…and the drawing is still being edited");
   await shot(host, "131-pan-drawing");
 }
+if (step === "presence") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  for (const page of [host, guest]) await page.locator("[data-hud]").getByTitle("Reset to 100%").click();
+  /** A peer's marker on the edge, relative to the board: its centre, or null. */
+  const marker = (page: Page, name: string) =>
+    page.evaluate((name) => {
+      const el = document.querySelector(`[data-peer-marker="${name}"]`);
+      if (!el) return null;
+      const board = document.querySelector("[data-board]")!.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return {
+        x: Math.round(box.x + box.width / 2 - board.x),
+        y: Math.round(box.y + box.height / 2 - board.y),
+        w: Math.round(board.width),
+        h: Math.round(board.height),
+      };
+    }, name);
+
+  // Ada's mouse on her board; Karl looks at the same place, then pans far right.
+  await guest.mouse.move(700, 450);
+  await settle();
+  check((await marker(host, "Ada")) === null, "Ada's cursor in view: no marker");
+  await host.mouse.move(700, 450);
+  for (let i = 0; i < 10; i++) await host.mouse.wheel(300, 0);
+  await settle();
+  let at = await marker(host, "Ada");
+  check(!!at && at.x < 40 && Math.abs(at.y - at.h / 2) < 80, `Ada's marker on the left edge: ${JSON.stringify(at)}`);
+  await shot(host, "130-presence-marker-left");
+
+  // Ada moves her mouse off the board: her marker points at the middle of her view.
+  await guest.mouse.move(700, 20);
+  await settle();
+  at = await marker(host, "Ada");
+  check(!!at && at.x < 40, `with her mouse off the board, the marker stays: ${JSON.stringify(at)}`);
+
+  // Ada pans down a long way: her marker moves to the bottom edge.
+  await guest.mouse.move(700, 450);
+  for (let i = 0; i < 20; i++) await guest.mouse.wheel(0, 400);
+  await guest.mouse.move(700, 20);
+  await settle();
+  at = await marker(host, "Ada");
+  check(!!at && at.y > at.h - 80, `after she pans down, it is on the bottom edge: ${JSON.stringify(at)}`);
+  await shot(host, "131-presence-marker-bottom");
+
+  // Ada pans with her mouse still on the board: her pointer moves over the board with it.
+  await guest.mouse.move(700, 450);
+  await settle();
+  const pointer = () =>
+    host.evaluate(() => {
+      const room = (window as any).room;
+      const ada = [...room.awareness.getStates().values()].find((s: any) => s.user?.name === "Ada");
+      return ada?.pointer as { x: number; y: number } | null;
+    });
+  const before = await pointer();
+  for (let i = 0; i < 3; i++) await guest.mouse.wheel(0, 200);
+  await settle();
+  const after = await pointer();
+  check(
+    !!before && !!after && Math.round(after.y - before.y) === 600,
+    `her pointer moves 600 px with the board: ${JSON.stringify({ before, after })}`,
+  );
+  await guest.mouse.move(700, 20);
+  await settle();
+
+  // Karl clicks it: he goes there, and it is gone.
+  await host.locator('[data-peer-marker="Ada"]').click();
+  await settle();
+  check((await marker(host, "Ada")) === null, "Karl clicks the marker: Ada is in view, no marker");
+}
 await browser.close();

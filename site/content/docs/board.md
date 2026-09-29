@@ -86,6 +86,9 @@ Agents use the same rules: they name frames and sides, never coordinates
 ## Presence
 
 - Everyone's **pointer** shows with their name; the host's is marked **host**.
+- Someone **out of view** shows as a marker on the edge of the board, in their colour, pointing
+  their way: to their pointer, or, while it is off their board, to the middle of what they see.
+  Click it to go there.
 - **Text selections** in agent threads and files frames show in the selecting person's colour.
 - The top bar lists everyone on the board. Your **name** is the field next to it; a new browser
   gets an animal name and a colour.

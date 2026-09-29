@@ -13,7 +13,7 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
 import { ConnectionIndicator } from "@/components/connection-dialog";
@@ -24,7 +24,7 @@ import { FileFrame } from "@/components/file-frame";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
-import { BoardScale, useBoardViewport } from "@/hooks/use-board-viewport";
+import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
 import {
   addFrame,
   DEFAULT_SIZE,
@@ -40,6 +40,7 @@ import { readSelection } from "@/lib/selection";
 import { useSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
+import { edgeMarker, toViewport, viewRect } from "@/lib/viewport";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
@@ -55,17 +56,31 @@ export function Board() {
   const go = useBoardNavigation(room, viewport, readOnly);
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
+  const pointerAt = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
     let raf = 0;
-    const onMove = (event: PointerEvent) => {
+    const publishPointer = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() =>
-        room.setPresence({ pointer: viewport.toBoard(event.clientX, event.clientY) }),
-      );
+      raf = requestAnimationFrame(() => {
+        const at = pointerAt.current;
+        if (at) room.setPresence({ pointer: viewport.toBoard(at.x, at.y) });
+      });
     };
-    const onLeave = () => room.setPresence({ pointer: null });
+    const onMove = (event: PointerEvent) => {
+      pointerAt.current = { x: event.clientX, y: event.clientY };
+      publishPointer();
+    };
+    const onLeave = () => {
+      pointerAt.current = null;
+      cancelAnimationFrame(raf);
+      room.setPresence({ pointer: null });
+    };
+    // Panning and zooming move the board under a mouse that stays put.
+    const unsubscribe = viewport.subscribe(() => {
+      if (pointerAt.current) publishPointer();
+    });
     // Pressing on the board itself lets go of the frame we were in.
     const onDown = (event: PointerEvent) => {
       if (!(event.target as Element).closest("[data-frame], [data-hud]")) room.focusFrame(null);
@@ -82,12 +97,35 @@ export function Board() {
     wrap.addEventListener("pointerdown", onDown);
     document.addEventListener("selectionchange", onSelection);
     return () => {
+      unsubscribe();
       wrap.removeEventListener("pointermove", onMove);
       wrap.removeEventListener("pointerleave", onLeave);
       wrap.removeEventListener("pointerdown", onDown);
       document.removeEventListener("selectionchange", onSelection);
     };
   }, [room, viewport, wrapRef]);
+
+  // Publish what we look at, throttled: it changes on every frame of a pan, and
+  // peers smooth between updates.
+  const { screen, subscribe } = viewport;
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let last = 0;
+    const publish = () => {
+      timer = null;
+      last = Date.now();
+      const { transform, width, height } = screen();
+      room.setPresence({ view: width && height ? viewRect(transform, width, height) : null });
+    };
+    const unsubscribe = subscribe(() => {
+      timer ??= setTimeout(publish, Math.max(0, VIEW_INTERVAL - (Date.now() - last)));
+    });
+    publish();
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+    };
+  }, [room, screen, subscribe]);
 
   const create = (type: FrameType, extra: Record<string, string> = {}) => {
     const size = DEFAULT_SIZE[type];
@@ -134,6 +172,7 @@ export function Board() {
             <Pointers />
           </div>
 
+          <PeerMarkers viewport={viewport} />
           {!readOnly && <Toolbar onCreate={create} />}
           <Approvals />
           <HostElsewhere />
@@ -322,6 +361,64 @@ function Pointers() {
             </div>
           </div>
         ))}
+    </>
+  );
+}
+
+/** How often our view goes out as presence, in ms; peers' markers ease over as long. */
+const VIEW_INTERVAL = 100;
+/** Markers keep clear of the toolbar at the top and the zoom controls at the bottom. */
+const MARKER_INSET = { top: 64, right: 20, bottom: 60, left: 20 };
+
+/**
+ * Everyone out of view, as a marker on the edge in their direction: where
+ * their mouse is, or, while it is off their board, the middle of their view.
+ * A click goes there.
+ */
+function PeerMarkers({
+  viewport,
+}: {
+  viewport: Pick<BoardViewport, "screen" | "subscribe" | "centreOn">;
+}) {
+  const peers = usePeers();
+  const { transform, width, height } = useSyncExternalStore(viewport.subscribe, viewport.screen);
+  if (!width || !height) return null;
+  return (
+    <>
+      {peers.map((peer) => {
+        const { view } = peer;
+        const target = peer.pointer ?? (view && { x: view.x + view.w / 2, y: view.y + view.h / 2 });
+        const marker =
+          target && edgeMarker(toViewport(transform, target), width, height, MARKER_INSET);
+        if (!target || !marker) return null;
+        return (
+          <button
+            key={peer.user.peerId}
+            type="button"
+            data-hud=""
+            data-peer-marker={peer.user.name}
+            title={`${peer.user.name}${peer.user.host ? " (host)" : ""}: go there`}
+            onClick={() => viewport.centreOn(target)}
+            className="border-card absolute top-0 left-0 grid size-7 place-items-center rounded-full border-2 text-[11px] font-semibold shadow-md transition-transform duration-100 ease-linear"
+            style={{
+              transform: `translate(${marker.x}px, ${marker.y}px) translate(-50%, -50%)`,
+              backgroundColor: peer.user.color,
+              color: "oklch(0.2 0 0)",
+            }}
+          >
+            <span
+              className="pointer-events-none absolute inset-0"
+              style={{ transform: `rotate(${marker.angle}rad)` }}
+            >
+              <span
+                className="absolute -top-[9px] left-1/2 -translate-x-1/2 border-x-[6px] border-b-[8px] border-x-transparent"
+                style={{ borderBottomColor: peer.user.color }}
+              />
+            </span>
+            {peer.user.name.slice(0, 1)}
+          </button>
+        );
+      })}
     </>
   );
 }
