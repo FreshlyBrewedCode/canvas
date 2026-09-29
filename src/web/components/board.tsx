@@ -210,7 +210,7 @@ export function Board() {
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => viewport.zoomBy(1 / 1.25)}
+              onClick={() => viewport.zoomStep(-1)}
               title="Zoom out"
             >
               <Minus />
@@ -227,7 +227,7 @@ export function Board() {
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => viewport.zoomBy(1.25)}
+              onClick={() => viewport.zoomStep(1)}
               title="Zoom in"
             >
               <Plus />

@@ -5,10 +5,13 @@ import {
   fitRects,
   fitView,
   inView,
+  stepZoom,
   toBoard,
   toViewport,
   viewRect,
+  wheelZoomFactor,
   zoomAbout,
+  ZOOM_STEP,
 } from "./viewport";
 
 describe("viewport", () => {
@@ -76,6 +79,28 @@ describe("viewport", () => {
       expect(marker.x).toBe(980);
       expect(marker.y).toBeCloseTo(400 + (480 * 1000) / 1500);
       expect(marker.angle).toBeCloseTo(Math.atan2(1500, -1000));
+    });
+  });
+
+  describe("zoom steps", () => {
+    test("a mouse wheel's notch zooms about as much as a button press", () => {
+      expect(wheelZoomFactor(100)).toBeCloseTo(wheelZoomFactor(24));
+      expect(wheelZoomFactor(-100)).toBeGreaterThan(1);
+      expect(wheelZoomFactor(-100)).toBeLessThan(ZOOM_STEP + 0.01);
+      // Firefox's wheel counts lines.
+      expect(wheelZoomFactor(3, 1)).toBeCloseTo(wheelZoomFactor(100));
+    });
+
+    test("a pinch's small deltas zoom in proportion", () => {
+      expect(Math.log(wheelZoomFactor(4))).toBeCloseTo(2 * Math.log(wheelZoomFactor(2)));
+    });
+
+    test("the buttons step, landing on 100% when passing it", () => {
+      expect(stepZoom(1, 1)).toBeCloseTo(ZOOM_STEP);
+      expect(stepZoom(0.95, 1)).toBe(1);
+      expect(stepZoom(1.05, -1)).toBe(1);
+      expect(stepZoom(1, -1)).toBeCloseTo(1 / ZOOM_STEP);
+      expect(stepZoom(stepZoom(1 / ZOOM_STEP, 1), 1)).toBeCloseTo(ZOOM_STEP);
     });
   });
 });

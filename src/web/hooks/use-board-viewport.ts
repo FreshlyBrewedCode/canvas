@@ -4,7 +4,9 @@ import {
   fitRects,
   fitView,
   inView,
+  stepZoom,
   toBoard,
+  wheelZoomFactor,
   zoomAbout,
   type Point,
   type Rect,
@@ -41,7 +43,8 @@ export interface BoardViewport {
   follow: (view: Rect) => void;
   /** Viewport client coordinates → board coordinates. */
   toBoard: (clientX: number, clientY: number) => Point;
-  zoomBy: (factor: number) => void;
+  /** One press of the zoom buttons: in (1) or out (-1). */
+  zoomStep: (direction: 1 | -1) => void;
   zoomTo: (scale: number) => void;
   fit: (rects: ReadonlyArray<{ x: number; y: number; w: number; h: number }>) => void;
   /** Bring a rectangle into view: fit it, unless it is there to read already. */
@@ -173,7 +176,7 @@ export function useBoardViewport(storageKey: string): BoardViewport {
       const rect = wrap.getBoundingClientRect();
       if (zooming) {
         zoom(
-          transformRef.current.scale * Math.exp(-event.deltaY * 0.004),
+          transformRef.current.scale * wheelZoomFactor(event.deltaY, event.deltaMode),
           event.clientX - rect.left,
           event.clientY - rect.top,
         );
@@ -330,9 +333,9 @@ export function useBoardViewport(storageKey: string): BoardViewport {
         y: clientY - (rect?.top ?? 0),
       });
     },
-    zoomBy: (factor) => {
+    zoomStep: (direction) => {
       const { width, height } = size();
-      zoom(transformRef.current.scale * factor, width / 2, height / 2);
+      zoom(stepZoom(transformRef.current.scale, direction), width / 2, height / 2);
     },
     zoomTo: (next) => {
       const { width, height } = size();
