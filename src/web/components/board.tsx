@@ -1,19 +1,5 @@
-import {
-  Bot,
-  Check,
-  FileCode,
-  Globe,
-  Link2,
-  Maximize2,
-  Minus,
-  MousePointer2,
-  Plus,
-  RotateCw,
-  Shapes,
-  SquareTerminal,
-  X,
-} from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Check, Link2, Maximize2, Minus, MousePointer2, Plus, RotateCw, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
 import { ConnectionIndicator } from "@/components/connection-dialog";
@@ -21,18 +7,21 @@ import { GoProvider } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { DrawingFrame } from "@/components/drawing-frame";
 import { FileFrame } from "@/components/file-frame";
+import { FRAME_KINDS } from "@/components/frame-shell";
+import { FullscreenBar, FullscreenInserts } from "@/components/fullscreen";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
 import { useFollowView } from "@/hooks/use-follow-view";
 import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
+import { FullscreenProvider, useFullscreen, type Fullscreen } from "@/hooks/use-fullscreen";
 import {
   addFrame,
   DEFAULT_SIZE,
+  newFrame,
   useFrames,
   type Frame,
   type FrameType,
-  type NewFrame,
 } from "@/lib/board";
 import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Presence } from "@/lib/room";
@@ -56,6 +45,14 @@ export function Board() {
     : room.roomState?.access === "view";
   const go = useBoardNavigation(room, viewport, readOnly);
   const { followed, toggle: toggleFollow } = useFollowView(viewport);
+  const fullscreen = useFullscreen(room, frames, { ...viewport, wrapRef });
+  const { row, height, show, exit } = fullscreen;
+  const fullscreenFrames = useMemo(() => ({ row, height, show, exit }), [row, height, show, exit]);
+  // Following someone shows their view: not full screen's.
+  const following = followed !== null;
+  useEffect(() => {
+    if (following) exit();
+  }, [following, exit]);
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
   const pointerAt = useRef<{ x: number; y: number } | null>(null);
@@ -133,31 +130,23 @@ export function Board() {
     const size = DEFAULT_SIZE[type];
     const centre = viewport.centre();
     const offset = (frames.length % 5) * 24;
-    const count = frames.filter((f) => f.type === type).length + 1;
-    const base = {
+    const box = {
       x: Math.round(centre.x - size.w / 2 + offset),
       y: Math.round(centre.y - size.h / 2 + offset),
       ...size,
     };
-    const frame =
-      type === "agent"
-        ? // The frame asks which agent to run.
-          { ...base, type, title: `agent-${count}`, agent: "" }
-        : type === "file"
-          ? // The frame opens with its tree, to pick a file.
-            { ...base, type, title: `files-${count}`, path: "" }
-          : type === "browser"
-            ? { ...base, type, title: `preview-${count}`, url: extra.url ?? "https://example.com" }
-            : type === "drawing"
-              ? { ...base, type, title: `drawing-${count}` }
-              : { ...base, type, title: `shell-${count}` };
-    addFrame(room.doc, frame as NewFrame);
+    addFrame(room.doc, newFrame(type, box, frames, extra));
   };
 
   return (
     <GoProvider value={go}>
       <div className="flex h-full flex-col">
-        <TopBar following={followed?.user.peerId ?? null} onFollow={toggleFollow} />
+        <TopBar
+          following={followed?.user.peerId ?? null}
+          onFollow={toggleFollow}
+          fullscreen={fullscreen}
+          viewport={viewport}
+        />
         <VersionNotice />
         <div
           ref={wrapRef}
@@ -166,10 +155,13 @@ export function Board() {
         >
           <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
             <BoardScale value={scale}>
-              {frames.map((frame) => (
-                <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
-              ))}
+              <FullscreenProvider value={fullscreenFrames}>
+                {frames.map((frame) => (
+                  <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
+                ))}
+              </FullscreenProvider>
             </BoardScale>
+            {!readOnly && <FullscreenInserts fullscreen={fullscreen} />}
             <SnapGhost />
             <Pointers />
           </div>
@@ -198,14 +190,18 @@ export function Board() {
             </>
           )}
           <PeerMarkers viewport={viewport} />
-          {!readOnly && <Toolbar onCreate={create} />}
+          {!readOnly && !row && <Toolbar onCreate={create} />}
           <Approvals />
           <HostElsewhere />
           {frames.length === 0 && <EmptyBoard readOnly={readOnly} />}
 
           <div
             data-hud=""
-            className="bg-card/90 absolute right-3 bottom-3 flex items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur"
+            className={cn(
+              "bg-card/90 absolute right-3 bottom-3 flex items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur",
+              // Full screen's frames reach the bottom; zooming would end it anyway.
+              row && "hidden",
+            )}
           >
             <Button
               variant="ghost"
@@ -272,21 +268,11 @@ function Toolbar({
       data-hud=""
       className="bg-card/90 absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur"
     >
-      <Button variant="ghost" size="sm" onClick={() => onCreate("agent")}>
-        <Bot /> Agent
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => onCreate("file")}>
-        <FileCode /> Files
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => onCreate("browser")}>
-        <Globe /> Browser
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => onCreate("terminal")}>
-        <SquareTerminal /> Terminal
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => onCreate("drawing")}>
-        <Shapes /> Drawing
-      </Button>
+      {FRAME_KINDS.map(({ type, label, Icon }) => (
+        <Button key={type} variant="ghost" size="sm" onClick={() => onCreate(type)}>
+          <Icon /> {label}
+        </Button>
+      ))}
     </div>
   );
 }
@@ -597,10 +583,14 @@ function VersionNotice() {
 function TopBar({
   following,
   onFollow,
+  fullscreen,
+  viewport,
 }: {
   /** Whose view we follow. */
   following: string | null;
   onFollow: (peerId: string) => void;
+  fullscreen: Fullscreen;
+  viewport: Pick<BoardViewport, "screen" | "subscribe">;
 }) {
   const room = useRoomState();
   const peers = usePeers();
@@ -608,7 +598,7 @@ function TopBar({
   const [name, setName] = useState(room.identity.name);
 
   return (
-    <header className="bg-card flex h-12 shrink-0 items-center gap-3 border-b px-3">
+    <header className="bg-card relative flex h-12 shrink-0 items-center gap-3 border-b px-3">
       <span className="font-mono text-sm font-semibold">canvas</span>
       <span
         className="text-muted-foreground truncate font-mono text-[11px]"
@@ -617,6 +607,7 @@ function TopBar({
         {room.roomState?.cwd}
       </span>
       <ConnectionIndicator />
+      <FullscreenBar fullscreen={fullscreen} viewport={viewport} />
 
       <div className="ml-auto flex items-center gap-2">
         <div className="flex -space-x-1">

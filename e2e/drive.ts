@@ -2662,4 +2662,180 @@ if (step === "presence") {
   await host.locator('header [data-avatar="Ada"]').waitFor({ state: "detached", timeout: 30000 });
   check((await following()) === null, "Ada leaves: Karl no longer follows");
 }
+if (step === "fullscreen") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  // A row of three, a terminal last, and a frame in the row under it.
+  const files = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  const draw = (await (await addFrame(host, "Drawing")).getAttribute("data-frame"))!;
+  const term = (await (await addFrame(host, "Terminal")).getAttribute("data-frame"))!;
+  const web = (await (await addFrame(host, "Browser")).getAttribute("data-frame"))!;
+  await place(host, files, { x: 0, y: 0, w: 600, h: 400 });
+  await place(host, draw, { x: 624, y: 0, w: 600, h: 400 });
+  await place(host, term, { x: 1248, y: 0, w: 560, h: 380 });
+  await place(host, web, { x: 0, y: 424, w: 600, h: 400 });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(800);
+
+  const frame = (id: string, page = host) => page.locator(`[data-frame="${id}"]`);
+  const mode = (id: string, page = host) => frame(id, page).getAttribute("data-fullscreen");
+  const current = () =>
+    host.locator("[data-fullscreen-dot][aria-current]").getAttribute("data-fullscreen-dot");
+  const docH = (id: string) =>
+    host.evaluate((f) => (window as any).room.doc.getMap("frames").get(f).get("h"), id);
+  const transform = () =>
+    host.evaluate(
+      () => (document.querySelector("[data-board] > div") as HTMLElement).style.transform,
+    );
+  const board = (await host.locator("[data-board]").boundingBox())!;
+  const on = async () => (await host.locator("[data-fullscreen-bar]").count()) > 0;
+
+  // F over a frame: 100%, its top under the top bar, as tall as the screen.
+  const b = (await frame(files).boundingBox())!;
+  await host.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await host.keyboard.press("f");
+  await settle();
+  let box = (await frame(files).boundingBox())!;
+  check((await transform()).includes("scale(1)"), `F: at 100% (${await transform()})`);
+  check(Math.abs(box.y - board.y) < 1, `…the frame's top under the top bar (${box.y})`);
+  check(Math.abs(box.height - board.height) < 1, `…as tall as the screen (${box.height})`);
+  check(Math.abs(box.x + box.width / 2 - board.width / 2) < 1, "…in the middle");
+  check((await mode(draw)) === "in" && (await mode(term)) === "in", "…with its row");
+  check((await mode(web)) === "hidden", "…and the row under it hidden");
+  const termBox = (await frame(term).boundingBox())!;
+  check(Math.abs(termBox.height - 380) < 1, `a terminal keeps its height (${termBox.height})`);
+  check((await docH(files)) === 400, "the doc keeps the frame's height");
+  check(
+    (await host.locator("[data-hud]").getByTitle("Zoom in").count()) === 0 ||
+      !(await host.locator("[data-hud]").getByTitle("Zoom in").isVisible()),
+    "no zoom controls",
+  );
+  check(
+    !(await host.locator("[data-hud]").getByRole("button", { name: "Agent" }).isVisible()),
+    "no frame toolbar",
+  );
+  await settle(600);
+  check((await mode(files, guest)) === null, "the guest's board isn't full screen");
+  const guestFiles = (await frame(files, guest).boundingBox())!;
+  const guestWeb = (await frame(web, guest).boundingBox())!;
+  check(Math.abs(guestFiles.height / guestWeb.height - 1) < 0.01, "…its frames keep their heights");
+  check((await frame(files, guest).getAttribute("data-occupant")) === "Karl", "Karl occupies it");
+  await shot(host, "140-fullscreen");
+
+  // Along the row: l, Alt + →, h. Each claims the frame it goes to.
+  await host.mouse.move(board.x + board.width / 2, 20);
+  await host.keyboard.press("l");
+  await settle();
+  check((await current()) === draw, "l goes to the next frame");
+  box = (await frame(draw).boundingBox())!;
+  check(Math.abs(box.x + box.width / 2 - board.width / 2) < 1, "…and shows it in the middle");
+  const url = host.url();
+  await host.keyboard.press("Alt+ArrowRight");
+  await settle();
+  check((await current()) === term, "Alt + → goes to the next");
+  check(host.url() === url, "…and not Back or Forward");
+  await host.keyboard.press("l");
+  await settle();
+  check((await current()) === term, "l at the end stays");
+  await host.keyboard.press("h");
+  await host.keyboard.press("Alt+ArrowLeft");
+  await settle();
+  check((await current()) === files, "h and Alt + ← go back");
+  await settle(300);
+  check((await frame(files, guest).getAttribute("data-occupant")) === "Karl", "…claiming it");
+
+  // Typing is the field's: "f" in the frame's title stays there.
+  const title = frame(files).getByLabel("Frame title");
+  await title.click();
+  await host.keyboard.press("End");
+  await host.keyboard.type("f");
+  check(await on(), "typing f into a title stays full screen");
+  await host.keyboard.press("Backspace");
+  await host.mouse.click(board.x + board.width / 2, 20);
+
+  // No dragging frames about: its header stays put.
+  const header = (await frame(files).locator("input[aria-label='Frame title']").boundingBox())!;
+  await host.mouse.move(header.x + header.width + 60, header.y + 5);
+  await host.mouse.down();
+  await host.mouse.move(header.x + header.width + 260, header.y + 105, { steps: 5 });
+  await host.mouse.up();
+  const x = await host.evaluate(
+    (f) => (window as any).room.doc.getMap("frames").get(f).get("x"),
+    files,
+  );
+  check(x === 0, `dragging a header moves nothing (${x})`);
+
+  // "+" after the terminal adds a drawing there, and goes to it.
+  await host.locator("[data-fullscreen-dot]").nth(2).click();
+  await settle();
+  const t = (await frame(term).boundingBox())!;
+  await host.mouse.move(t.x + t.width / 2, t.y + 100);
+  await host.locator("[data-fullscreen-insert=right]").click();
+  await host.locator("[data-fullscreen-menu]").getByRole("button", { name: "Drawing" }).click();
+  await settle();
+  check((await host.locator("[data-fullscreen-dot]").count()) === 4, "+ adds a frame to the row");
+  const added = (await current())!;
+  const addedAt = await host.evaluate(
+    (f) => (window as any).room.doc.getMap("frames").get(f).toJSON(),
+    added,
+  );
+  check(
+    addedAt.type === "drawing" && addedAt.x === 1248 + 560 + 24 && addedAt.y === 0,
+    `…after the terminal, and goes there (${JSON.stringify(addedAt)})`,
+  );
+  await shot(host, "141-fullscreen-added");
+
+  // The wheel pans along the row only.
+  const before = await transform();
+  await host.mouse.move(board.x + 4, board.y + board.height - 4);
+  await host.mouse.wheel(0, 300);
+  await settle(200);
+  const after = await transform();
+  const y = (s: string) => /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(s)?.slice(1).map(Number);
+  check(
+    y(before)![1] === y(after)![1] && y(before)![0] !== y(after)![0],
+    `the wheel pans along (${before} → ${after})`,
+  );
+  check(await on(), "…still full screen");
+
+  // Zooming ends it; so do Esc, ✕ and following someone.
+  await host.keyboard.down("Control");
+  await host.mouse.wheel(0, 100);
+  await host.keyboard.up("Control");
+  await settle();
+  check(!(await on()) && (await mode(files)) === null, "zooming ends it");
+  check(await host.locator("[data-hud]").getByTitle("Zoom in").isVisible(), "…zoom controls back");
+  const enter = async () => {
+    await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+    await frame(files).locator("[data-fullscreen-toggle]").click();
+    await settle();
+    return on();
+  };
+  check(await enter(), "the header's button goes full screen");
+  await host.keyboard.press("Escape");
+  await settle();
+  check(!(await on()), "Esc ends it");
+  await enter();
+  await host.locator("[data-fullscreen-exit]").click();
+  await settle();
+  check(!(await on()), "✕ ends it");
+  await enter();
+  await host.locator('header [data-avatar="Ada"]').click();
+  await settle();
+  check(!(await on()), "following Ada ends it");
+  await host.locator('header [data-avatar="Ada"]').click();
+
+  // The frame goes away: so does full screen.
+  await enter();
+  await host.evaluate((f) => (window as any).room.doc.getMap("frames").delete(f), files);
+  await settle();
+  check(!(await on()), "removing the frame ends it");
+}
 await browser.close();

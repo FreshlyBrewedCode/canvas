@@ -24,6 +24,7 @@ order: 7
 | **follow**        | Scrolling with a frame's occupant. [Focus](/docs/focus)                     |
 | **follow a view** | Your board showing what someone else's shows, until you pan or zoom. [Board](/docs/board#presence) |
 | **frame**         | One thing on the board: an agent, a file, a terminal, a browser or a drawing |
+| **full screen**   | Your own view of one row at 100%, its frames as tall as your screen. [Board](/docs/board#full-screen) |
 | **guest**         | Anyone on the board who opened the guest link                               |
 | **guest access**  | What guests may do, set by the host per board: view, edit or trusted        |
 | **guest link**    | The link that joins a board as a guest. Safe to share with the people you invite |

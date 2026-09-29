@@ -28,6 +28,31 @@ hold Space there, or drag its header.
 
 The viewport is yours alone; it is kept per board in your browser.
 
+## Full screen
+
+Full screen shows one row of frames at 100%, as tall as your screen, to work in them one at a
+time.
+
+| Do                                           | To                               |
+| -------------------------------------------- | -------------------------------- |
+| **F** over a frame, or the ⤢ in its header   | Full screen on that frame        |
+| **H** / **L**, or Alt + **←** / **→**        | The frame before / after it      |
+| **‹** / **›**, or a dot, in the top bar      | The frame before / after, or that one |
+| Wheel, drag or swipe                         | Along the row                    |
+| **+** beside a frame                         | Add a frame there                |
+| **Esc**, **F**, the **×** in the top bar, or zoom | Leave full screen           |
+
+- **It is yours alone.** The frames of the row take your screen's height on your board only;
+  everyone else sees them as they are. Terminals keep their height: the host's terminal sizes it
+  for everyone.
+- **Going to a frame occupies it**, as pressing on it does ([Focus](/docs/focus)).
+- **The rest of the board is hidden**, and so are the toolbar and zoom controls: **+** beside the
+  frame under your mouse adds one, and the frames after it make room. Frames don't move or resize
+  in full screen.
+- **Keys are the frame's while you type** in it: a prompt, a terminal, a title. Press the board
+  first.
+- **Following someone's view** ends full screen, as does anything that zooms or leaves the row.
+
 ## Links
 
 Links in agent replies, comments and markdown and HTML files go to places on the board: a frame,
