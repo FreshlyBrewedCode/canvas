@@ -51,7 +51,8 @@ await guest.getByText("host online").waitFor({ timeout: 30000 });
 console.log("guest sees host");
 
 /** The host answers every tool permission the agent asks for until it goes idle. */
-async function approveUntilIdle(host: Page, guest: Page) {
+/** Until the agent is idle: `id`'s frame, else the last agent frame. */
+async function approveUntilIdle(host: Page, guest: Page, id?: string | null) {
   let shots = 0;
   const deadline = Date.now() + Number(process.env.IDLE_MS ?? 240_000);
   // The status flips to running a moment after sending.
@@ -66,9 +67,7 @@ async function approveUntilIdle(host: Page, guest: Page) {
       await allow.click();
     }
     if (
-      await host
-        .locator("[data-frame-type=agent]")
-        .last()
+      await (id ? host.locator(`[data-frame="${id}"]`) : host.locator("[data-frame-type=agent]").last())
         .getByText("idle", { exact: true })
         .isVisible()
     )
@@ -107,13 +106,15 @@ async function newAgent(page: Page, kind: string) {
 const step = process.env.STEP ?? "basic";
 if (step === "approve") await approveUntilIdle(host, guest);
 if (step === "basic") {
-  await newAgent(host, "opencode");
-  await guest.locator("[data-frame-type=agent]").last().waitFor({ timeout: 10000 });
+  // Its own frame, by id: frames earlier steps left are on the board too.
+  const id = await (await newAgent(host, "opencode")).getAttribute("data-frame");
+  const agent = (page: Page) => page.locator(`[data-frame="${id}"]`);
+  await agent(guest).waitFor({ timeout: 10000 });
   console.log("guest sees agent frame");
   // Both write into the same prompt draft.
-  await guest.locator("[data-frame-type=agent] .cm-content").last().click();
+  await agent(guest).locator(".cm-content").click();
   await guest.keyboard.type("Create docs/plan.md with a 3-step plan for a todo app. ");
-  await host.locator("[data-frame-type=agent] .cm-content").last().click();
+  await agent(host).locator(".cm-content").click();
   await host.keyboard.press("End");
   await host.keyboard.type("Keep it short.");
   await host.mouse.move(700, 300);
@@ -121,7 +122,7 @@ if (step === "basic") {
   await new Promise((r) => setTimeout(r, 800));
   console.log(
     "draft:",
-    await guest.locator("[data-frame-type=agent] .cm-content").last().innerText(),
+    await agent(guest).locator(".cm-content").innerText(),
   );
   await shot(host, "01-host-draft");
   await shot(guest, "01-guest-draft");
@@ -130,11 +131,11 @@ if (step === "basic") {
   await host.getByRole("button", { name: "Run on my machine" }).waitFor({ timeout: 10000 });
   await shot(host, "02-host-approval");
   await host.getByRole("button", { name: "Run on my machine" }).click();
-  await guest
-    .locator("[data-frame-type=agent] [data-sel-key$=':prompt']")
+  await agent(guest)
+    .locator("[data-sel-key$=':prompt']")
     .first()
     .waitFor({ timeout: 10000 });
-  await approveUntilIdle(host, guest);
+  await approveUntilIdle(host, guest, id);
   await new Promise((r) => setTimeout(r, 1000));
   await shot(host, "03-host-done");
   await shot(guest, "03-guest-done");
@@ -3024,17 +3025,38 @@ if (step === "thread-nav") {
     "Read README.md, then math.ts, with your read tool, in two separate calls. " +
       "Then reply with a numbered list of 40 fruits, one per line.",
   );
-  const steps = host.locator(`[data-frame="${id}"] [data-steps]`);
-  check((await steps.count()) >= 1, "tool calls in a row fold into one line");
-  check(/\d+ tool calls/.test(await steps.first().innerText()), `…saying how many: ${await steps.first().innerText()}`);
-  await shot(host, "160-steps-folded");
   const body = host.locator(`[data-frame="${id}"] [data-frame-body]`);
   const latest = host.locator(`[data-frame="${id}"] [data-to-latest]`);
+  // Before the fold's click below, which scrolls.
   check((await latest.count()) === 0, "at the end: no jump button");
-  // Playwright scrolls it into view to click it.
-  await steps.first().getByRole("button").first().click();
-  check((await steps.first().getByRole("button").count()) >= 3, "a click unfolds them");
-  await shot(host, "161-steps-open");
+  const steps = host.locator(`[data-frame="${id}"] [data-steps]`);
+  // Tool calls left unfolded with nothing but reasoning between them: folding is broken.
+  const unfolded = await host.evaluate((id) => {
+    const rows = document.querySelectorAll(`[data-frame="${id}"] [data-row]`);
+    const turns = new Set([...rows].filter((el) => !el.closest("[data-steps]")).map((el) => el.parentElement!));
+    let most = 0;
+    for (const turn of turns) {
+      let run = 0;
+      for (const child of turn.children) {
+        const kind = child.getAttribute("data-row");
+        if (kind === "tool") most = Math.max(most, ++run);
+        else if (kind !== "thinking") run = 0;
+      }
+    }
+    return most;
+  }, id);
+  check(unfolded < 2, `no run of tool calls left unfolded (${unfolded})`);
+  if ((await steps.count()) === 0) {
+    // The model decides: it may write between its calls, and then there is nothing to fold.
+    if (unfolded < 2) console.log("skip tool calls fold: the agent made no two in a row");
+  } else {
+    check(/\d+ tool calls/.test(await steps.first().innerText()), `tool calls in a row fold, saying how many: ${await steps.first().innerText()}`);
+    await shot(host, "160-steps-folded");
+    // Playwright scrolls it into view to click it.
+    await steps.first().getByRole("button").first().click();
+    check((await steps.first().getByRole("button").count()) >= 3, "a click unfolds them");
+    await shot(host, "161-steps-open");
+  }
 
   // Scrolled up: a way back; more arriving says so.
   await body.evaluate((el) => (el.scrollTop = 0));

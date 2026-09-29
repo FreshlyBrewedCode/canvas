@@ -444,6 +444,10 @@ function StepsView({
 }
 
 function RowView({ row, frameId }: { row: Row; frameId: string }) {
+  return <div data-row={row.kind}>{rowBody(row, frameId)}</div>;
+}
+
+function rowBody(row: Row, frameId: string) {
   switch (row.kind) {
     case "text":
       return (
