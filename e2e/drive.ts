@@ -2376,4 +2376,124 @@ if (step === "drawing-agent") {
   check(all.filter((e) => e.type === "freedraw").length === 3, "Karl's sketch is still there");
   await frame.screenshot({ path: `${out}/127-${kind}-drawing-thread.png` });
 }
+// Panning over frames: the middle button and Space + drag pan from anywhere,
+// without the frame under the pointer hearing of it.
+if (step === "pan") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const term = (await (await addFrame(host, "Terminal")).getAttribute("data-frame"))!;
+  const web = (await (await addFrame(host, "Browser")).getAttribute("data-frame"))!;
+  const draw = (await (await addFrame(host, "Drawing")).getAttribute("data-frame"))!;
+  await place(host, term, { x: 0, y: 0, w: 560, h: 380, z: 1 });
+  await place(host, web, { x: 600, y: 0, w: 560, h: 380, z: 2 });
+  await place(host, draw, { x: 0, y: 420, w: 560, h: 380, z: 3 });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await host.locator(`[data-frame="${term}"] .xterm`).waitFor({ timeout: 10000 });
+  await settle(800);
+
+  const offset = () =>
+    host.evaluate(() => {
+      const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(
+        (document.querySelector("[data-board] > div") as HTMLElement).style.transform,
+      );
+      return { x: Number(m?.[1]), y: Number(m?.[2]) };
+    });
+  // A point inside a frame's content, a quarter of the way in.
+  const inside = async (id: string) => {
+    const b = (await host.locator(`[data-frame="${id}"]`).boundingBox())!;
+    return { x: b.x + b.width / 3, y: b.y + b.height / 2 };
+  };
+  const drag = async (at: { x: number; y: number }, button: "left" | "middle") => {
+    const before = await offset();
+    await host.mouse.move(at.x, at.y);
+    await host.mouse.down({ button });
+    await host.mouse.move(at.x + 60, at.y + 40, { steps: 5 });
+    await host.mouse.move(at.x + 120, at.y + 80, { steps: 5 });
+    await host.mouse.up({ button });
+    await settle();
+    const after = await offset();
+    return { dx: Math.round(after.x - before.x), dy: Math.round(after.y - before.y) };
+  };
+  const panned = (d: { dx: number; dy: number }) => d.dx === 120 && d.dy === 80;
+  const still = (d: { dx: number; dy: number }) => d.dx === 0 && d.dy === 0;
+  const occupant = (p: Page, id: string) =>
+    p.locator(`[data-frame="${id}"]`).getAttribute("data-occupant");
+  const z = (id: string) =>
+    host.evaluate((f) => (window as any).room.doc.getMap("frames").get(f).get("z"), id);
+
+  // The middle button, over a terminal: the board pans, the terminal isn't touched.
+  let d = await drag(await inside(term), "middle");
+  check(panned(d), `middle drag over a terminal pans the board (${d.dx},${d.dy})`);
+  check((await occupant(host, term)) === null, "…without occupying it");
+  check((await z(term)) === 1, "…or raising it");
+  await settle(500);
+  check((await occupant(guest, term)) === null, "…as the guest sees too");
+  await shot(host, "130-pan-middle");
+
+  // The left button, over a terminal, is the terminal's.
+  d = await drag(await inside(term), "left");
+  check(still(d), `left drag over a terminal leaves the board (${d.dx},${d.dy})`);
+  // Typing into it, Space is a space.
+  await host.locator(`[data-frame="${term}"] .xterm`).click();
+  await host.keyboard.down("Space");
+  const ready = () => host.locator("[data-board]").getAttribute("data-pan-ready");
+  check((await ready()) === null, "Space typed into a terminal is the terminal's");
+  await host.keyboard.up("Space");
+
+  // Off the terminal (a press on the board), Space + drag pans over it.
+  const board = (await host.locator("[data-board]").boundingBox())!;
+  await host.mouse.click(board.x + board.width - 40, board.y + board.height - 40);
+  await host.keyboard.down("Space");
+  check((await ready()) === "true", "holding Space readies the board");
+  const cursor = await host
+    .locator(`[data-frame="${term}"] .xterm-screen`)
+    .evaluate((el) => getComputedStyle(el).cursor);
+  check(cursor === "grab", `…with a grab cursor over frames (${cursor})`);
+  d = await drag(await inside(term), "left");
+  check(panned(d), `Space + drag over a terminal pans the board (${d.dx},${d.dy})`);
+  // Over a browser frame's page too: its iframe lets the press through.
+  d = await drag(await inside(web), "left");
+  check(panned(d), `Space + drag over a browser frame pans the board (${d.dx},${d.dy})`);
+  await host.keyboard.up("Space");
+  check((await ready()) === null, "letting go of Space ends it");
+  d = await drag(await inside(term), "left");
+  check(still(d), `…and the terminal has its left button back (${d.dx},${d.dy})`);
+
+  // Leaving the window while holding Space doesn't leave the board panning.
+  await host.keyboard.down("Space");
+  await host.evaluate(() => window.dispatchEvent(new Event("blur")));
+  check((await ready()) === null, "leaving the window lets go of Space");
+  await host.keyboard.up("Space");
+
+  // Space in the frame's title field is a space.
+  const title = host.locator(`[data-frame="${term}"] input[aria-label="Frame title"]`);
+  await title.click();
+  await host.keyboard.press("End");
+  await host.keyboard.type(" x");
+  check((await title.inputValue()).endsWith(" x"), "Space in a title field types a space");
+  await host.mouse.click(board.x + board.width - 40, board.y + board.height - 40);
+
+  // The empty board still pans with the left button.
+  d = await drag({ x: board.x + board.width - 60, y: board.y + 60 }, "left");
+  check(panned(d), `left drag on the empty board pans it (${d.dx},${d.dy})`);
+
+  // A drawing being edited keeps the middle button; panning elsewhere keeps it editing.
+  await host.locator(`[data-frame="${draw}"] [data-drawing]`).dblclick();
+  const editor = host.locator(`[data-frame="${draw}"] [data-drawing-editor] .excalidraw`);
+  await editor.waitFor({ timeout: 20000 });
+  await settle(800);
+  d = await drag(await inside(draw), "middle");
+  check(still(d), `middle drag in a drawing being edited is Excalidraw's (${d.dx},${d.dy})`);
+  d = await drag(await inside(term), "middle");
+  check(panned(d), `middle drag over a terminal pans (${d.dx},${d.dy})…`);
+  check(await editor.isVisible(), "…and the drawing is still being edited");
+  await shot(host, "131-pan-drawing");
+}
 await browser.close();

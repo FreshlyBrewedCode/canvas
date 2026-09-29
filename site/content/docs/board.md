@@ -13,11 +13,18 @@ moves a frame, everyone sees it move.
 | Do                                   | To                    |
 | ------------------------------------ | --------------------- |
 | Drag the empty board                 | Pan                   |
+| Drag with the middle button, anywhere | Pan                  |
+| Hold Space and drag, anywhere        | Pan                   |
 | Wheel, or swipe on a trackpad, outside a frame's content | Pan |
 | ⌘/Ctrl + wheel, or pinch             | Zoom about the pointer |
 | **−** / **+** in the corner          | Zoom out / in         |
 | Press the zoom percentage            | Back to 100%          |
 | **Fit** (the arrows in the corner)   | Fit every frame into view |
+
+The middle button and Space pan over frames too, without touching them. Space is a space while you
+type into something: a prompt, a terminal, a title. Press the board first. A drawing being edited
+keeps both for its own canvas, and a press inside a browser frame's page never reaches the board:
+hold Space there, or drag its header.
 
 The viewport is yours alone; it is kept per board in your browser.
 
