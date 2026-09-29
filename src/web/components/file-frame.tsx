@@ -702,7 +702,7 @@ function HtmlPreview({ frameId, path, html }: { frameId: string; path: string; h
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       // Pointer events off while the board is being dragged, or the iframe swallows them.
-      className="size-full bg-white [[data-grabbing]_&]:pointer-events-none"
+      className="size-full bg-white [[data-grabbing]_&]:pointer-events-none [[data-pan-ready]_&]:pointer-events-none"
     />
   );
 }

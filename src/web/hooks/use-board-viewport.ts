@@ -11,6 +11,10 @@ export const useBoardScale = () => useContext(BoardScaleContext);
 const DOT_GRID_SIZE = 22;
 const DOT_GRID_MIN_SCALE = 0.4;
 
+/** Whether Space typed here types a space: then it isn't the board's. */
+const typesText = (target: Element) =>
+  (target as HTMLElement).isContentEditable || !!target.closest("input, textarea, select");
+
 export interface BoardViewport {
   wrapRef: React.RefObject<HTMLDivElement | null>;
   canvasRef: React.RefObject<HTMLDivElement | null>;
@@ -29,7 +33,8 @@ export interface BoardViewport {
 /**
  * A transform-based pan/zoom viewport (after wayful's graph viewport): drag
  * the background to pan, wheel or pinch to zoom about the pointer, trackpad
- * swipes pan. Frames own their own pointer interactions and scrolling.
+ * swipes pan. Frames own their own pointer interactions and scrolling, but
+ * for the middle button and Space + drag, which pan from anywhere.
  */
 export function useBoardViewport(storageKey: string): BoardViewport {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -109,17 +114,61 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     return () => wrap.removeEventListener("wheel", onWheel);
   }, [pan, zoom]);
 
-  // --- pointers on the background: one drags, two pinch.
+  // --- pointers: one drags the background, two pinch it. The middle button,
+  // or the left one with Space held, drags from anywhere: over a frame too.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
     const pointers = new Map<number, { x: number; y: number }>();
     let pinch: { distance: number; scale: number; px: number; py: number } | null = null;
+    // A press the board took from a frame: its click is the board's too.
+    let took = false;
+
+    let spaceHeld = false;
+    const hold = (on: boolean) => {
+      spaceHeld = on;
+      if (on) wrap.dataset.panReady = "true";
+      else delete wrap.dataset.panReady;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.composedPath()[0];
+      if (!(target instanceof Element) || typesText(target)) return;
+      // Outside the board (its top bar), Space presses buttons. In a drawing
+      // being edited, Space is Excalidraw's own pan.
+      if (target !== document.body && !wrap.contains(target)) return;
+      if (target.closest("[data-drawing-editor]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!spaceHeld) hold(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || !spaceHeld) return;
+      event.preventDefault();
+      event.stopPropagation();
+      hold(false);
+    };
+    const letGo = () => hold(false);
+    const onVisibility = () => document.hidden && letGo();
 
     const onDown = (event: PointerEvent) => {
-      if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
+      took = false;
       const target = event.target as Element;
-      if (target.closest("[data-frame], [data-hud]")) return;
+      if (!wrap.contains(target)) return;
+      const anywhere =
+        event.pointerType !== "touch" &&
+        ((event.button === 1 && !target.closest("[data-drawing-editor]")) ||
+          (event.button === 0 && spaceHeld));
+      if (anywhere) {
+        // Before any frame hears of it (React's capture handlers included): no
+        // focus, no raise, no Linux middle-click paste, no autoscroll.
+        event.preventDefault();
+        event.stopPropagation();
+        took = true;
+      } else {
+        if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
+        if (target.closest("[data-frame], [data-hud]")) return;
+      }
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
@@ -134,7 +183,13 @@ export function useBoardViewport(storageKey: string): BoardViewport {
       }
       wrap.setPointerCapture(event.pointerId);
       wrap.dataset.grabbing = "true";
-      (document.activeElement as HTMLElement | null)?.blur();
+      if (!anywhere) (document.activeElement as HTMLElement | null)?.blur();
+    };
+    const onClick = (event: MouseEvent) => {
+      if (!took) return;
+      took = false;
+      event.preventDefault();
+      event.stopPropagation();
     };
     const onMove = (event: PointerEvent) => {
       const previous = pointers.get(event.pointerId);
@@ -157,15 +212,29 @@ export function useBoardViewport(storageKey: string): BoardViewport {
       if (pointers.size < 2) pinch = null;
       if (!pointers.size) delete wrap.dataset.grabbing;
     };
-    wrap.addEventListener("pointerdown", onDown);
+    const capture = { capture: true };
+    window.addEventListener("keydown", onKeyDown, capture);
+    window.addEventListener("keyup", onKeyUp, capture);
+    window.addEventListener("blur", letGo);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pointerdown", onDown, capture);
+    window.addEventListener("click", onClick, capture);
+    window.addEventListener("auxclick", onClick, capture);
     wrap.addEventListener("pointermove", onMove);
     wrap.addEventListener("pointerup", onUp);
     wrap.addEventListener("pointercancel", onUp);
     return () => {
-      wrap.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKeyDown, capture);
+      window.removeEventListener("keyup", onKeyUp, capture);
+      window.removeEventListener("blur", letGo);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pointerdown", onDown, capture);
+      window.removeEventListener("click", onClick, capture);
+      window.removeEventListener("auxclick", onClick, capture);
       wrap.removeEventListener("pointermove", onMove);
       wrap.removeEventListener("pointerup", onUp);
       wrap.removeEventListener("pointercancel", onUp);
+      hold(false);
     };
   }, [pan, zoom]);
 

@@ -122,7 +122,7 @@ export function Board() {
         <div
           ref={wrapRef}
           data-board=""
-          className="bg-dot-grid relative isolate min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing"
+          className="bg-dot-grid relative isolate min-h-0 flex-1 touch-none overflow-hidden [&[data-grabbing]]:cursor-grabbing [&[data-grabbing]_*]:cursor-grabbing! [&[data-pan-ready]]:cursor-grab [&[data-pan-ready]:not([data-grabbing])_*]:cursor-grab!"
         >
           <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
             <BoardScale value={scale}>

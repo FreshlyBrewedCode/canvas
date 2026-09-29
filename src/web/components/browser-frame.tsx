@@ -60,7 +60,7 @@ export function BrowserFrame({ frame, readOnly }: { frame: BrowserFrameData; rea
             key={reload}
             title={frame.title}
             src={frame.url}
-            className="min-h-0 flex-1 bg-white [[data-grabbing]_&]:pointer-events-none"
+            className="min-h-0 flex-1 bg-white [[data-grabbing]_&]:pointer-events-none [[data-pan-ready]_&]:pointer-events-none"
           />
         )}
       </div>
