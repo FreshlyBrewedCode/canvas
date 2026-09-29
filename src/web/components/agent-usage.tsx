@@ -181,6 +181,7 @@ export function UsageRing({
 const tone = (share: number) =>
   share > 0.85 ? "bg-status-blocked" : share > 0.6 ? "bg-status-ready" : "bg-status-pending";
 
+/** A full track with the share over it, square ended: not to be taken for a spinner. */
 function Ring({ share }: { share: number }) {
   const r = 7;
   const length = 2 * Math.PI * r;
@@ -191,16 +192,15 @@ function Ring({ share }: { share: number }) {
         cy="9"
         r={r}
         fill="none"
-        strokeWidth="2.5"
-        className="stroke-muted-foreground/25"
+        strokeWidth="3"
+        className="stroke-muted-foreground/35"
       />
       <circle
         cx="9"
         cy="9"
         r={r}
         fill="none"
-        strokeWidth="2.5"
-        strokeLinecap="round"
+        strokeWidth="3"
         strokeDasharray={`${Math.max(0.5, share * length)} ${length}`}
         className={cn(
           share > 0.85
