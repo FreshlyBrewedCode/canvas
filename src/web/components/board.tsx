@@ -24,6 +24,7 @@ import { FileFrame } from "@/components/file-frame";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
+import { useFollowView } from "@/hooks/use-follow-view";
 import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
 import {
   addFrame,
@@ -54,6 +55,7 @@ export function Board() {
     ? room.serverStatus === "replaced"
     : room.roomState?.access === "view";
   const go = useBoardNavigation(room, viewport, readOnly);
+  const { followed, toggle: toggleFollow } = useFollowView(viewport);
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
   const pointerAt = useRef<{ x: number; y: number } | null>(null);
@@ -155,7 +157,7 @@ export function Board() {
   return (
     <GoProvider value={go}>
       <div className="flex h-full flex-col">
-        <TopBar />
+        <TopBar following={followed?.user.peerId ?? null} onFollow={toggleFollow} />
         <VersionNotice />
         <div
           ref={wrapRef}
@@ -172,6 +174,29 @@ export function Board() {
             <Pointers />
           </div>
 
+          {followed && (
+            <>
+              <div
+                data-following-view={followed.user.name}
+                className="pointer-events-none absolute inset-0 border-[3px]"
+                style={{ borderColor: followed.user.color }}
+              />
+              <div
+                data-hud=""
+                className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full py-1 pr-1 pl-3 text-xs font-semibold shadow-sm"
+                style={{ backgroundColor: followed.user.color, color: "oklch(0.2 0 0)" }}
+              >
+                Following {followed.user.name}
+                <button
+                  type="button"
+                  className="rounded-full bg-black/15 px-2 py-0.5 hover:bg-black/25"
+                  onClick={() => toggleFollow(null)}
+                >
+                  Stop
+                </button>
+              </div>
+            </>
+          )}
           <PeerMarkers viewport={viewport} />
           {!readOnly && <Toolbar onCreate={create} />}
           <Approvals />
@@ -569,7 +594,14 @@ function VersionNotice() {
   );
 }
 
-function TopBar() {
+function TopBar({
+  following,
+  onFollow,
+}: {
+  /** Whose view we follow. */
+  following: string | null;
+  onFollow: (peerId: string) => void;
+}) {
   const room = useRoomState();
   const peers = usePeers();
   const [copied, setCopied] = useState(false);
@@ -588,16 +620,28 @@ function TopBar() {
 
       <div className="ml-auto flex items-center gap-2">
         <div className="flex -space-x-1">
-          {peers.map((peer) => (
-            <span
-              key={peer.user.peerId}
-              title={`${peer.user.name}${peer.user.host ? " (host)" : ""}`}
-              className="border-card grid size-6 place-items-center rounded-full border-2 text-[10px] font-semibold"
-              style={{ backgroundColor: peer.user.color, color: "oklch(0.2 0 0)" }}
-            >
-              {peer.user.name.slice(0, 1)}
-            </span>
-          ))}
+          {peers.map((peer) => {
+            const on = peer.user.peerId === following;
+            return (
+              <button
+                key={peer.user.peerId}
+                type="button"
+                aria-pressed={on}
+                data-avatar={peer.user.name}
+                title={`${on ? "Stop following" : "Follow"} ${peer.user.name}${peer.user.host ? " (host)" : ""}`}
+                onClick={() => onFollow(peer.user.peerId)}
+                className="border-card grid size-6 place-items-center rounded-full border-2 text-[10px] font-semibold"
+                style={{
+                  backgroundColor: peer.user.color,
+                  color: "oklch(0.2 0 0)",
+                  outline: on ? `2px solid ${peer.user.color}` : undefined,
+                  outlineOffset: 1,
+                }}
+              >
+                {peer.user.name.slice(0, 1)}
+              </button>
+            );
+          })}
         </div>
         <input
           aria-label="Your name"

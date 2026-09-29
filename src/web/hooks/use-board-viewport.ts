@@ -1,6 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-import { fitRects, inView, toBoard, zoomAbout, type Point, type Transform } from "@/lib/viewport";
+import {
+  fitRects,
+  fitView,
+  inView,
+  toBoard,
+  zoomAbout,
+  type Point,
+  type Rect,
+  type Transform,
+} from "@/lib/viewport";
 
 /** The board's zoom, for frames that must undo it (a drawing being edited). */
 const BoardScaleContext = createContext(1);
@@ -10,6 +19,8 @@ export const useBoardScale = () => useContext(BoardScaleContext);
 /** Must match the `background-size` in the `.bg-dot-grid` CSS class. */
 const DOT_GRID_SIZE = 22;
 const DOT_GRID_MIN_SCALE = 0.4;
+/** How long following eases between someone's views; about how often they send them. */
+const FOLLOW_EASE_MS = 100;
 
 /** Whether Space typed here types a space: then it isn't the board's. */
 const typesText = (target: Element) =>
@@ -24,6 +35,10 @@ export interface BoardViewport {
   screen: () => Screen;
   /** Called on every change of `screen()`. */
   subscribe: (listener: () => void) => () => void;
+  /** Called when we pan or zoom ourselves: anything but `follow`. */
+  onOwnMove: (listener: () => void) => () => void;
+  /** Show someone else's view, easing over from where we are. */
+  follow: (view: Rect) => void;
   /** Viewport client coordinates → board coordinates. */
   toBoard: (clientX: number, clientY: number) => Point;
   zoomBy: (factor: number) => void;
@@ -77,17 +92,26 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     return () => listeners.current.delete(listener);
   }, []);
   const screen = useCallback(() => screenRef.current, []);
+  const ownMoveListeners = useRef(new Set<() => void>());
+  const onOwnMove = useCallback((listener: () => void) => {
+    ownMoveListeners.current.add(listener);
+    return () => ownMoveListeners.current.delete(listener);
+  }, []);
 
   const apply = useCallback(
-    (next: Transform) => {
+    (next: Transform, followed = false) => {
       transformRef.current = next;
+      // Someone else's view comes a few times a second: ease between them. Our own moves are instant.
+      const ease = followed ? `${FOLLOW_EASE_MS}ms linear` : "";
       if (canvasRef.current) {
+        canvasRef.current.style.transition = ease && `transform ${ease}`;
         canvasRef.current.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`;
       }
       const wrap = wrapRef.current;
       if (wrap) {
         // The dot grid lives on the wrap so it always covers the viewport;
         // its phase and size follow the transform so it reads as world space.
+        wrap.style.transition = ease && `background-position ${ease}, background-size ${ease}`;
         wrap.style.backgroundPosition = `${next.x}px ${next.y}px`;
         const size = DOT_GRID_SIZE * next.scale;
         wrap.style.backgroundSize = `${size}px ${size}px`;
@@ -97,6 +121,7 @@ export function useBoardViewport(storageKey: string): BoardViewport {
       setScale(next.scale);
       localStorage.setItem(storageKey, JSON.stringify(next));
       changed();
+      if (!followed) for (const listener of ownMoveListeners.current) listener();
     },
     [storageKey, changed],
   );
@@ -123,6 +148,15 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     (dx: number, dy: number) => {
       const t = transformRef.current;
       apply({ ...t, x: t.x + dx, y: t.y + dy });
+    },
+    [apply],
+  );
+
+  const follow = useCallback(
+    (view: Rect) => {
+      const wrap = wrapRef.current;
+      if (wrap?.clientWidth && wrap.clientHeight)
+        apply(fitView(view, wrap.clientWidth, wrap.clientHeight), true);
     },
     [apply],
   );
@@ -287,6 +321,8 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     transform: () => transformRef.current,
     screen,
     subscribe,
+    onOwnMove,
+    follow,
     toBoard: (clientX, clientY) => {
       const rect = wrapRef.current?.getBoundingClientRect();
       return toBoard(transformRef.current, {

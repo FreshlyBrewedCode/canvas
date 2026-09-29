@@ -49,7 +49,9 @@ canvas
   frame they last opened or changed until their turn ends. A file frame's tree panel follows too
   (finding 18, `hooks/use-follow-tree.ts`)
 - where everyone is (finding 19): each peer's view (the board rectangle it shows) is presence,
-  throttled; people out of view get a marker on the viewport's edge (`edgeMarker`, `viewport.ts`)
+  throttled; people out of view get a marker on the viewport's edge (`edgeMarker`, `viewport.ts`).
+  Clicking an avatar follows that view until our own pan or zoom (`hooks/use-follow-view.ts`) —
+  not frame focus's following, which is an occupant's scroll
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied

@@ -132,3 +132,13 @@ export function edgeMarker(
   );
   return { x: cx + dx * s, y: cy + dy * s, angle: Math.atan2(dx, -dy) };
 }
+
+/** Show a view someone else has (board coordinates): all of it, centred, at any scale. */
+export function fitView(view: Rect, width: number, height: number): Transform {
+  const scale = clamp(Math.min(width / view.w, height / view.h), MIN_SCALE, MAX_SCALE);
+  return {
+    scale,
+    x: width / 2 - (view.x + view.w / 2) * scale,
+    y: height / 2 - (view.y + view.h / 2) * scale,
+  };
+}

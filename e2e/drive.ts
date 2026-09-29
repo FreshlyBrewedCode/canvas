@@ -2572,5 +2572,94 @@ if (step === "presence") {
   await host.locator('[data-peer-marker="Ada"]').click();
   await settle();
   check((await marker(host, "Ada")) === null, "Karl clicks the marker: Ada is in view, no marker");
+
+  // Following Ada's view, as in Miro.
+  type View = { x: number; y: number; w: number; h: number };
+  const view = (page: Page) =>
+    page.evaluate(() => (window as any).room.awareness.getLocalState().view as View);
+  const centre = (v: View) => ({ x: Math.round(v.x + v.w / 2), y: Math.round(v.y + v.h / 2) });
+  const same = (a: View, b: View) =>
+    Math.abs(centre(a).x - centre(b).x) <= 2 &&
+    Math.abs(centre(a).y - centre(b).y) <= 2 &&
+    Math.abs(a.w - b.w) <= 2;
+  /** Her view fits in his, centred (screens may differ in size). */
+  const fits = (karl: View, ada: View) =>
+    Math.abs(centre(karl).x - centre(ada).x) <= 2 &&
+    Math.abs(centre(karl).y - centre(ada).y) <= 2 &&
+    karl.w >= ada.w - 1 &&
+    karl.h >= ada.h - 1;
+  const following = () =>
+    host.evaluate(() => document.querySelector("[data-following-view]")?.getAttribute("data-following-view") ?? null);
+  const avatar = host.locator('header [data-avatar="Ada"]');
+  const board = guest.locator("[data-board]");
+
+  await host.mouse.move(700, 450);
+  for (let i = 0; i < 5; i++) await host.mouse.wheel(0, -500);
+  await avatar.click();
+  await settle();
+  check((await following()) === "Ada", "Karl clicks Ada's avatar: his board is framed, following Ada");
+  check(same(await view(host), await view(guest)), "he sees what she sees");
+
+  // Ada pans and zooms: Karl's view goes with hers.
+  await board.hover({ position: { x: 700, y: 450 } });
+  for (let i = 0; i < 8; i++) await guest.mouse.wheel(250, 150);
+  await guest.getByTitle("Zoom in").click();
+  await guest.getByTitle("Zoom in").click();
+  await settle();
+  let [karl, ada] = [await view(host), await view(guest)];
+  check(same(karl, ada), `Ada pans and zooms, Karl goes with her: ${JSON.stringify({ karl, ada })}`);
+  await shot(host, "132-presence-following");
+  await shot(guest, "132-presence-followed");
+
+  // A smaller screen: Karl still sees all of what she sees, around the same middle.
+  await guest.setViewportSize({ width: 900, height: 700 });
+  await guest.mouse.move(450, 300);
+  await guest.mouse.wheel(10, 0);
+  await settle();
+  [karl, ada] = [await view(host), await view(guest)];
+  check(
+    fits(karl, ada),
+    `on a smaller screen, her view fits in his, centred: ${JSON.stringify({ karl, ada })}`,
+  );
+
+  // Karl pans himself: he lets go, and stays where he is.
+  await host.mouse.move(700, 450);
+  await host.mouse.wheel(0, 300);
+  await settle();
+  check((await following()) === null, "Karl pans: no longer following");
+  karl = await view(host);
+  for (let i = 0; i < 4; i++) await guest.mouse.wheel(300, 0);
+  await settle();
+  check(same(karl, await view(host)), "Ada pans again: Karl's view stays");
+  await shot(host, "133-presence-let-go");
+
+  // Again, then Stop; and clicking the avatar of whom he follows lets go too.
+  await avatar.click();
+  await settle();
+  check(fits(await view(host), await view(guest)) && (await following()) === "Ada", "he follows again");
+  await host.getByRole("button", { name: "Stop", exact: true }).click();
+  check((await following()) === null, "Stop lets go");
+  await avatar.click();
+  await avatar.click();
+  check((await following()) === null, "the avatar again lets go");
+
+  // Ada zooms with the buttons while Karl follows; then Karl zooms: he lets go.
+  await avatar.click();
+  await host.getByTitle("Zoom out").click();
+  check((await following()) === null, "Karl's zoom buttons let go");
+  await avatar.click();
+  await settle();
+  await host.mouse.move(700, 450);
+  await host.mouse.down({ button: "middle" });
+  await host.mouse.move(800, 500, { steps: 5 });
+  await host.mouse.up({ button: "middle" });
+  check((await following()) === null, "a middle-button drag lets go");
+
+  // Ada leaves: Karl stops following her.
+  await avatar.click();
+  await settle();
+  await guest.close();
+  await host.locator('header [data-avatar="Ada"]').waitFor({ state: "detached", timeout: 30000 });
+  check((await following()) === null, "Ada leaves: Karl no longer follows");
 }
 await browser.close();
