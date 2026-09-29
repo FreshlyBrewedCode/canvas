@@ -59,6 +59,12 @@ agent decides which settings exist, and they can depend on the model.
 
 Settings are kept with the session and applied again when the agent restarts.
 
+Beside it, the **mode** chip shows the agent's mode: Claude Code's Manual, Accept edits, Plan, Auto
+(on models that have it), opencode's build and plan. It is quiet in the agent's default mode and
+coloured in any other, so plan mode is hard to forget. A click, or **Shift+Tab** in the composer,
+goes to the next mode. Modes that skip permissions (Bypass permissions) are only picked in the
+settings.
+
 ![Agent settings for Claude Code: model and mode](./screenshots/agent-settings.webp)
 
 ## Permissions

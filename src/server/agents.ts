@@ -189,12 +189,18 @@ export class AgentManager {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no session ${sessionId}`);
     const live = await this.connect(session);
-    const response = await live.acp.setSessionConfigOption({
-      sessionId: live.sessionId,
-      configId,
-      ...(typeof value === "boolean" ? { type: "boolean" as const, value } : { value }),
-    });
-    this.setOptions(session, response.configOptions);
+    try {
+      const response = await live.acp.setSessionConfigOption({
+        sessionId: live.sessionId,
+        configId,
+        ...(typeof value === "boolean" ? { type: "boolean" as const, value } : { value }),
+      });
+      // Sent even unchanged: it is the answer the browser waits for.
+      this.setOptions(session, response.configOptions, true);
+    } catch (cause) {
+      if (session.options) this.options.onOptions(session.meta.id, session.options);
+      throw cause;
+    }
     this.touch(session);
   }
 
@@ -462,9 +468,13 @@ export class AgentManager {
     };
   }
 
-  private setOptions(session: Session, raw: ReadonlyArray<SessionConfigOption>): void {
+  private setOptions(
+    session: Session,
+    raw: ReadonlyArray<SessionConfigOption>,
+    always = false,
+  ): void {
     const options = fromAcp(raw);
-    if (JSON.stringify(options) !== JSON.stringify(session.options)) {
+    if (always || JSON.stringify(options) !== JSON.stringify(session.options)) {
       session.options = options;
       this.options.onOptions(session.meta.id, options);
     }
