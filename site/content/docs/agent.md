@@ -35,6 +35,11 @@ Who can send:
 
 **Stop** ends the agent's turn.
 
+In an empty draft, **↑** brings back your last prompt to this agent, and more ↑ older ones; **↓**
+goes back. It only goes through your own prompts, and never over a draft someone is writing. A
+prompt in the thread has a button that puts it into the draft again, to change and send; with text
+in the draft, it goes after it.
+
 ## Thread
 
 The thread shows each prompt with its author, the agent's replies, and its tool calls, which
