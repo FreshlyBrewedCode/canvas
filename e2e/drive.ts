@@ -3173,4 +3173,55 @@ if (step === "copy") {
   for (let i = 0; i < (await buttons.count()); i++) hidden &&= !(await shown(buttons.nth(i)));
   check(hidden, "no buttons without the hover");
 }
+if (step === "usage") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, process.env.AGENT ?? "opencode");
+  check((await frame.locator("[data-usage-ring]").count()) === 0, "no usage yet: no ring");
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type("Count slowly from 1 to 5 in words, one per line.");
+  await host.keyboard.press("Control+Enter");
+  const running = frame.locator("[data-turn-footer=running]");
+  await running.waitFor({ timeout: 30_000 });
+  const first = await running.innerText();
+  await settle(2200);
+  const later = await running.innerText().catch(() => "(ended)");
+  check(first.startsWith("working"), `while it runs, the time goes: ${first} → ${later}`);
+  await approveUntilIdle(host, guest);
+  const done = frame.locator("[data-turn-footer=done]");
+  await done.waitFor({ timeout: 10_000 });
+  const footer = await done.innerText();
+  check(/^\d+s · [\d.]+k? tokens$/.test(footer), `once done: time and tokens: ${footer}`);
+  const ring = frame.locator("[data-usage-ring]");
+  await ring.waitFor({ timeout: 10_000 });
+  const share = await ring.getAttribute("data-usage-ring");
+  console.log(`     context: ${share === "" ? "size unknown (gauge)" : `${share}% (ring)`}`);
+  check(true, "a usage button left of Send");
+  await ring.hover();
+  const popover = host.locator("[data-usage-popover]");
+  await popover.waitFor({ timeout: 5000 });
+  check((await popover.innerText()).includes("tokens"), "hovering it shows the session's usage");
+  console.log(`     ${(await popover.innerText()).replace(/\n/g, " | ")}`);
+  await settle(400);
+  await shot(host, "190-usage-popover");
+  await host.mouse.move(700, 120);
+  await settle();
+  check((await popover.count()) === 0, "…until the mouse leaves");
+  await ring.click();
+  await host.mouse.move(700, 120);
+  await settle();
+  check((await popover.count()) === 1, "a click keeps it open");
+  await ring.click();
+  await settle();
+  check((await popover.count()) === 0, "another closes it");
+  const guestFooter = guest.locator(`[data-frame="${await frame.getAttribute("data-frame")}"] [data-turn-footer=done]`);
+  check((await guestFooter.innerText()) === footer, "the guest sees the same footer");
+}
 await browser.close();

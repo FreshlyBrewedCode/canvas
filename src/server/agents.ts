@@ -289,6 +289,7 @@ export class AgentManager {
     this.append(session, {
       kind: "turn-end",
       turnId,
+      at: Date.now(),
       ...(error !== undefined && !cancelled && { error }),
       ...(cancelled && { cancelled: true }),
     });
@@ -433,6 +434,16 @@ export class AgentManager {
   private onUpdate(session: Session, update: SessionUpdate): void {
     if (update.sessionUpdate === "config_option_update")
       return this.setOptions(session, update.configOptions);
+    if (update.sessionUpdate === "usage_update") {
+      const { used, size, cost } = update;
+      const usage = {
+        used,
+        size,
+        ...(cost && { cost: { amount: cost.amount, currency: cost.currency } }),
+      };
+      session.meta = { ...session.meta, usage };
+      return this.options.onMeta(session.meta);
+    }
     session.turn?.queue.push({ kind: "update", update: update as AcpSessionUpdate });
     const plan = todoPlan(update);
     if (plan) session.turn?.queue.push({ kind: "update", update: plan as AcpSessionUpdate });

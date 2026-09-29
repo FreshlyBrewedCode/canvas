@@ -41,7 +41,14 @@ The thread shows each prompt with its author, the agent's replies, and its tool 
 expand. Several tool calls in a row fold into one line (**5 tool calls**, with the last one); a
 click unfolds them. Scrolled up, a **Latest** button takes you back to the end; it says **New
 activity** when more arrived meanwhile. Hovering a prompt, a reply, a code block or a tool call's
-output shows a copy button; a reply copies as markdown. The status in the header is **idle**, **running**, or **waiting** (for a permission). Board
+output shows a copy button; a reply copies as markdown.
+
+Each prompt ends with how long the agent worked on it and the tokens it took (hover for input,
+cached and output). While it runs, the time counts up.
+
+Left of **Send**, a ring shows how full the agent's context is, when the agent says (Claude Code and
+opencode do; a gauge stands in otherwise). Hovering or clicking it shows the session: context used,
+prompts, time working, tokens, and cost when the agent knows it. A click keeps it open. The status in the header is **idle**, **running**, or **waiting** (for a permission). Board
 tool calls show as `canvas · open_frame` and the like.
 
 ![A thread: the prompt, the agent's tool calls, and its reply](./screenshots/agent-thread.webp)
