@@ -13,7 +13,7 @@
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
-import type { Patch } from "../../shared/layout";
+import type { Box, Patch } from "../../shared/layout";
 import { clearComments } from "./comments";
 import { clearDrawing } from "./drawing";
 
@@ -142,6 +142,31 @@ export type NewFrame = Frame extends infer F
     ? Omit<F, "id" | "z">
     : never
   : never;
+
+/** A new frame of a type in `box`, named after how many of its type the board has. */
+export function newFrame(
+  type: FrameType,
+  box: Box,
+  frames: ReadonlyArray<Frame>,
+  extra: Record<string, string> = {},
+): NewFrame {
+  const count = frames.filter((f) => f.type === type).length + 1;
+  const base = { x: box.x, y: box.y, w: box.w, h: box.h };
+  switch (type) {
+    case "agent":
+      // The frame asks which agent to run.
+      return { ...base, type, title: `agent-${count}`, agent: "" };
+    case "file":
+      // The frame opens with its tree, to pick a file.
+      return { ...base, type, title: `files-${count}`, path: "" };
+    case "browser":
+      return { ...base, type, title: `preview-${count}`, url: extra.url ?? "https://example.com" };
+    case "drawing":
+      return { ...base, type, title: `drawing-${count}` };
+    case "terminal":
+      return { ...base, type, title: `shell-${count}` };
+  }
+}
 
 /** Add a frame; `patches` move others out of its way in the same change. */
 export function addFrame(doc: Y.Doc, frame: NewFrame, patches: ReadonlyArray<Patch> = []): string {

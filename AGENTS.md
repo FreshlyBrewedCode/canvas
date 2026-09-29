@@ -52,6 +52,10 @@ canvas
   throttled; people out of view get a marker on the viewport's edge (`edgeMarker`, `viewport.ts`).
   Clicking an avatar follows that view until our own pan or zoom (`hooks/use-follow-view.ts`) —
   not frame focus's following, which is an occupant's scroll
+- full screen (finding 20): our own view of one row at 100%, its frames as tall as the screen
+  (terminals excepted: the host's sizes the PTY), the rest hidden; nothing of it in the doc or
+  presence (`hooks/use-fullscreen.ts`, geometry in `web/lib/fullscreen.ts`). It lasts while the
+  transform is one (`stillFullscreen`), so any zoom or move off the row ends it
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied
@@ -78,7 +82,7 @@ canvas
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
     layout|arrange|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
-    takeover|version|links|drawing|drawing-agent|connection|relay|pan`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
+    takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
     `comments-agent` the repo of finding 13, `links` the one of finding 14, `relay` a `canvas relay`

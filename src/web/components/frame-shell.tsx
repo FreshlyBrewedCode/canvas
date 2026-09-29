@@ -1,7 +1,18 @@
-import { Bot, FileCode, Globe, Shapes, SquareTerminal, X } from "lucide-react";
+import {
+  Bot,
+  FileCode,
+  Globe,
+  Maximize,
+  Minimize,
+  Shapes,
+  SquareTerminal,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { LinkScope } from "@/components/board-link";
+import { useFullscreenFrame } from "@/hooks/use-fullscreen";
 import {
   allFrames,
   applyPatches,
@@ -9,6 +20,7 @@ import {
   removeFrame,
   updateFrame,
   type Frame,
+  type FrameType,
 } from "@/lib/board";
 import { useFrameFocus, useRoom } from "@/lib/room-context";
 import { setSnapPreview, type SnapPreview } from "@/lib/snap-preview";
@@ -25,13 +37,19 @@ import {
   type Rect,
 } from "../../shared/layout";
 
-const ICONS = {
-  agent: Bot,
-  file: FileCode,
-  browser: Globe,
-  terminal: SquareTerminal,
-  drawing: Shapes,
-};
+/** The kinds of frame, as the toolbar offers them. */
+export const FRAME_KINDS = [
+  { type: "agent", label: "Agent", Icon: Bot },
+  { type: "file", label: "Files", Icon: FileCode },
+  { type: "browser", label: "Browser", Icon: Globe },
+  { type: "terminal", label: "Terminal", Icon: SquareTerminal },
+  { type: "drawing", label: "Drawing", Icon: Shapes },
+] as const satisfies ReadonlyArray<{ type: FrameType; label: string; Icon: LucideIcon }>;
+
+const ICONS = Object.fromEntries(FRAME_KINDS.map((k) => [k.type, k.Icon])) as Record<
+  FrameType,
+  LucideIcon
+>;
 
 /**
  * The chrome every frame shares: drag by the header, resize from the corner.
@@ -44,6 +62,9 @@ const ICONS = {
  *
  * Pressing on a frame claims it (`focus.ts`): its occupant shows in the
  * header, and the frame is ringed in their colour while we follow them.
+ *
+ * Full screen (`use-fullscreen.ts`) shows the frames of a row as tall as our
+ * screen, hides the rest, and leaves them where they are: no dragging then.
  */
 export function FrameShell({
   frame,
@@ -64,6 +85,8 @@ export function FrameShell({
   const ring = focus.occupant && (focus.mine || focus.following) ? focus.occupant.color : null;
   // Links in the frame open new frames beside it (ADR 0007).
   const scope = useMemo(() => ({ frame: frame.id }), [frame.id]);
+  const fullscreen = useFullscreenFrame(frame);
+  const arranging = !readOnly && fullscreen.mode === "off";
 
   return (
     <section
@@ -71,12 +94,14 @@ export function FrameShell({
       data-frame-type={frame.type}
       data-occupant={focus.occupant?.name}
       data-following={focus.following || undefined}
-      className="bg-card absolute flex flex-col border shadow-sm"
+      data-fullscreen={fullscreen.mode === "off" ? undefined : fullscreen.mode}
+      aria-hidden={fullscreen.mode === "hidden" || undefined}
+      className="bg-card absolute flex flex-col border shadow-sm data-[fullscreen=hidden]:pointer-events-none data-[fullscreen=hidden]:invisible"
       style={{
         left: frame.x,
-        top: frame.y,
+        top: fullscreen.box.y,
         width: frame.w,
-        height: frame.h,
+        height: fullscreen.box.h,
         zIndex: frame.z,
         ...(ring && { borderColor: ring, boxShadow: `0 0 0 1px ${ring}, 0 0 18px -6px ${ring}` }),
       }}
@@ -87,8 +112,11 @@ export function FrameShell({
     >
       <Drag
         frame={frame}
-        disabled={readOnly}
-        className="bg-muted/40 flex h-9 shrink-0 cursor-grab items-center gap-2 border-b px-2.5 active:cursor-grabbing"
+        disabled={!arranging}
+        className={cn(
+          "bg-muted/40 flex h-9 shrink-0 items-center gap-2 border-b px-2.5",
+          arranging && "cursor-grab active:cursor-grabbing",
+        )}
         mode="move"
       >
         <Icon className="text-muted-foreground size-3.5 shrink-0" />
@@ -110,6 +138,20 @@ export function FrameShell({
         {status}
         {focus.occupant && <OccupantBadge frameId={frame.id} focus={focus} />}
         {actions}
+        <button
+          type="button"
+          data-fullscreen-toggle=""
+          title={fullscreen.mode === "in" ? "Leave full screen (Esc)" : "Full screen (F)"}
+          className="text-muted-foreground hover:text-foreground rounded-md p-1"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={fullscreen.toggle}
+        >
+          {fullscreen.mode === "in" ? (
+            <Minimize className="size-3.5" />
+          ) : (
+            <Maximize className="size-3.5" />
+          )}
+        </button>
         {!readOnly && (
           <button
             type="button"
@@ -125,7 +167,7 @@ export function FrameShell({
       <LinkScope value={scope}>
         <div className="relative min-h-0 flex-1">{children}</div>
       </LinkScope>
-      {!readOnly && (
+      {arranging && (
         <Drag
           frame={frame}
           mode="resize"

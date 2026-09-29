@@ -23,9 +23,11 @@ const DOT_GRID_SIZE = 22;
 const DOT_GRID_MIN_SCALE = 0.4;
 /** How long following eases between someone's views; about how often they send them. */
 const FOLLOW_EASE_MS = 100;
+/** How a glide (full screen's snap from frame to frame) eases. */
+const GLIDE_EASE = "250ms cubic-bezier(0.2, 0, 0, 1)";
 
 /** Whether Space typed here types a space: then it isn't the board's. */
-const typesText = (target: Element) =>
+export const typesText = (target: Element) =>
   (target as HTMLElement).isContentEditable || !!target.closest("input, textarea, select");
 
 export interface BoardViewport {
@@ -41,6 +43,10 @@ export interface BoardViewport {
   onOwnMove: (listener: () => void) => () => void;
   /** Show someone else's view, easing over from where we are. */
   follow: (view: Rect) => void;
+  /** Go to a transform, easing over from where we are: our own move. */
+  glide: (to: Transform) => void;
+  /** Whether panning (dragging, wheel, trackpad) only goes left and right. */
+  lockVertical: (locked: boolean) => void;
   /** Viewport client coordinates → board coordinates. */
   toBoard: (clientX: number, clientY: number) => Point;
   /** One press of the zoom buttons: in (1) or out (-1). */
@@ -102,10 +108,12 @@ export function useBoardViewport(storageKey: string): BoardViewport {
   }, []);
 
   const apply = useCallback(
-    (next: Transform, followed = false) => {
+    (next: Transform, how: "own" | "glide" | "followed" = "own") => {
       transformRef.current = next;
-      // Someone else's view comes a few times a second: ease between them. Our own moves are instant.
-      const ease = followed ? `${FOLLOW_EASE_MS}ms linear` : "";
+      const followed = how === "followed";
+      // Someone else's view comes a few times a second: ease between them. Our own moves are
+      // instant, but for glides.
+      const ease = followed ? `${FOLLOW_EASE_MS}ms linear` : how === "glide" ? GLIDE_EASE : "";
       if (canvasRef.current) {
         canvasRef.current.style.transition = ease && `transform ${ease}`;
         canvasRef.current.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`;
@@ -147,10 +155,11 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     [apply],
   );
 
+  const verticalLocked = useRef(false);
   const pan = useCallback(
     (dx: number, dy: number) => {
       const t = transformRef.current;
-      apply({ ...t, x: t.x + dx, y: t.y + dy });
+      apply({ ...t, x: t.x + dx, y: verticalLocked.current ? t.y : t.y + dy });
     },
     [apply],
   );
@@ -159,10 +168,16 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     (view: Rect) => {
       const wrap = wrapRef.current;
       if (wrap?.clientWidth && wrap.clientHeight)
-        apply(fitView(view, wrap.clientWidth, wrap.clientHeight), true);
+        apply(fitView(view, wrap.clientWidth, wrap.clientHeight), "followed");
     },
     [apply],
   );
+
+  const transform = useCallback(() => transformRef.current, []);
+  const glide = useCallback((to: Transform) => apply(to, "glide"), [apply]);
+  const lockVertical = useCallback((locked: boolean) => {
+    verticalLocked.current = locked;
+  }, []);
 
   // --- wheel: ctrl/⌘ (and pinch, which browsers report as ctrl+wheel) zooms;
   // anything else pans — unless it is over a scrollable frame body.
@@ -180,6 +195,9 @@ export function useBoardViewport(storageKey: string): BoardViewport {
           event.clientX - rect.left,
           event.clientY - rect.top,
         );
+      } else if (verticalLocked.current) {
+        // A mouse wheel only has up and down: make it along.
+        pan(-(event.deltaX || event.deltaY), 0);
       } else {
         pan(-event.deltaX, -event.deltaY);
       }
@@ -321,11 +339,13 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     wrapRef,
     canvasRef,
     scale,
-    transform: () => transformRef.current,
+    transform,
     screen,
     subscribe,
     onOwnMove,
     follow,
+    glide,
+    lockVertical,
     toBoard: (clientX, clientY) => {
       const rect = wrapRef.current?.getBoundingClientRect();
       return toBoard(transformRef.current, {
