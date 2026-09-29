@@ -20,6 +20,10 @@ export interface BoardViewport {
   canvasRef: React.RefObject<HTMLDivElement | null>;
   scale: number;
   transform: () => Transform;
+  /** The transform and the viewport's size; a new object whenever either changes. */
+  screen: () => Screen;
+  /** Called on every change of `screen()`. */
+  subscribe: (listener: () => void) => () => void;
   /** Viewport client coordinates → board coordinates. */
   toBoard: (clientX: number, clientY: number) => Point;
   zoomBy: (factor: number) => void;
@@ -28,6 +32,14 @@ export interface BoardViewport {
   /** Bring a rectangle into view: fit it, unless it is there to read already. */
   show: (rect: { x: number; y: number; w: number; h: number }) => void;
   centre: () => Point;
+  /** Pan so a board point is at the centre, keeping the zoom. */
+  centreOn: (point: Point) => void;
+}
+
+export interface Screen {
+  readonly transform: Transform;
+  readonly width: number;
+  readonly height: number;
 }
 
 /**
@@ -49,6 +61,22 @@ export function useBoardViewport(storageKey: string): BoardViewport {
   );
   const transformRef = useRef<Transform>(initial);
   const [scale, setScale] = useState(initial.scale);
+  const screenRef = useRef<Screen>({ transform: initial, width: 0, height: 0 });
+  const listeners = useRef(new Set<() => void>());
+  const changed = useCallback(() => {
+    const wrap = wrapRef.current;
+    screenRef.current = {
+      transform: transformRef.current,
+      width: wrap?.clientWidth ?? 0,
+      height: wrap?.clientHeight ?? 0,
+    };
+    for (const listener of listeners.current) listener();
+  }, []);
+  const subscribe = useCallback((listener: () => void) => {
+    listeners.current.add(listener);
+    return () => listeners.current.delete(listener);
+  }, []);
+  const screen = useCallback(() => screenRef.current, []);
 
   const apply = useCallback(
     (next: Transform) => {
@@ -68,11 +96,20 @@ export function useBoardViewport(storageKey: string): BoardViewport {
       }
       setScale(next.scale);
       localStorage.setItem(storageKey, JSON.stringify(next));
+      changed();
     },
-    [storageKey],
+    [storageKey, changed],
   );
 
   useEffect(() => apply(transformRef.current), [apply]);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const observer = new ResizeObserver(changed);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [changed]);
 
   const zoom = useCallback(
     (next: number, px: number, py: number) => {
@@ -248,6 +285,8 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     canvasRef,
     scale,
     transform: () => transformRef.current,
+    screen,
+    subscribe,
     toBoard: (clientX, clientY) => {
       const rect = wrapRef.current?.getBoundingClientRect();
       return toBoard(transformRef.current, {
@@ -277,6 +316,11 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     centre: () => {
       const { width, height } = size();
       return toBoard(transformRef.current, { x: width / 2, y: height / 2 });
+    },
+    centreOn: (point) => {
+      const { width, height } = size();
+      const t = transformRef.current;
+      apply({ ...t, x: width / 2 - point.x * t.scale, y: height / 2 - point.y * t.scale });
     },
   };
 }

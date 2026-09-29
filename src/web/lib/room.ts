@@ -78,6 +78,13 @@ export interface Presence {
     readonly host: boolean;
   };
   readonly pointer: { readonly x: number; readonly y: number } | null;
+  /** The part of the board our viewport shows (throttled: peers smooth between updates). */
+  readonly view: {
+    readonly x: number;
+    readonly y: number;
+    readonly w: number;
+    readonly h: number;
+  } | null;
   readonly selection: Selection | null;
   /** The frame we occupy, or would if nobody else did (see `focus.ts`). */
   readonly focus: Focus | null;
@@ -189,7 +196,7 @@ export class Room {
     readonly identity: Identity,
   ) {
     this.isHost = link.host !== null;
-    this.setPresence({ pointer: null, selection: null, focus: null });
+    this.setPresence({ pointer: null, view: null, selection: null, focus: null });
     this.doc.on("update", (update: Uint8Array, origin: unknown) =>
       this.onDocUpdate(update, origin),
     );

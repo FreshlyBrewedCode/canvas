@@ -82,3 +82,53 @@ export function inView(
     top + rect.h * t.scale <= height
   );
 }
+
+export interface Rect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** The part of the board a viewport shows, in board coordinates. */
+export const viewRect = (t: Transform, width: number, height: number): Rect => ({
+  x: -t.x / t.scale,
+  y: -t.y / t.scale,
+  w: width / t.scale,
+  h: height / t.scale,
+});
+
+/** Board coordinates → viewport pixels. */
+export const toViewport = (t: Transform, p: Point): Point => ({
+  x: p.x * t.scale + t.x,
+  y: p.y * t.scale + t.y,
+});
+
+/**
+ * Where to point at a viewport point that lies outside the viewport: on the
+ * line from the centre to it, where it meets the viewport inset by `inset`,
+ * and the direction it lies in (radians, 0 = up, clockwise). Null when the
+ * point is in view.
+ */
+export function edgeMarker(
+  p: Point,
+  width: number,
+  height: number,
+  inset: { top: number; right: number; bottom: number; left: number },
+): { x: number; y: number; angle: number } | null {
+  if (p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height) return null;
+  const cx = width / 2;
+  const cy = height / 2;
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  const along = (d: number, low: number, high: number, c: number) =>
+    d > 0 ? (high - c) / d : d < 0 ? (low - c) / d : Infinity;
+  const s = Math.max(
+    0,
+    Math.min(
+      along(dx, inset.left, width - inset.right, cx),
+      along(dy, inset.top, height - inset.bottom, cy),
+    ),
+  );
+  return { x: cx + dx * s, y: cy + dy * s, angle: Math.atan2(dx, -dy) };
+}

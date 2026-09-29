@@ -87,7 +87,7 @@ Running one: [Relay](/docs/relay).
   out by the host's browser.
 - **Anything that would run** on the host's machine is a request to the host's browser, checked
   against the guest access ([Guests](/docs/guests)).
-- **Presence** (pointers, selections, frame focus) goes peer to peer, since it carries no
+- **Presence** (pointers, views, selections, frame focus) goes peer to peer, since it carries no
   authority. On a canvas relay's transport it goes from every browser to every other through the
   relay.
 
