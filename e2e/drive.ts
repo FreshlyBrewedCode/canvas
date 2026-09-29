@@ -2963,4 +2963,43 @@ if (step === "needs-you") {
   check((await frame.getAttribute("data-attention")) === null, "…and the outline");
   await approveUntilIdle(host, guest);
 }
+if (step === "plan") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  // AGENT=claude for Claude Code's todo list; opencode has one too.
+  const frame = await newAgent(host, process.env.AGENT ?? "opencode");
+  const id = (await frame.getAttribute("data-frame"))!;
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type(
+    "Use your todo list tool to plan three steps: 'look around', 'think', 'answer'. " +
+      "Then mark them in progress and completed one by one, updating the todo list each time, " +
+      "and reply with just 'done'. Do nothing else.",
+  );
+  await host.keyboard.press("Control+Enter");
+  const plan = (page: Page) => page.locator(`[data-frame="${id}"] [data-plan]`);
+  await plan(host).waitFor({ timeout: 120_000 });
+  check(true, "the plan shows above the composer");
+  await shot(host, "150-plan-running");
+  await approveUntilIdle(host, guest);
+  const statuses = await plan(host)
+    .locator("[data-plan-status]")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-plan-status")));
+  check(statuses.length === 3, `three steps: ${statuses.join(", ")}`);
+  check(statuses.every((s) => s === "completed"), "all done once the turn ends");
+  check((await plan(guest).locator("[data-plan-status]").count()) === 3, "the guest sees it too");
+  await plan(guest).getByRole("button").first().click();
+  check(
+    (await plan(guest).locator("[data-plan-status]").count()) === 0 &&
+      (await plan(host).locator("[data-plan-status]").count()) === 3,
+    "folding it is the guest's own",
+  );
+  await shot(host, "151-plan-done");
+  await shot(guest, "151-plan-folded-guest");
+}
 await browser.close();

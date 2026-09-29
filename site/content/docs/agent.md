@@ -43,6 +43,12 @@ tool calls show as `canvas · open_frame` and the like.
 
 ![A thread: the prompt, the agent's tool calls, and its reply](./screenshots/agent-thread.webp)
 
+## Plan
+
+When the agent keeps a plan (Claude Code's and opencode's todo lists), it shows above the
+composer: each step with its state, and how many are done. It stays until the agent makes a new
+one. Folding it away is your own; others still see it.
+
 ## Agent settings
 
 The chip in the composer (for example **Haiku 4.5**) opens the agent's settings: model, reasoning

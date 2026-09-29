@@ -11,7 +11,13 @@ import {
   type ToolResultPart,
   type UIMessage,
 } from "@tanstack/ai/client";
-import type { AgentEvent, Author, PermissionOption } from "../../shared/protocol";
+import {
+  PLAN_EVENT,
+  type AgentEvent,
+  type Author,
+  type PermissionOption,
+  type PlanEntry,
+} from "../../shared/protocol";
 
 export type Row =
   | { readonly kind: "text"; readonly key: string; readonly content: string }
@@ -157,4 +163,16 @@ function contentToText(content: string | ReadonlyArray<ContentPart>): string {
   return content
     .map((part) => (part.type === "text" ? part.content : JSON.stringify(part)))
     .join("\n");
+}
+
+/** The agent's latest plan, whole: each plan update replaces the one before. */
+export function latestPlan(events: ReadonlyArray<AgentEvent>): ReadonlyArray<PlanEntry> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
+    if (event.kind !== "chunk") continue;
+    const chunk = event.chunk as { type?: string; name?: string; value?: { entries?: unknown } };
+    if (chunk.type === "CUSTOM" && chunk.name === PLAN_EVENT && Array.isArray(chunk.value?.entries))
+      return chunk.value.entries as PlanEntry[];
+  }
+  return null;
 }

@@ -1,6 +1,9 @@
 import {
   Bot,
+  Check,
   ChevronRight,
+  Circle,
+  CircleDot,
   CircleStop,
   LoaderCircle,
   SendHorizontal,
@@ -20,9 +23,10 @@ import { Button } from "@/components/ui/button";
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { promptText, updateFrame, type Frame } from "@/lib/board";
 import { useRoom, useRoomState, useSession } from "@/lib/room-context";
-import { foldThread, type Permission, type Row, type Turn } from "@/lib/thread";
+import { foldThread, latestPlan, type Permission, type Row, type Turn } from "@/lib/thread";
 import { cn } from "@/lib/utils";
 import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
+import type { PlanEntry } from "../../shared/protocol";
 
 type AgentFrameData = Extract<Frame, { type: "agent" }>;
 
@@ -150,6 +154,7 @@ function AgentThread({
           version={session?.version ?? 0}
           loading={room.hostOnline && (session ? session.loading : !room.isHost)}
         />
+        <Plan events={session?.events ?? []} version={session?.version ?? 0} />
         <div className="border-t">
           <CollabEditor
             text={text}
@@ -259,6 +264,67 @@ function Thread({
         <RemoteSelections frameId={frameId} version={version} />
       </div>
     </div>
+  );
+}
+
+/**
+ * The agent's latest plan, above the composer: what it is on, and what is
+ * left. It stays until the agent sends another. Folding it is our own.
+ */
+function Plan({ events, version }: { events: Parameters<typeof latestPlan>[0]; version: number }) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const plan = useMemo(() => latestPlan(events), [events, version]);
+  const [open, setOpen] = useState(true);
+  if (!plan?.length) return null;
+  const done = plan.filter((entry) => entry.status === "completed").length;
+  const current = plan.find((entry) => entry.status === "in_progress");
+  return (
+    <div data-plan="" className="border-t text-xs">
+      <button
+        type="button"
+        aria-expanded={open}
+        className="text-muted-foreground hover:text-foreground flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5"
+        onClick={() => setOpen(!open)}
+      >
+        <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
+        <span className="text-[11px] font-semibold tracking-wide uppercase">Plan</span>
+        <span className="font-mono text-[11px] tabular-nums">
+          {done}/{plan.length}
+        </span>
+        {!open && current && <span className="truncate">· {current.content}</span>}
+      </button>
+      {open && (
+        <ol className="max-h-32 space-y-0.5 overflow-y-auto px-2.5 pb-2">
+          {plan.map((entry, i) => (
+            <PlanItem key={i} entry={entry} />
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function PlanItem({ entry }: { entry: PlanEntry }) {
+  const Icon =
+    entry.status === "completed" ? Check : entry.status === "in_progress" ? CircleDot : Circle;
+  return (
+    <li
+      data-plan-status={entry.status}
+      className={cn(
+        "flex items-start gap-1.5 leading-snug",
+        entry.status === "completed" && "text-muted-foreground line-through",
+        entry.status === "in_progress" && "font-medium",
+      )}
+    >
+      <Icon
+        className={cn(
+          "mt-px size-3 shrink-0",
+          entry.status === "in_progress" && "text-status-pending",
+          entry.status === "completed" && "text-status-complete",
+        )}
+      />
+      <span className="min-w-0">{entry.content}</span>
+    </li>
   );
 }
 
