@@ -60,6 +60,11 @@ permission settings (by default, before touching files outside the project; your
 can change that). The request appears in the thread, under the tool call it gates. **Only the host
 can answer it**, whatever the guest access; guests see that it waits for the host.
 
+A waiting agent is hard to miss: its frame is outlined, and its header says **needs you** (for
+guests, **needs host**); a click scrolls to the request. The top bar counts the agents waiting, and
+each click on the count goes to the next one. An agent frame out of view that waits gets a marker
+on the edge of the screen, in its direction, like people do; a click goes there.
+
 | Host                                          | Guest                                           |
 | --------------------------------------------- | ----------------------------------------------- |
 | ![A permission request, with the host's answers](./screenshots/agent-host-permission.webp) | ![The same request for a guest: waiting for the host](./screenshots/agent-guest-permission.webp) |

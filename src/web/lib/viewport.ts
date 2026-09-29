@@ -86,6 +86,18 @@ export function fitRects(
   };
 }
 
+/** Does any of a rectangle (board coordinates) show in the viewport? */
+export function showsAny(
+  t: Transform,
+  rect: { x: number; y: number; w: number; h: number },
+  width: number,
+  height: number,
+): boolean {
+  const a = toViewport(t, rect);
+  const b = toViewport(t, { x: rect.x + rect.w, y: rect.y + rect.h });
+  return a.x < width && b.x > 0 && a.y < height && b.y > 0;
+}
+
 /** Is a rectangle (board coordinates) wholly in the viewport, at a scale it can be read at? */
 export function inView(
   t: Transform,

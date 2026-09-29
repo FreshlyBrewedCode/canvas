@@ -2899,4 +2899,68 @@ if (step === "fullscreen") {
   await settle();
   check(!(await on()), "removing the row's last frame ends it");
 }
+if (step === "needs-you") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  for (const page of [host, guest]) await page.locator("[data-hud]").getByTitle("Reset to 100%").click();
+
+  // Reading outside the project makes opencode ask (its default policy).
+  const frame = await newAgent(host, "opencode");
+  const id = (await frame.getAttribute("data-frame"))!;
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type("Read the file /etc/hostname with your read tool and tell me what it says.");
+  await host.keyboard.press("Control+Enter");
+  await host.locator(`[data-needs-host="${id}"]`).waitFor({ timeout: 120_000 });
+  check(true, "the host's header says the agent needs them");
+  check(
+    (await host.locator(`[data-needs-host="${id}"]`).innerText()).includes("needs you"),
+    "…in those words",
+  );
+  check((await frame.getAttribute("data-attention")) !== null, "the frame is outlined");
+  await guest.locator(`[data-needs-host="${id}"]`).waitFor({ timeout: 10_000 });
+  check(
+    (await guest.locator(`[data-needs-host="${id}"]`).innerText()).includes("needs host"),
+    "the guest's header says it needs the host",
+  );
+  check(
+    (await host.locator("[data-waiting-count]").innerText()).includes("1 agent needs you"),
+    "the host's top bar counts it",
+  );
+  check(
+    (await guest.locator("[data-waiting-count]").innerText()).includes("waits for the host"),
+    "the guest's top bar counts it, for the host",
+  );
+  check((await host.locator("[data-waiting-marker]").count()) === 0, "in view: no marker");
+  await shot(host, "140-needs-you-host");
+  await shot(guest, "140-needs-you-guest");
+
+  // Pan far away: a marker points back to it; a click goes there.
+  await host.mouse.move(60, 820);
+  for (let i = 0; i < 10; i++) await host.mouse.wheel(400, 0);
+  await settle();
+  check((await host.locator(`[data-waiting-marker="${id}"]`).count()) === 1, "out of view: a marker");
+  await shot(host, "141-needs-you-marker");
+  await host.locator(`[data-waiting-marker="${id}"]`).click();
+  await settle(900);
+  check((await host.locator("[data-waiting-marker]").count()) === 0, "a click on it goes there");
+  for (let i = 0; i < 10; i++) await host.mouse.wheel(0, 400);
+  await settle();
+  await host.locator("[data-waiting-count]").click();
+  await settle(900);
+  check((await host.locator("[data-waiting-marker]").count()) === 0, "so does the top bar's count");
+
+  // Answering it ends all of it.
+  await host.locator(`[data-frame="${id}"] [data-permission-kind=allow_once]`).first().click();
+  await host.locator(`[data-needs-host="${id}"]`).waitFor({ state: "detached", timeout: 30_000 });
+  check((await host.locator("[data-waiting-count]").count()) === 0, "answered: the count goes");
+  check((await frame.getAttribute("data-attention")) === null, "…and the outline");
+  await approveUntilIdle(host, guest);
+}
 await browser.close();

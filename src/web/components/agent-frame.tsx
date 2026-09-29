@@ -134,9 +134,14 @@ function AgentThread({
           <span className="bg-secondary text-secondary-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
             {agentLabel}
           </span>
-          <StatusDot status={room.hostOnline ? status : "offline"} />
+          {room.hostOnline && status === "waiting" ? (
+            <NeedsHost frameId={frame.id} host={room.isHost} />
+          ) : (
+            <StatusDot status={room.hostOnline ? status : "offline"} />
+          )}
         </>
       }
+      attention={room.hostOnline && status === "waiting"}
     >
       <div className="flex h-full flex-col">
         <Thread
@@ -380,12 +385,46 @@ function Disclosure({ label, children }: { label: React.ReactNode; children: Rea
   );
 }
 
+/**
+ * The header's status while the agent waits on a permission: only the host
+ * can answer it, so it says who is needed. A click scrolls to the ask.
+ */
+function NeedsHost({ frameId, host }: { frameId: string; host: boolean }) {
+  const show = (event: React.MouseEvent) => {
+    const frame = event.currentTarget.closest("[data-frame]");
+    const ask = frame?.querySelector<HTMLElement>("[data-permission-pending]");
+    const body = ask?.closest<HTMLElement>("[data-frame-body]");
+    if (!ask || !body) return;
+    // Not scrollIntoView: it would scroll the board, too.
+    const offset = ask.getBoundingClientRect().top - body.getBoundingClientRect().top;
+    const scale = body.getBoundingClientRect().height / body.clientHeight || 1;
+    body.scrollTop += offset / scale - body.clientHeight / 3;
+  };
+  return (
+    <button
+      type="button"
+      data-needs-host={frameId}
+      title={host ? "The agent asks for a permission: show it" : "The agent waits for the host"}
+      className="bg-status-ready/15 text-status-ready border-status-ready/45 flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={show}
+    >
+      <ShieldAlert className="size-3 animate-pulse" />
+      {host ? "needs you" : "needs host"}
+    </button>
+  );
+}
+
 function PermissionCard({ permission, frameId }: { permission: Permission; frameId: string }) {
   const room = useRoom();
   const resolved = permission.resolved;
   const chosen = permission.options.find((o) => o.optionId === resolved?.optionId);
   return (
-    <div className="border-status-ready/45 bg-status-ready/10 border p-2.5" data-status="ready">
+    <div
+      className="border-status-ready/45 bg-status-ready/10 border p-2.5"
+      data-status="ready"
+      data-permission-pending={resolved ? undefined : ""}
+    >
       <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
         <ShieldAlert className="text-status-ready size-3.5" /> Permission
       </div>

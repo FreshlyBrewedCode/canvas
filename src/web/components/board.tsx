@@ -1,9 +1,19 @@
-import { Check, Link2, Maximize2, Minus, MousePointer2, Plus, RotateCw, X } from "lucide-react";
+import {
+  Check,
+  Link2,
+  Maximize2,
+  Minus,
+  MousePointer2,
+  Plus,
+  RotateCw,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { AgentFrame } from "@/components/agent-frame";
 import { ConnectionIndicator } from "@/components/connection-dialog";
-import { GoProvider } from "@/components/board-link";
+import { GoProvider, useGo } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { DrawingFrame } from "@/components/drawing-frame";
 import { FileFrame } from "@/components/file-frame";
@@ -25,12 +35,18 @@ import {
 } from "@/lib/board";
 import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Presence } from "@/lib/room";
-import { useApprovals, usePeers, useRoom, useRoomState } from "@/lib/room-context";
+import {
+  useApprovals,
+  usePeers,
+  useRoom,
+  useRoomState,
+  useWaitingAgents,
+} from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
 import { useSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
-import { edgeMarker, toViewport, viewRect } from "@/lib/viewport";
+import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
@@ -194,6 +210,7 @@ export function Board() {
             </>
           )}
           <PeerMarkers viewport={viewport} />
+          <WaitingMarkers frames={frames} viewport={viewport} />
           {!readOnly && !row && <Toolbar onCreate={create} />}
           <Approvals />
           <HostElsewhere />
@@ -440,6 +457,92 @@ function PeerMarkers({
   );
 }
 
+/** Agent frames waiting for the host, when the host is there to answer. */
+function useWaiting(frames?: ReadonlyArray<Frame>) {
+  const room = useRoomState();
+  const waiting = useWaitingAgents();
+  const all = useFrames(room.doc);
+  if (!room.hostOnline) return [];
+  return (frames ?? all).filter((frame) => waiting.has(frame.id));
+}
+
+/**
+ * Agent frames out of view that wait on a permission, as markers on the edge
+ * in their direction (like people's). A click goes there.
+ */
+function WaitingMarkers({
+  frames,
+  viewport,
+}: {
+  frames: ReadonlyArray<Frame>;
+  viewport: Pick<BoardViewport, "screen" | "subscribe">;
+}) {
+  const room = useRoom();
+  const go = useGo();
+  const waiting = useWaiting(frames);
+  const { transform, width, height } = useSyncExternalStore(viewport.subscribe, viewport.screen);
+  if (!width || !height) return null;
+  return (
+    <>
+      {waiting.map((frame) => {
+        if (showsAny(transform, frame, width, height)) return null;
+        const centre = { x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 };
+        const marker = edgeMarker(toViewport(transform, centre), width, height, MARKER_INSET);
+        if (!marker) return null;
+        return (
+          <button
+            key={frame.id}
+            type="button"
+            data-hud=""
+            data-waiting-marker={frame.id}
+            title={`${frame.title} ${room.isHost ? "needs you" : "waits for the host"}: go there`}
+            onClick={() => go({ kind: "board", target: { frame: frame.id } })}
+            className="bg-status-ready border-card absolute top-0 left-0 grid size-7 place-items-center rounded-full border-2 shadow-md"
+            style={{
+              transform: `translate(${marker.x}px, ${marker.y}px) translate(-50%, -50%)`,
+              color: "oklch(0.2 0 0)",
+            }}
+          >
+            <span
+              className="pointer-events-none absolute inset-0"
+              style={{ transform: `rotate(${marker.angle}rad)` }}
+            >
+              <span className="border-b-status-ready absolute -top-[9px] left-1/2 -translate-x-1/2 border-x-[6px] border-b-[8px] border-x-transparent" />
+            </span>
+            <ShieldAlert className="size-3.5 animate-pulse" />
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/** How many agents wait on a permission; a click goes to the next one. */
+function WaitingCount() {
+  const room = useRoomState();
+  const go = useGo();
+  const waiting = useWaiting();
+  const next = useRef(0);
+  if (!waiting.length) return null;
+  return (
+    <button
+      type="button"
+      data-waiting-count={waiting.length}
+      title={waiting.length > 1 ? "Go to the next one" : "Go there"}
+      className="bg-status-ready/15 text-status-ready border-status-ready/45 flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium"
+      onClick={() => {
+        const frame = waiting[next.current++ % waiting.length]!;
+        go({ kind: "board", target: { frame: frame.id } });
+      }}
+    >
+      <ShieldAlert className="size-3.5" />
+      {waiting.length === 1
+        ? `1 agent ${room.isHost ? "needs you" : "waits for the host"}`
+        : `${waiting.length} agents ${room.isHost ? "need you" : "wait for the host"}`}
+    </button>
+  );
+}
+
 /** Host: another tab took over the board; this one waits until it is asked back. */
 function HostElsewhere() {
   const room = useRoomState();
@@ -614,6 +717,7 @@ function TopBar({
       </span>
       <ConnectionIndicator />
       <FullscreenBar fullscreen={fullscreen} viewport={viewport} />
+      <WaitingCount />
 
       <div className="ml-auto flex items-center gap-2">
         <div className="flex -space-x-1">

@@ -73,19 +73,26 @@ export function FrameShell({
   frame,
   readOnly,
   status,
+  attention = false,
   actions,
   children,
 }: {
   frame: Frame;
   readOnly: boolean;
   status?: React.ReactNode;
+  /** Something in it waits for the host: outlined in the status colour, over the occupant's ring. */
+  attention?: boolean;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const room = useRoom();
   const Icon = ICONS[frame.type];
   const focus = useFrameFocus(frame.id);
-  const ring = focus.occupant && (focus.mine || focus.following) ? focus.occupant.color : null;
+  const ring = attention
+    ? "var(--status-ready)"
+    : focus.occupant && (focus.mine || focus.following)
+      ? focus.occupant.color
+      : null;
   // Links in the frame open new frames beside it (ADR 0007).
   const scope = useMemo(() => ({ frame: frame.id }), [frame.id]);
   const fullscreen = useFullscreenFrame(frame);
@@ -102,6 +109,7 @@ export function FrameShell({
       data-frame-type={frame.type}
       data-occupant={focus.occupant?.name}
       data-following={focus.following || undefined}
+      data-attention={attention || undefined}
       data-fullscreen={fullscreen.mode === "off" ? undefined : fullscreen.mode}
       aria-hidden={fullscreen.mode === "hidden" || undefined}
       className="bg-card absolute flex flex-col border shadow-sm data-[fullscreen=hidden]:pointer-events-none data-[fullscreen=hidden]:invisible"

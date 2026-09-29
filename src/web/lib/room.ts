@@ -134,6 +134,8 @@ type Topic =
   | "peers"
   | "focus"
   | "tree"
+  /** Any session's status. */
+  | "sessions"
   | `session:${string}`
   | `term:${string}`
   | `file:${string}`;
@@ -253,6 +255,13 @@ export class Room {
 
   session(id: string) {
     return this.sessions.get(id);
+  }
+
+  /** Sessions blocked on a permission only the host can answer. */
+  waitingSessions(): string[] {
+    return [...this.sessions.values()]
+      .filter((s) => s.meta.status === "waiting")
+      .map((s) => s.meta.id);
   }
 
   terminal(id: string): string {
@@ -667,6 +676,7 @@ export class Room {
       case "sessions":
         this.sessions.clear();
         for (const head of message.sessions) this.putSession(head, null);
+        this.emit("sessions");
         return;
       case "session-history":
         return this.putHistory(message.sessionId, message.events);
@@ -698,6 +708,7 @@ export class Room {
       version: Date.now(),
     });
     this.emit(`session:${head.meta.id}`);
+    this.emit("sessions");
   }
 
   /** A session's history arrived: it comes before what arrived live meanwhile. */
@@ -724,6 +735,7 @@ export class Room {
         version: 0,
       });
     this.emit(`session:${meta.id}`);
+    this.emit("sessions");
   }
 
   private putOptions(sessionId: string, options: ReadonlyArray<AgentConfigOption>) {
@@ -774,6 +786,7 @@ export class Room {
           );
         this.sessions.clear();
         for (const snapshot of message.sessions) this.putSession(snapshot, snapshot.events);
+        this.emit("sessions");
         this.roomState = {
           hostPeerId: selfId,
           access: this.access,
