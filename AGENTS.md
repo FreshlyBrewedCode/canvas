@@ -55,7 +55,9 @@ canvas
 - full screen (finding 20): our own view of one row at 100%, its frames as tall as the screen
   (terminals excepted: the host's sizes the PTY), the rest hidden; nothing of it in the doc or
   presence (`hooks/use-fullscreen.ts`, geometry in `web/lib/fullscreen.ts`). It lasts while the
-  transform is one (`stillFullscreen`), so any zoom or move off the row ends it
+  transform is one (`stillFullscreen`), so any zoom or move off the row ends it; Esc and ✕
+  glide back to the view before. A closed frame hands over to the next of the row (`standIn`);
+  frames move along the row only (`rowTarget`), scrolling it at the board's sides (`edgeScroll`)
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied

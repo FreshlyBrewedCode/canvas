@@ -10,9 +10,13 @@ import { useSyncExternalStore } from "react";
 
 import type { Box } from "../../shared/layout";
 
-export type SnapPreview =
+export type SnapPreview = (
   | { readonly kind: "place"; readonly box: Box }
-  | { readonly kind: "insert"; readonly line: Box };
+  | { readonly kind: "insert"; readonly line: Box }
+) & {
+  /** Along a full-screen row: no Alt or Shift there. */
+  readonly along?: boolean;
+};
 
 let current: SnapPreview | null = null;
 const listeners = new Set<() => void>();
