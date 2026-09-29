@@ -3128,4 +3128,49 @@ if (step === "mode") {
   check(seen.at(-1) === first, `Shift+Tab goes round: ${seen.join(" → ")}`);
   check(!seen.some((m) => /bypass/i.test(m ?? "")), "…passing over bypassing permissions");
 }
+if (step === "copy") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, process.env.AGENT ?? "opencode");
+  const text =
+    "Reply with the sentence 'Here it is.' and then a ts code block containing exactly: const x = 1;";
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type(text);
+  await host.keyboard.press("Control+Enter");
+  await approveUntilIdle(host, guest);
+  const clipboard = () => host.evaluate(() => navigator.clipboard.readText());
+  // Hidden is transparent: Playwright counts that as visible.
+  const shown = async (button: ReturnType<Page["locator"]>) => {
+    await new Promise((r) => setTimeout(r, 250));
+    return button.evaluate((el) => getComputedStyle(el).opacity === "1");
+  };
+  const copy = async (within: ReturnType<Page["locator"]>) => {
+    await within.hover();
+    const button = within.locator("> [data-copy]");
+    check(await shown(button), "the copy button shows on hover");
+    await button.click();
+    return clipboard();
+  };
+
+  const code = frame.locator(".group\\/code").first();
+  check((await copy(code)).trim() === "const x = 1;", "a code block copies its code");
+  await shot(host, "180-copy-code");
+  const message = frame.locator(".group\\/copy:has(.prose-canvas)").last();
+  const markdown = await copy(message);
+  check(markdown.includes("```") && markdown.includes("Here it is."), "a message copies its markdown");
+  const prompt = frame.locator(".group\\/copy:has([data-sel-key$=':prompt'])").first();
+  check((await copy(prompt)) === text, "a prompt copies as it was sent");
+  await host.mouse.move(5, 5);
+  await new Promise((r) => setTimeout(r, 1600));
+  const buttons = frame.locator("[data-copy]");
+  let hidden = true;
+  for (let i = 0; i < (await buttons.count()); i++) hidden &&= !(await shown(buttons.nth(i)));
+  check(hidden, "no buttons without the hover");
+}
 await browser.close();
