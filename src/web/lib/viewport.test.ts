@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { edgeMarker, fitRects, inView, toBoard, toViewport, viewRect, zoomAbout } from "./viewport";
+import {
+  edgeMarker,
+  fitRects,
+  fitView,
+  inView,
+  toBoard,
+  toViewport,
+  viewRect,
+  zoomAbout,
+} from "./viewport";
 
 describe("viewport", () => {
   test("zooming keeps the point under the pointer fixed", () => {
@@ -28,6 +37,16 @@ describe("viewport", () => {
     expect(view).toEqual({ x: 100, y: -50, w: 500, h: 400 });
     expect(toViewport(t, { x: view.x, y: view.y })).toEqual({ x: 0, y: 0 });
     expect(toBoard(t, toViewport(t, { x: 7, y: 9 }))).toEqual({ x: 7, y: 9 });
+  });
+
+  test("following a view shows all of it, centred, magnified if need be", () => {
+    const view = { x: 100, y: -50, w: 500, h: 400 };
+    // The same screen: the same view.
+    expect(viewRect(fitView(view, 1000, 800), 1000, 800)).toEqual(view);
+    // A narrower one: all of its width, more above and below.
+    const t = fitView(view, 500, 800);
+    expect(t.scale).toBe(1);
+    expect(viewRect(t, 500, 800)).toEqual({ x: 100, y: -250, w: 500, h: 800 });
   });
 
   describe("edge markers", () => {

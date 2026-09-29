@@ -89,6 +89,12 @@ Agents use the same rules: they name frames and sides, never coordinates
 - Someone **out of view** shows as a marker on the edge of the board, in their colour, pointing
   their way: to their pointer, or, while it is off their board, to the middle of what they see.
   Click it to go there.
+- **Click someone's avatar** in the top bar to **follow their view**: your board shows what theirs
+  shows, framed in their colour, as they pan and zoom. On a screen of another size you see all of
+  theirs, and more around it. Panning or zooming yourself lets go, as do **Stop**, their avatar
+  again, or their leaving. Following a view is not following a frame's occupant
+  ([Focus](/docs/focus)), though the two go together: follow someone's view into the frame they
+  occupy and you scroll with them there too.
 - **Text selections** in agent threads and files frames show in the selecting person's colour.
 - The top bar lists everyone on the board. Your **name** is the field next to it; a new browser
   gets an animal name and a colour.

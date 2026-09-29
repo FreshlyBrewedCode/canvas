@@ -6,7 +6,8 @@ Date: 2026-09-29 · `e2e/drive.ts` `STEP=presence` against an empty board. Host 
 ## Question
 
 Pointers show where people are, but only inside your own viewport: once someone works elsewhere on
-the board, nothing says where. Can the board point at people out of view, as Miro does?
+the board, nothing says where. Can the board point at people out of view, and let you follow
+someone's view, as Miro does?
 
 ## What was built
 
@@ -27,6 +28,19 @@ the board, nothing says where. Can the board point at people out of view, as Mir
   `pointermove` only, so panning with the wheel left it where the mouse had been: a cursor, and
   now a marker, pointing at the wrong place. It is published again on every viewport change while
   the mouse is on the board.
+- **Following a view** (`hooks/use-follow-view.ts`): clicking an avatar in the top bar makes our
+  viewport show theirs — all of their rectangle, centred, at whatever scale fits (`fitView`), so
+  a smaller screen than theirs zooms out rather than cropping. The board gets a border in their
+  colour and a "Following Ada · Stop" pill.
+  - **Our own moves let go.** `useBoardViewport` tells its own moves (wheel, drag, pinch, zoom
+    buttons, fit, a link, a marker) from followed ones: only `follow` applies a transform without
+    telling `onOwnMove`. Scrolling inside a frame never moves the board, so it doesn't let go.
+  - **Followed moves ease.** Views arrive every 100 ms; the canvas and the dot grid get a 100 ms
+    linear transition for followed moves only, so ours stay instant.
+  - Their leaving, Stop, or their avatar again let go too.
+- **Two kinds of following.** Frame focus (finding 08) already calls scrolling with a frame's
+  occupant "following". The two are independent and stack: follow Ada's view into the frame she
+  occupies and you scroll with her too. The docs say "follow a view" for the new one.
 
 ## Evidence
 
@@ -38,3 +52,9 @@ the board, nothing says where. Can the board point at people out of view, as Mir
 - Ada pans 8000 px down: her marker moves to Karl's bottom edge.
 - Ada wheels 600 px down with her mouse on the board: her pointer moves 600 px on the board.
 - Karl clicks her marker: his view centres there, Ada is in view, the marker goes.
+- Karl clicks Ada's avatar: his board is framed in her colour and shows what hers shows. She pans
+  and zooms (wheel, then Zoom in twice): his view is hers, to the pixel.
+- Ada's window shrinks to 900×700: Karl's view is centred on hers and holds all of it.
+- Karl pans: he lets go, and stays put when Ada pans on. His zoom buttons and a middle-button drag
+  let go too, and so do Stop and her avatar again.
+- Ada closes her tab: Karl no longer follows anyone.
