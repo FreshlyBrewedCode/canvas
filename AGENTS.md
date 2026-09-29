@@ -96,8 +96,10 @@ canvas
     web app to `ui.canvas.frebreco.de/next`; `release.yml` by hand publishes `latest` and deploys
     to `ui.canvas.frebreco.de` (`ui.yml` pushes to the `canvas-ui` repo, whose Pages serve it). The
     published CLI opens its own channel's web app (`src/server/web-url.ts`). The package is staged
-    by `scripts/build-release.ts`; `site.yml` deploys `site/` to `canvas.frebreco.de`. One-time
-    setup: `scripts/bootstrap-release.sh`
+    by `scripts/build-release.ts`; `site.yml` deploys `site/` to `canvas.frebreco.de` after each
+    release run, in both channels: the last stable tag's `site/content/` at the root, `main`'s under
+    `/next` (`site/scripts/build-channels.sh`, `site/README.md`). One-time setup:
+    `scripts/bootstrap-release.sh`
 
 - docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence; `site/` the public
   landing page and user docs (Astro, own package, see `site/README.md`). A user-visible change

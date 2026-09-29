@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import { href } from "../../lib/channel";
 import { sortedDocs } from "../../lib/docs";
 
 /*
@@ -18,7 +19,7 @@ export const GET: APIRoute = async ({ site }) => {
 
   // Absolute URLs when `site` is configured — an agent that fetched this from
   // somewhere else can follow them without knowing the origin.
-  const url = (path: string) => (site ? new URL(path, site).href : path);
+  const url = (path: string) => (site ? new URL(href(path), site).href : href(path));
 
   const lines = docs.map((entry) => {
     const summary = entry.data.description ? `: ${entry.data.description}` : "";

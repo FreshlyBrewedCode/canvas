@@ -1,0 +1,111 @@
+---
+import Check from "@lucide/astro/icons/check";
+import ChevronDown from "@lucide/astro/icons/chevron-down";
+import { CHANNEL, CHANNELS, type Channel } from "../lib/channel";
+
+/*
+ * Which docs these are, and the way to the other channel's copy of this page.
+ * A `<details>` rather than a popover or a `<select>`: its options are links,
+ * and it opens without a script. The script only closes it from outside and
+ * checks the other channel has the page — a page added on `main` is not in
+ * the stable docs yet — landing on that channel's `/docs` when it hasn't.
+ */
+
+interface Props {
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const current = CHANNELS[CHANNEL];
+const version = (v?: string) => (v ? `v${v}` : undefined);
+
+const options = (Object.keys(CHANNELS) as Channel[]).map((channel) => ({
+  channel,
+  ...CHANNELS[channel],
+  href: `${CHANNELS[channel].base}/docs/${slug}`,
+  fallback: `${CHANNELS[channel].base}/docs`,
+}));
+---
+
+<details class="version-picker group relative" data-pagefind-ignore>
+  <summary
+    class="list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 h-8 pl-1.5 pr-2 rounded-md border border-border text-xs cursor-pointer select-none hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+    aria-label={`Docs version: ${current.label}${current.version ? ` ${version(current.version)}` : ""}`}
+  >
+    <span
+      class:list={[
+        "rounded px-1.5 py-0.5 font-sans text-[10px] font-semibold tracking-wide uppercase",
+        CHANNEL === "latest"
+          ? "bg-primary text-primary-foreground"
+          : "border border-dashed border-border-strong text-foreground",
+      ]}
+    >
+      {current.label}
+    </span>
+    {current.version && <span class="font-mono text-muted-foreground">{version(current.version)}</span>}
+    <ChevronDown class="size-3.5 text-muted-foreground transition-transform group-open:rotate-180" />
+  </summary>
+
+  {/* No wider than the 12rem rail: the rail scrolls, so it would clip it. */}
+  <ul
+    class="absolute left-0 top-full z-30 mt-1 w-48 rounded-md border border-border bg-background p-1 shadow-lg text-sm"
+  >
+    {
+      options.map((option) => (
+        <li>
+          <a
+            href={option.href}
+            data-fallback={option.fallback}
+            aria-current={option.channel === CHANNEL ? "true" : undefined}
+            class="flex items-start gap-2 rounded px-2 py-1.5 hover:bg-accent"
+          >
+            <Check
+              class:list={[
+                "size-3.5 mt-0.5 shrink-0",
+                option.channel === CHANNEL ? "text-foreground" : "invisible",
+              ]}
+            />
+            <span class="min-w-0">
+              <span class="flex items-baseline gap-2">
+                <span class="font-medium">{option.label}</span>
+                {option.version && (
+                  <span class="font-mono text-xs text-muted-foreground">{version(option.version)}</span>
+                )}
+              </span>
+              <span class="block font-mono text-[11px] text-muted-foreground">
+                {option.channel === "latest" ? "@frebreco/canvas" : "@frebreco/canvas@next"}
+              </span>
+            </span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</details>
+
+<script>
+  const pickers = [...document.querySelectorAll<HTMLDetailsElement>(".version-picker")];
+
+  // A `<details>` stays open until its summary is clicked again; close it from
+  // anywhere else, and on Esc.
+  document.addEventListener("click", (event) => {
+    for (const picker of pickers) {
+      if (!picker.contains(event.target as Node)) picker.open = false;
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") for (const picker of pickers) picker.open = false;
+  });
+
+  // Any link to the other channel carries its fallback, the next banner's too.
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("a[data-fallback]")) {
+    link.addEventListener("click", async (event) => {
+      if (link.getAttribute("aria-current")) return;
+      event.preventDefault();
+      const found = await fetch(link.href, { method: "HEAD" })
+        .then((response) => response.ok)
+        .catch(() => false);
+      location.href = found ? link.href : link.dataset.fallback!;
+    });
+  }
+</script>

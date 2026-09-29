@@ -3,11 +3,17 @@ name: site
 # `site/` is its own package (own `bun.lock`, own `node_modules`) — not a
 # workspace of the root — so this workflow only ever touches that directory,
 # never `bun install`/`bun run check` at the repo root.
+#
+# The docs come in two channels, like the package (site/src/lib/channel.ts):
+# the root documents the last stable release (its tag's `site/content/`), and
+# `/next` documents main. Both change with a release — a stable one moves the
+# root, any one the versions the picker shows — so this runs after every run
+# of release.yml, which every push to main starts, rather than on pushes.
 
 on:
-  push:
-    branches: [main]
-    paths: [site/**]
+  workflow_run:
+    workflows: [release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -25,7 +31,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Main, with the release tags: the stable content comes from one.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -34,8 +43,8 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: site
 
-      # astro build, then pagefind indexes dist/ — see site/package.json.
-      - run: bun run build
+      # Both channels into dist/, each with its own search index.
+      - run: bun run build:channels
         working-directory: site
 
       - uses: actions/configure-pages@v5

@@ -4,3 +4,6 @@ dist/
 
 # pagefind writes its index into dist/, but keep the cache out too
 node_modules/
+
+# the stable release's content/, extracted by scripts/build-channels.sh
+.stable/

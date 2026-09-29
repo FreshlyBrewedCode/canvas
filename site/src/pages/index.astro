@@ -16,6 +16,7 @@ import Shop from "../components/landing/Shop.astro";
 import Terminal from "../components/landing/Terminal.astro";
 import Thread from "../components/landing/Thread.astro";
 import Base from "../layouts/Base.astro";
+import { forChannel, href } from "../lib/channel";
 import "../styles/landing.css";
 
 /*
@@ -32,7 +33,7 @@ const KARL = "#f97316";
 const ADA = "#3b82f6";
 const LYNX = "#22c55e";
 
-const command = "bunx @frebreco/canvas serve";
+const command = forChannel("bunx @frebreco/canvas serve");
 
 const login = `
 import { createSession, destroySession, readSession } from "../auth/session";
@@ -195,7 +196,7 @@ shop on <span class="ok">http://localhost:5199</span>
               </span>
             </button>
             <a
-              href="/docs"
+              href={href("/docs")}
               class="inline-flex h-11 items-center rounded-md bg-primary px-5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               Read the docs
@@ -216,7 +217,7 @@ shop on <span class="ok">http://localhost:5199</span>
             sends it signs it with their name.
           </p>
           <p class="mt-4 text-sm">
-            <a class="underline underline-offset-3 hover:text-primary" href="/docs/agent">Agent frames and prompt drafts</a>
+            <a class="underline underline-offset-3 hover:text-primary" href={href("/docs/agent")}>Agent frames and prompt drafts</a>
           </p>
         </div>
         <div class="relative min-h-[16rem] lg:min-h-[24rem]">
@@ -261,7 +262,7 @@ shop on <span class="ok">http://localhost:5199</span>
             people use.
           </p>
           <p class="mt-4 text-sm">
-            <a class="underline underline-offset-3 hover:text-primary" href="/docs/board-tools">Board tools</a>
+            <a class="underline underline-offset-3 hover:text-primary" href={href("/docs/board-tools")}>Board tools</a>
           </p>
         </div>
         <div class="relative min-h-[22rem] lg:order-1 lg:min-h-[30rem]">
@@ -300,7 +301,7 @@ shop on <span class="ok">http://localhost:5199</span>
             line numbers. Pointers and text selections show in everyone's colour too.
           </p>
           <p class="mt-4 text-sm">
-            <a class="underline underline-offset-3 hover:text-primary" href="/docs/focus">Focus and following</a>
+            <a class="underline underline-offset-3 hover:text-primary" href={href("/docs/focus")}>Focus and following</a>
           </p>
         </div>
         <div class="relative min-h-[18rem] lg:min-h-[26rem]">
@@ -334,7 +335,7 @@ shop on <span class="ok">http://localhost:5199</span>
             the comments and it reads them all, and the lines they are about.
           </p>
           <p class="mt-4 text-sm">
-            <a class="underline underline-offset-3 hover:text-primary" href="/docs/files#comments">Comments</a>
+            <a class="underline underline-offset-3 hover:text-primary" href={href("/docs/files#comments")}>Comments</a>
           </p>
         </div>
         <div class="relative min-w-0 min-h-[22rem] lg:order-1 lg:min-h-[30rem]">
@@ -386,8 +387,8 @@ shop on <span class="ok">http://localhost:5199</span>
             keys or <code class="font-mono text-[0.9em]">.git</code>.
           </p>
           <p class="mt-4 space-x-4 text-sm">
-            <a class="underline underline-offset-3 hover:text-primary" href="/docs/guests">Guest access</a>
-            <a class="underline underline-offset-3 hover:text-primary" href="/docs/security">Security</a>
+            <a class="underline underline-offset-3 hover:text-primary" href={href("/docs/guests")}>Guest access</a>
+            <a class="underline underline-offset-3 hover:text-primary" href={href("/docs/security")}>Security</a>
           </p>
         </div>
         <div class="relative min-h-[12rem] lg:min-h-[24rem]">
@@ -486,7 +487,7 @@ canvas serving /home/karl/shop
               </span>
             </button>
             <a
-              href="/docs/quick-start"
+              href={href("/docs/quick-start")}
               class="inline-flex h-11 items-center rounded-md bg-primary px-5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               Quick start

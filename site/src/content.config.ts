@@ -6,10 +6,12 @@ import { SECTIONS } from "./lib/sections";
 /*
  * Markdown lives in `site/content/`, outside `src/`, so prose is editable
  * without touching the site's source tree. The glob loader's `base` is
- * resolved against the Astro project root (`site/`).
+ * resolved against the Astro project root (`site/`). `DOCS_CONTENT` points it
+ * elsewhere: the stable channel's build reads the content of the last stable
+ * release, extracted by `scripts/build-channels.sh`.
  */
 const docs = defineCollection({
-  loader: glob({ base: "./content/docs", pattern: "**/*.md" }),
+  loader: glob({ base: process.env.DOCS_CONTENT || "./content/docs", pattern: "**/*.md" }),
   schema: z.object({
     title: z.string(),
     description: z.string().optional(),
