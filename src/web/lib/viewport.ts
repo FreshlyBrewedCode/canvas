@@ -30,6 +30,28 @@ export function zoomAbout(t: Transform, nextScale: number, px: number, py: numbe
   };
 }
 
+/** How much one press of the zoom buttons zooms. */
+export const ZOOM_STEP = 1.1;
+/** Wheel pixels per e-fold of zoom; pinches send a few pixels per event. */
+const WHEEL_ZOOM_RATE = 0.004;
+/** A mouse wheel's notch sends 100 pixels or more: count it as this many, about a button press. */
+const WHEEL_ZOOM_MAX_DELTA = 24;
+
+/** The zoom factor for one ctrl/⌘ + wheel (or pinch) event. */
+export function wheelZoomFactor(deltaY: number, deltaMode = 0): number {
+  // Line and page modes (Firefox's mouse wheel) count lines: make them pixels first.
+  const pixels = deltaMode === 0 ? deltaY : deltaY * 16;
+  return Math.exp(-clamp(pixels, -WHEEL_ZOOM_MAX_DELTA, WHEEL_ZOOM_MAX_DELTA) * WHEEL_ZOOM_RATE);
+}
+
+/** One press of zoom in (1) or out (-1): a step, landing on 100% when passing it. */
+export function stepZoom(scale: number, direction: 1 | -1): number {
+  // Stepping away from 100% again: steps multiply, so it may be a hair off.
+  if (Math.abs(scale - 1) < 0.005) scale = 1;
+  const next = scale * ZOOM_STEP ** direction;
+  return (scale - 1) * (next - 1) < 0 ? 1 : next;
+}
+
 /** Viewport pixels → board coordinates. */
 export const toBoard = (t: Transform, p: Point): Point => ({
   x: (p.x - t.x) / t.scale,
