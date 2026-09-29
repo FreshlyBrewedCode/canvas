@@ -176,3 +176,36 @@ export function latestPlan(events: ReadonlyArray<AgentEvent>): ReadonlyArray<Pla
   }
   return null;
 }
+
+/** A run of the agent's steps between two things it says, shown folded as one. */
+export interface Steps {
+  readonly kind: "steps";
+  readonly key: string;
+  readonly rows: ReadonlyArray<Row>;
+  readonly tools: number;
+}
+
+/**
+ * A turn's rows, with each run of steps (tool calls and reasoning, between
+ * texts) that holds two tool calls or more folded into one. A call waiting on
+ * a permission is never folded away: it breaks the run.
+ */
+export function groupSteps(rows: ReadonlyArray<Row>): Array<Row | Steps> {
+  const out: Array<Row | Steps> = [];
+  let run: Row[] = [];
+  const flush = () => {
+    const tools = run.filter((row) => row.kind === "tool").length;
+    if (tools >= 2) out.push({ kind: "steps", key: `${run[0]!.key}:steps`, rows: run, tools });
+    else out.push(...run);
+    run = [];
+  };
+  for (const row of rows) {
+    const waiting = row.kind === "tool" && row.permissions.some((p) => !p.resolved);
+    if (row.kind === "text" || waiting) {
+      flush();
+      out.push(row);
+    } else run.push(row);
+  }
+  flush();
+  return out;
+}

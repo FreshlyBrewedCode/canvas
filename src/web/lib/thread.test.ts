@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import type { AgentEvent } from "../../shared/protocol";
-import { foldThread, latestPlan } from "./thread";
+import { foldThread, groupSteps, latestPlan, type Row } from "./thread";
 
 /** A real opencode session: one turn, three shell permissions approved by the host. */
 const corpus = readFileSync(
@@ -122,5 +122,42 @@ describe("latestPlan", () => {
   test("other custom chunks are not plans", () => {
     const other = { kind: "chunk", turnId: "t", chunk: { type: "CUSTOM", name: "x.session-id" } };
     expect(latestPlan([turn("t"), other as AgentEvent])).toBeNull();
+  });
+});
+
+describe("groupSteps", () => {
+  const text = (key: string): Row => ({ kind: "text", key, content: key });
+  const thinking = (key: string): Row => ({ kind: "thinking", key, content: key });
+  const tool = (key: string, waiting = false): Row => ({
+    kind: "tool",
+    key,
+    name: "read",
+    args: "{}",
+    state: "input-complete",
+    result: "ok",
+    isError: false,
+    permissions: waiting
+      ? [{ requestId: "r", title: "t", options: [], resolved: null }]
+      : [{ requestId: "r", title: "t", options: [], resolved: { optionId: "o", by: "Karl" } }],
+  });
+  const shape = (rows: Row[]) =>
+    groupSteps(rows).map((item) =>
+      item.kind === "steps" ? `[${item.rows.map((r) => r.key).join(" ")}]` : item.key,
+    );
+
+  test("runs of two tool calls or more fold, reasoning with them", () => {
+    expect(shape([text("a"), tool("1"), thinking("r"), tool("2"), tool("3"), text("b")])).toEqual([
+      "a",
+      "[1 r 2 3]",
+      "b",
+    ]);
+  });
+
+  test("a lone tool call stays as it is", () => {
+    expect(shape([thinking("r"), tool("1"), text("b"), tool("2")])).toEqual(["r", "1", "b", "2"]);
+  });
+
+  test("a call waiting on a permission breaks the run and shows", () => {
+    expect(shape([tool("1"), tool("2"), tool("3", true), tool("4")])).toEqual(["[1 2]", "3", "4"]);
   });
 });

@@ -3002,4 +3002,57 @@ if (step === "plan") {
   await shot(host, "151-plan-done");
   await shot(guest, "151-plan-folded-guest");
 }
+if (step === "thread-nav") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, process.env.AGENT ?? "opencode");
+  const id = (await frame.getAttribute("data-frame"))!;
+  const prompt = async (text: string) => {
+    await frame.locator(".cm-content").click();
+    await host.keyboard.type(text);
+    await host.keyboard.press("Control+Enter");
+    await approveUntilIdle(host, guest);
+  };
+  await prompt(
+    "Read README.md, then math.ts, with your read tool, in two separate calls. " +
+      "Then reply with a numbered list of 40 fruits, one per line.",
+  );
+  const steps = host.locator(`[data-frame="${id}"] [data-steps]`);
+  check((await steps.count()) >= 1, "tool calls in a row fold into one line");
+  check(/\d+ tool calls/.test(await steps.first().innerText()), `…saying how many: ${await steps.first().innerText()}`);
+  await shot(host, "160-steps-folded");
+  const body = host.locator(`[data-frame="${id}"] [data-frame-body]`);
+  const latest = host.locator(`[data-frame="${id}"] [data-to-latest]`);
+  check((await latest.count()) === 0, "at the end: no jump button");
+  // Playwright scrolls it into view to click it.
+  await steps.first().getByRole("button").first().click();
+  check((await steps.first().getByRole("button").count()) >= 3, "a click unfolds them");
+  await shot(host, "161-steps-open");
+
+  // Scrolled up: a way back; more arriving says so.
+  await body.evaluate((el) => (el.scrollTop = 0));
+  await settle();
+  check((await latest.getAttribute("data-to-latest")) === "yes", "scrolled up: a jump button");
+  await frame.locator(".cm-content").click();
+  await host.keyboard.type("Now a numbered list of 30 vegetables, one per line.");
+  await host.keyboard.press("Control+Enter");
+  await host.locator(`[data-frame="${id}"] [data-to-latest=news]`).waitFor({ timeout: 60_000 });
+  check(true, "news while scrolled up: it says so");
+  const top = await body.evaluate((el) => el.scrollTop);
+  check(top === 0, "…and we stay where we were");
+  await shot(host, "162-new-activity");
+  await approveUntilIdle(host, guest);
+  await latest.click();
+  await settle(1200);
+  const gap = await body.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  check(gap < 40, `a click goes to the end (${gap}px left)`);
+  check((await latest.count()) === 0, "…and the button goes");
+}
 await browser.close();

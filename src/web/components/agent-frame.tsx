@@ -5,6 +5,8 @@ import {
   Circle,
   CircleDot,
   CircleStop,
+  ArrowDown,
+  Layers,
   LoaderCircle,
   SendHorizontal,
   ShieldAlert,
@@ -23,7 +25,15 @@ import { Button } from "@/components/ui/button";
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { promptText, updateFrame, type Frame } from "@/lib/board";
 import { useRoom, useRoomState, useSession } from "@/lib/room-context";
-import { foldThread, latestPlan, type Permission, type Row, type Turn } from "@/lib/thread";
+import {
+  foldThread,
+  groupSteps,
+  latestPlan,
+  type Permission,
+  type Row,
+  type Steps,
+  type Turn,
+} from "@/lib/thread";
 import { cn } from "@/lib/utils";
 import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
 import type { PlanEntry } from "../../shared/protocol";
@@ -223,11 +233,20 @@ function Thread({
   const turns = useMemo(() => foldThread(events), [events, version]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  /** Scrolled away from the end, and whether more came since. */
+  const [away, setAway] = useState<"no" | "yes" | "news">("no");
 
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
+    else setAway((was) => (was === "no" ? was : "news"));
   }, [version]);
+  const toEnd = () => {
+    const el = scroller.current;
+    if (!el) return;
+    pinned.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
   // After the pin above: following someone, their place wins.
   useFollowScroll(
     frameId,
@@ -237,32 +256,49 @@ function Thread({
   );
 
   return (
-    <div
-      ref={scroller}
-      data-frame-body=""
-      className="min-h-0 flex-1 overflow-y-auto"
-      onScroll={(event) => {
-        const el = event.currentTarget;
-        pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      }}
-    >
-      <div data-sel-root={frameId} className="relative space-y-4 p-3 select-text">
-        {loading ? (
-          <p className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-xs">
-            <LoaderCircle className="size-3.5 animate-spin" /> Loading the conversation…
-          </p>
-        ) : (
-          turns.length === 0 && (
-            <p className="text-muted-foreground py-8 text-center text-xs">
-              No messages yet. Write a prompt below — the agent runs on the host's machine.
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={scroller}
+        data-frame-body=""
+        className="h-full overflow-y-auto"
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          setAway((was) => (pinned.current ? "no" : was === "no" ? "yes" : was));
+        }}
+      >
+        <div data-sel-root={frameId} className="relative space-y-4 p-3 select-text">
+          {loading ? (
+            <p className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-xs">
+              <LoaderCircle className="size-3.5 animate-spin" /> Loading the conversation…
             </p>
-          )
-        )}
-        {turns.map((turn) => (
-          <TurnView key={turn.id} turn={turn} frameId={frameId} />
-        ))}
-        <RemoteSelections frameId={frameId} version={version} />
+          ) : (
+            turns.length === 0 && (
+              <p className="text-muted-foreground py-8 text-center text-xs">
+                No messages yet. Write a prompt below — the agent runs on the host's machine.
+              </p>
+            )
+          )}
+          {turns.map((turn) => (
+            <TurnView key={turn.id} turn={turn} frameId={frameId} />
+          ))}
+          <RemoteSelections frameId={frameId} version={version} />
+        </div>
       </div>
+      {away !== "no" && (
+        <button
+          type="button"
+          data-to-latest={away}
+          className={cn(
+            "bg-card absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border px-2.5 py-1 text-xs shadow-md",
+            away === "news" ? "text-foreground border-status-pending/60" : "text-muted-foreground",
+          )}
+          onClick={toEnd}
+        >
+          <ArrowDown className="size-3" />
+          {away === "news" ? "New activity" : "Latest"}
+        </button>
+      )}
     </div>
   );
 }
@@ -345,9 +381,13 @@ function TurnView({ turn, frameId }: { turn: Turn; frameId: string }) {
           {turn.text}
         </p>
       </div>
-      {turn.rows.map((row) => (
-        <RowView key={row.key} row={row} frameId={frameId} />
-      ))}
+      {groupSteps(turn.rows).map((item) =>
+        item.kind === "steps" ? (
+          <StepsView key={item.key} steps={item} frameId={frameId} running={!turn.end} />
+        ) : (
+          <RowView key={item.key} row={item} frameId={frameId} />
+        ),
+      )}
       {turn.permissions.map((permission) => (
         <PermissionCard key={permission.requestId} permission={permission} frameId={frameId} />
       ))}
@@ -356,6 +396,49 @@ function TurnView({ turn, frameId }: { turn: Turn; frameId: string }) {
       )}
       {turn.end?.error && <p className="text-destructive font-mono text-xs">{turn.end.error}</p>}
       {turn.end?.cancelled && <p className="text-muted-foreground font-mono text-xs">stopped</p>}
+    </div>
+  );
+}
+
+/** Several tool calls in a row, folded into one line: how many, and the last. */
+function StepsView({
+  steps,
+  frameId,
+  running,
+}: {
+  steps: Steps;
+  frameId: string;
+  running: boolean;
+}) {
+  const tools = steps.rows.filter((row) => row.kind === "tool");
+  const last = tools.at(-1)!;
+  const errors = tools.filter((row) => row.isError).length;
+  const busy = running && tools.some((row) => row.result === undefined);
+  return (
+    <div data-steps={steps.tools}>
+      <Disclosure
+        label={
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Layers className="size-3 shrink-0" />
+            <span className="shrink-0">{steps.tools} tool calls</span>
+            <span className="truncate font-mono">· {toolLabel(last)}</span>
+            <span
+              className={cn(
+                "shrink-0 font-mono",
+                errors ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {busy ? "running" : errors ? `${errors} failed` : "done"}
+            </span>
+          </span>
+        }
+      >
+        <div className="space-y-1.5">
+          {steps.rows.map((row) => (
+            <RowView key={row.key} row={row} frameId={frameId} />
+          ))}
+        </div>
+      </Disclosure>
     </div>
   );
 }
