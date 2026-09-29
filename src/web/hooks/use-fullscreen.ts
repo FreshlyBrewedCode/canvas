@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,16 +15,20 @@ import {
   currentIn,
   fullscreenRow,
   fullscreenTransform,
+  standIn,
   stillFullscreen,
   type FullscreenRow,
 } from "@/lib/fullscreen";
 import type { Room } from "@/lib/room";
+import type { Transform } from "@/lib/viewport";
 
 /**
  * Full screen (finding 20): our own view of one row, at 100%, its top under
  * the top bar and its frames as tall as the screen. Only we see it: nothing of
  * it is in the board doc or presence. Panning goes along the row only; a zoom,
- * or anything else that leaves the row's top, ends it, as do Esc and ✕.
+ * or anything else that leaves the row's top, ends it where it is. Esc and ✕
+ * end it too, gliding back to the view we went full screen from. A frame of the
+ * row removed hands over to the next (`standIn`); the row's last ends it.
  *
  * F over a frame (or its header's button) goes full screen on it; h / l and
  * Alt + ← / → glide to the frame before or after. Going to a frame claims it,
@@ -38,7 +43,10 @@ export interface Fullscreen {
   show: (frameId: string) => void;
   /** The frame before (-1) or after (1) the one nearest the middle of the screen. */
   step: (direction: 1 | -1) => void;
+  /** End it, gliding back to where we went full screen from. */
   exit: () => void;
+  /** End it where we are: something else takes the view. */
+  leave: () => void;
 }
 
 export function useFullscreen(
@@ -50,36 +58,65 @@ export function useFullscreen(
   >,
 ): Fullscreen {
   const [frameId, setFrameId] = useState<string | null>(null);
-  // Null once the frame is gone: full screen ends with it.
+  // Null once the frame is gone, until a stand-in takes over.
   const row = useMemo(() => (frameId ? fullscreenRow(frames, frameId) : null), [frames, frameId]);
   const on = row !== null;
   const { glide, lockVertical, onOwnMove, transform, screen, subscribe, wrapRef } = viewport;
   /** The row's top, as last shown. */
   const top = useRef(0);
   const [height, setHeight] = useState(0);
+  /** Our view before full screen: Esc and ✕ go back to it. */
+  const before = useRef<Transform | null>(null);
 
-  const show = useCallback(
+  /** Go to a frame of the board, from the doc: a frame added a moment ago is there already. */
+  const goTo = useCallback(
     (id: string) => {
-      // From the doc, not the render: a frame added a moment ago is there already.
       const target = fullscreenRow(allFrames(room.doc), id);
       const frame = target?.frames.find((f) => f.id === id);
-      if (!target || !frame) return;
+      if (!target || !frame) return false;
+      before.current ??= transform();
       top.current = target.top;
       setHeight(screen().height);
       setFrameId(id);
       glide(fullscreenTransform(frame, target.top, screen().width));
+      return true;
+    },
+    [room, glide, screen, transform],
+  );
+  const show = useCallback(
+    (id: string) => {
+      if (!goTo(id)) return;
       // As a press on the frame: claim it if free; if someone holds it, go our own way in it.
       room.focusFrame(id);
       room.detach(id);
     },
-    [room, glide, screen],
+    [room, goTo],
   );
-  const exit = useCallback(() => setFrameId(null), []);
+  const leave = useCallback(() => {
+    before.current = null;
+    setFrameId(null);
+  }, []);
+  const exit = useCallback(() => {
+    const back = before.current;
+    leave();
+    if (back) glide(back);
+  }, [leave, glide]);
 
   const latest = useRef(row);
   useEffect(() => {
     latest.current = row;
   });
+  // The frame we went to is gone (closed, by us or anyone): on to the next of
+  // the row, before a paint without full screen.
+  const order = useRef<string[]>([]);
+  useLayoutEffect(() => {
+    if (row) order.current = row.frames.map((f) => f.id);
+    else if (frameId) {
+      const next = standIn(order.current, frameId, new Set(frames.map((f) => f.id)));
+      if (!next || !goTo(next)) exit();
+    }
+  }, [row, frameId, frames, goTo, exit]);
+
   const step = useCallback(
     (direction: 1 | -1) => {
       const frames = latest.current?.frames;
@@ -105,13 +142,13 @@ export function useFullscreen(
     if (!on) return;
     lockVertical(true);
     const off = onOwnMove(() => {
-      if (!stillFullscreen(transform(), top.current)) setFrameId(null);
+      if (!stillFullscreen(transform(), top.current)) leave();
     });
     return () => {
       off();
       lockVertical(false);
     };
-  }, [on, lockVertical, onOwnMove, transform]);
+  }, [on, lockVertical, onOwnMove, transform, leave]);
 
   useEffect(() => {
     if (!on) return;
@@ -163,7 +200,7 @@ export function useFullscreen(
     };
   }, [on, step, exit, show, wrapRef]);
 
-  return { row, height, show, step, exit };
+  return { row, height, show, step, exit, leave };
 }
 
 /** For frames: whether full screen shows them, and how. */
@@ -172,6 +209,8 @@ export interface FullscreenFrames {
   height: number;
   show: (frameId: string) => void;
   exit: () => void;
+  /** Scroll the view along the row by `dx` px: a frame dragged to the board's side. */
+  scroll: (dx: number) => void;
 }
 
 const FullscreenContext = createContext<FullscreenFrames>({
@@ -179,6 +218,7 @@ const FullscreenContext = createContext<FullscreenFrames>({
   height: 0,
   show: () => {},
   exit: () => {},
+  scroll: () => {},
 });
 export const FullscreenProvider = FullscreenContext.Provider;
 
@@ -191,14 +231,21 @@ export function useFullscreenFrame(frame: Frame): {
   mode: "off" | "in" | "hidden";
   box: { y: number; h: number };
   toggle: () => void;
+  /** Go (back) to it in full screen: after it moved along the row. */
+  show: () => void;
+  scroll: (dx: number) => void;
 } {
-  const { row, height, show, exit } = useContext(FullscreenContext);
+  const { row, height, show, exit, scroll } = useContext(FullscreenContext);
   const box = { y: frame.y, h: frame.h };
-  if (!row) return { mode: "off", box, toggle: () => show(frame.id) };
-  if (!row.frames.some((f) => f.id === frame.id)) return { mode: "hidden", box, toggle: exit };
+  const here = () => show(frame.id);
+  if (!row) return { mode: "off", box, toggle: here, show: here, scroll };
+  if (!row.frames.some((f) => f.id === frame.id))
+    return { mode: "hidden", box, toggle: exit, show: here, scroll };
   return {
     mode: "in",
     box: { y: row.top, h: frame.type === "terminal" ? frame.h : height },
     toggle: exit,
+    show: here,
+    scroll,
   };
 }

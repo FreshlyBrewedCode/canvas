@@ -9,10 +9,11 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { LinkScope } from "@/components/board-link";
 import { useFullscreenFrame } from "@/hooks/use-fullscreen";
+import { edgeScroll, fullscreenRow, rowTarget, scrollsFurther } from "@/lib/fullscreen";
 import {
   allFrames,
   applyPatches,
@@ -64,7 +65,9 @@ const ICONS = Object.fromEntries(FRAME_KINDS.map((k) => [k.type, k.Icon])) as Re
  * header, and the frame is ringed in their colour while we follow them.
  *
  * Full screen (`use-fullscreen.ts`) shows the frames of a row as tall as our
- * screen, hides the rest, and leaves them where they are: no dragging then.
+ * screen and hides the rest. There a frame only moves along its row, always
+ * snapping: it reorders the row, and the view glides after it. Held near the
+ * board's left or right side, it scrolls the row along. No resizing.
  */
 export function FrameShell({
   frame,
@@ -87,6 +90,11 @@ export function FrameShell({
   const scope = useMemo(() => ({ frame: frame.id }), [frame.id]);
   const fullscreen = useFullscreenFrame(frame);
   const arranging = !readOnly && fullscreen.mode === "off";
+  const movable = !readOnly && fullscreen.mode !== "hidden";
+  const along =
+    fullscreen.mode === "in"
+      ? { ...fullscreen.box, show: fullscreen.show, scroll: fullscreen.scroll }
+      : null;
 
   return (
     <section
@@ -112,10 +120,11 @@ export function FrameShell({
     >
       <Drag
         frame={frame}
-        disabled={!arranging}
+        disabled={!movable}
+        along={along}
         className={cn(
           "bg-muted/40 flex h-9 shrink-0 items-center gap-2 border-b px-2.5",
-          arranging && "cursor-grab active:cursor-grabbing",
+          movable && "cursor-grab active:cursor-grabbing",
         )}
         mode="move"
       >
@@ -185,12 +194,18 @@ function Drag({
   frame,
   mode,
   disabled,
+  along = null,
   className,
   children,
 }: {
   frame: Frame;
   mode: "move" | "resize";
   disabled: boolean;
+  /**
+   * In full screen: moves go along the row, which full screen shows at `y`,
+   * `h` tall; `scroll` moves the view along it.
+   */
+  along?: { y: number; h: number; show: () => void; scroll: (dx: number) => void } | null;
   className: string;
   children: React.ReactNode;
 }) {
@@ -210,8 +225,14 @@ function Drag({
     /** Whether the mates were last moved along. */
     carrying: boolean;
     moved: boolean;
+    /** Along a full-screen row: the pointer's last x, and how far the view scrolled since. */
+    cx: number;
+    scrolled: number;
+    board: HTMLElement | null;
   } | null>(null);
   const frameRequest = useRef(0);
+  const scrollRequest = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(scrollRequest.current), []);
 
   /**
    * The patches a drop at `here` would apply: into a row, or out of the old
@@ -229,6 +250,55 @@ function Drag({
     return { patches, preview: line ? { kind: "insert", line } : { kind: "place", box } };
   };
 
+  /** Along a full-screen row: in between two of its frames or at an end, else back. */
+  const dropAlong = (
+    here: Rect,
+    s: Box,
+    shown: { y: number; h: number },
+  ): { patches: Patch[]; preview: SnapPreview | null } => {
+    const others = allFrames(room.doc).filter((f) => f.id !== frame.id);
+    const origin = [...others, { ...here, x: s.x, y: s.y }];
+    const rects = [...others, here];
+    const target = rowTarget(fullscreenRow(rects, frame.id)?.frames ?? [], here);
+    if (!target) return { patches: [{ id: frame.id, x: s.x }], preview: null };
+    const patches = moveFrame(origin, frame.id, target);
+    const line = insertion(rects, target, frame.id);
+    const box = { ...here, ...patches.find((p) => p.id === frame.id), ...shown };
+    return {
+      patches,
+      preview: line
+        ? { kind: "insert", line: { ...line, ...shown }, along: true }
+        : { kind: "place", box, along: true },
+    };
+  };
+
+  /** Where a drag along the row has the frame: the pointer's way, plus the view's. */
+  const hereAlong = (s: NonNullable<typeof start.current>): Rect => ({
+    id: frame.id,
+    x: Math.round(s.x + (s.cx - s.px) / s.scale + s.scrolled),
+    y: s.y,
+    w: s.w,
+    h: s.h,
+  });
+
+  /** Near the board's side, scroll the row along every animation frame, the frame with it. */
+  const edgeScrolling = () => {
+    const s = start.current;
+    if (!s || !along || !s.board) return;
+    const { left, right } = s.board.getBoundingClientRect();
+    const v = edgeScroll(s.cx, left, right);
+    const here = hereAlong(s);
+    const row = fullscreenRow(allFrames(room.doc), frame.id)?.frames ?? [];
+    if (s.moved && scrollsFurther(row, here, v)) {
+      along.scroll(v);
+      s.scrolled += v;
+      const next = hereAlong(s);
+      updateFrame(room.doc, frame.id, { x: next.x });
+      setSnapPreview(dropAlong(next, s, along).preview);
+    }
+    scrollRequest.current = requestAnimationFrame(edgeScrolling);
+  };
+
   /** With Shift the mates keep their offsets; let go of it and they go back. */
   const carry = (s: NonNullable<typeof start.current>, dx: number, dy: number, shift: boolean) => {
     if (!shift && !s.carrying) return [];
@@ -242,9 +312,17 @@ function Drag({
     const s = start.current;
     start.current = null;
     setSnapPreview(null);
+    cancelAnimationFrame(scrollRequest.current);
     if (!s || mode !== "move" || !s.moved) return;
     cancelAnimationFrame(frameRequest.current);
     const dx = (event.clientX - s.px) / s.scale;
+    if (along) {
+      s.cx = event.clientX;
+      const here = hereAlong(s);
+      applyPatches(room.doc, [here, ...dropAlong(here, s, along).patches]);
+      along.show();
+      return;
+    }
     const dy = (event.clientY - s.py) / s.scale;
     const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy), w: s.w, h: s.h };
     const mates = carry(s, dx, dy, event.shiftKey);
@@ -273,20 +351,29 @@ function Drag({
             .map(({ id, x, y }) => ({ id, x, y })),
           carrying: false,
           moved: false,
+          cx: event.clientX,
+          scrolled: 0,
+          board,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
+        if (along && mode === "move") edgeScrolling();
       }}
       onPointerMove={(event) => {
         const s = start.current;
         if (!s) return;
+        s.cx = event.clientX;
         const dx = (event.clientX - s.px) / s.scale;
-        const dy = (event.clientY - s.py) / s.scale;
+        const dy = along ? 0 : (event.clientY - s.py) / s.scale;
         if (Math.hypot(dx, dy) > 3) s.moved = true;
         const free = event.altKey;
         const shift = event.shiftKey;
         cancelAnimationFrame(frameRequest.current);
         frameRequest.current = requestAnimationFrame(() => {
-          if (mode === "move") {
+          if (mode === "move" && along) {
+            const here = hereAlong(s);
+            updateFrame(room.doc, frame.id, { x: here.x });
+            setSnapPreview(s.moved ? dropAlong(here, s, along).preview : null);
+          } else if (mode === "move") {
             const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy) };
             applyPatches(room.doc, [here, ...carry(s, dx, dy, shift)]);
             if (free || shift || !s.moved) return setSnapPreview(null);
@@ -304,6 +391,7 @@ function Drag({
       }}
       onPointerUp={end}
       onPointerCancel={() => {
+        cancelAnimationFrame(scrollRequest.current);
         start.current = null;
         setSnapPreview(null);
       }}

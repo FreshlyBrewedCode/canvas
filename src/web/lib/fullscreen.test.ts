@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { currentIn, fullscreenRow, fullscreenTransform, stillFullscreen } from "./fullscreen";
+import {
+  currentIn,
+  fullscreenRow,
+  fullscreenTransform,
+  edgeScroll,
+  rowTarget,
+  scrollsFurther,
+  standIn,
+  stillFullscreen,
+} from "./fullscreen";
 import { toViewport } from "./viewport";
 
 // A row of three (the middle one a few px lower: still the row), a row under
@@ -49,5 +58,42 @@ describe("full screen", () => {
     expect(stillFullscreen({ ...t, x: t.x - 800 }, 0)).toBe(true);
     expect(stillFullscreen({ ...t, scale: 1.1 }, 0)).toBe(false);
     expect(stillFullscreen({ ...t, y: t.y - 40 }, 0)).toBe(false);
+  });
+
+  test("a frame gone hands over to the next of the row, else the one before", () => {
+    const order = ["a", "b", "c"];
+    expect(standIn(order, "b", new Set(["a", "c"]))).toBe("c");
+    expect(standIn(order, "c", new Set(["a", "b"]))).toBe("b");
+    expect(standIn(order, "a", new Set(["c"]))).toBe("c");
+    expect(standIn(order, "a", new Set(["d"]))).toBeNull();
+  });
+
+  test("a frame dragged along its row goes after the frames whose middle it passed", () => {
+    const row = fullscreenRow(frames, "a")!.frames;
+    const a = frames[0]!;
+    expect(rowTarget(row, { ...a, x: 200 })).toEqual({ anchor: "b", side: "left" });
+    expect(rowTarget(row, { ...a, x: 600 })).toEqual({ anchor: "b", side: "right" });
+    expect(rowTarget(row, { ...a, x: 1100 })).toEqual({ anchor: "c", side: "right" });
+    expect(rowTarget([a], a)).toBeNull();
+  });
+
+  test("a drag near the board's side scrolls, faster the deeper, most at and past it", () => {
+    expect(edgeScroll(700, 0, 1400)).toBe(0);
+    expect(edgeScroll(40, 0, 1400)).toBe(-12);
+    expect(edgeScroll(0, 0, 1400)).toBe(-24);
+    expect(edgeScroll(-300, 0, 1400)).toBe(-24);
+    expect(edgeScroll(1380, 0, 1400)).toBe(18);
+    expect(edgeScroll(1500, 0, 1400)).toBe(24);
+  });
+
+  test("scrolling stops once the frame is past the row's end", () => {
+    const row = fullscreenRow(frames, "a")!.frames;
+    const a = frames[0]!;
+    expect(scrollsFurther(row, { ...a, x: 1000 }, 10)).toBe(true);
+    expect(scrollsFurther(row, { ...a, x: 1448 }, 10)).toBe(false);
+    expect(scrollsFurther(row, { ...a, x: 100 }, -10)).toBe(true);
+    expect(scrollsFurther(row, { ...a, x: 24 }, -10)).toBe(false);
+    expect(scrollsFurther(row, a, 0)).toBe(false);
+    expect(scrollsFurther([a], a, 10)).toBe(false);
   });
 });

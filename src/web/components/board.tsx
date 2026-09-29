@@ -46,13 +46,17 @@ export function Board() {
   const go = useBoardNavigation(room, viewport, readOnly);
   const { followed, toggle: toggleFollow } = useFollowView(viewport);
   const fullscreen = useFullscreen(room, frames, { ...viewport, wrapRef });
-  const { row, height, show, exit } = fullscreen;
-  const fullscreenFrames = useMemo(() => ({ row, height, show, exit }), [row, height, show, exit]);
+  const { row, height, show, exit, leave } = fullscreen;
+  const { panBy } = viewport;
+  const fullscreenFrames = useMemo(
+    () => ({ row, height, show, exit, scroll: (dx: number) => panBy(-dx, 0) }),
+    [row, height, show, exit, panBy],
+  );
   // Following someone shows their view: not full screen's.
   const following = followed !== null;
   useEffect(() => {
-    if (following) exit();
-  }, [following, exit]);
+    if (following) leave();
+  }, [following, leave]);
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
   const pointerAt = useRef<{ x: number; y: number } | null>(null);
@@ -299,12 +303,14 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
 function SnapGhost() {
   const preview = useSnapPreview();
   if (!preview) return null;
-  const hint = (
+  const hint = !(preview.along && preview.kind === "place") && (
     <span
       className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
       style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
     >
-      {preview.kind === "insert" ? "Insert here · " : ""}Alt: place freely · Shift: move the cluster
+      {preview.along
+        ? "Insert here"
+        : `${preview.kind === "insert" ? "Insert here · " : ""}Alt: place freely · Shift: move the cluster`}
     </span>
   );
   if (preview.kind === "place") {

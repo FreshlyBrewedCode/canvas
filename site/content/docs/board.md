@@ -40,6 +40,7 @@ time.
 | **‹** / **›**, or a dot, in the top bar      | The frame before / after, or that one |
 | Wheel, drag or swipe                         | Along the row                    |
 | **+** beside a frame                         | Add a frame there                |
+| Drag a frame's header                        | Move it along the row            |
 | **Esc**, **F**, the **×** in the top bar, or zoom | Leave full screen           |
 
 - **It is yours alone.** The frames of the row take your screen's height on your board only;
@@ -47,8 +48,12 @@ time.
   for everyone.
 - **Going to a frame occupies it**, as pressing on it does ([Focus](/docs/focus)).
 - **The rest of the board is hidden**, and so are the toolbar and zoom controls: **+** beside the
-  frame under your mouse adds one, and the frames after it make room. Frames don't move or resize
-  in full screen.
+  frame under your mouse adds one, and the frames after it make room.
+- **Frames only move along the row**, snapping in between the others: dragging reorders the row.
+  Hold a frame near the left or right side of the screen to scroll the row that way. They don't
+  resize in full screen.
+- **Leaving with Esc, F or ×** takes you back to where you were before full screen.
+- **Closing a frame** goes on to the next one in the row; closing the last leaves full screen.
 - **Keys are the frame's while you type** in it: a prompt, a terminal, a title. Press the board
   first.
 - **Following someone's view** ends full screen, as does anything that zooms or leaves the row.

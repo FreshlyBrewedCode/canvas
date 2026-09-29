@@ -45,6 +45,8 @@ export interface BoardViewport {
   follow: (view: Rect) => void;
   /** Go to a transform, easing over from where we are: our own move. */
   glide: (to: Transform) => void;
+  /** Pan by screen px, as a drag of the background does: our own move. */
+  panBy: (dx: number, dy: number) => void;
   /** Whether panning (dragging, wheel, trackpad) only goes left and right. */
   lockVertical: (locked: boolean) => void;
   /** Viewport client coordinates → board coordinates. */
@@ -345,6 +347,7 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     onOwnMove,
     follow,
     glide,
+    panBy: pan,
     lockVertical,
     toBoard: (clientX, clientY) => {
       const rect = wrapRef.current?.getBoundingClientRect();

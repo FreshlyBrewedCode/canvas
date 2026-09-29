@@ -2760,17 +2760,68 @@ if (step === "fullscreen") {
   await host.keyboard.press("Backspace");
   await host.mouse.click(board.x + board.width / 2, 20);
 
-  // No dragging frames about: its header stays put.
+  // Dragging a header only reorders the row: past the drawing's middle, it swaps with it.
+  const at = (id: string) =>
+    host.evaluate((f) => (window as any).room.doc.getMap("frames").get(f).toJSON(), id);
   const header = (await frame(files).locator("input[aria-label='Frame title']").boundingBox())!;
   await host.mouse.move(header.x + header.width + 60, header.y + 5);
   await host.mouse.down();
-  await host.mouse.move(header.x + header.width + 260, header.y + 105, { steps: 5 });
-  await host.mouse.up();
-  const x = await host.evaluate(
-    (f) => (window as any).room.doc.getMap("frames").get(f).get("x"),
-    files,
+  await host.mouse.move(header.x + header.width + 760, header.y + 105, { steps: 8 });
+  check(
+    (await host.locator("[data-snap-preview]").count()) === 1,
+    "dragging along the row shows where it goes",
   );
-  check(x === 0, `dragging a header moves nothing (${x})`);
+  await host.mouse.up();
+  await settle();
+  const [moved, swapped] = [await at(files), await at(draw)];
+  check(
+    moved.x === 624 && moved.y === 0 && swapped.x === 0 && swapped.y === 0,
+    `…and drops it into the row, not up or down (${moved.x},${moved.y} / ${swapped.x})`,
+  );
+  check(await on(), "…still full screen");
+  check((await current()) === files, "…the view going after it");
+  const dots = await host
+    .locator("[data-fullscreen-dot]")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-fullscreen-dot")));
+  check(dots[0] === draw && dots[1] === files, "…and the dots in its new order");
+
+  // Held at the board's side, the drag scrolls the row: past the terminal, and back to the front.
+  const order = () =>
+    host
+      .locator("[data-fullscreen-dot]")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-fullscreen-dot")));
+  const edgeDrag = async (clientX: number) => {
+    const grip = (await frame(files).locator("input[aria-label='Frame title']").boundingBox())!;
+    await host.mouse.move(grip.x + grip.width + 40, grip.y + 5);
+    await host.mouse.down();
+    await host.mouse.move(clientX, grip.y + 5, { steps: 8 });
+    const from = await transform();
+    await settle(2000);
+    const held = await transform();
+    await host.mouse.up();
+    await settle();
+    return { from, held };
+  };
+  let scrolled = await edgeDrag(board.x + board.width - 5);
+  check(scrolled.held !== scrolled.from, `the right side scrolls the row (${scrolled.held})`);
+  check(
+    (await at(files)).x === 1208 && (await at(term)).x === 624 && (await at(files)).y === 0,
+    `…the frame dropped past the terminal (${(await at(files)).x})`,
+  );
+  check(
+    JSON.stringify(await order()) === JSON.stringify([draw, term, files]),
+    "…last in the row",
+  );
+  check(await on(), "…still full screen");
+  scrolled = await edgeDrag(board.x + 5);
+  check(scrolled.held !== scrolled.from, `the left side scrolls it back (${scrolled.held})`);
+  check(
+    JSON.stringify(await order()) === JSON.stringify([files, draw, term]) &&
+      (await at(files)).x === 0 &&
+      (await at(term)).x === 1248,
+    `…the frame first in the row (${(await at(files)).x})`,
+  );
+  check((await current()) === files, "…the view going after it");
 
   // "+" after the terminal adds a drawing there, and goes to it.
   await host.locator("[data-fullscreen-dot]").nth(2).click();
@@ -2818,24 +2869,34 @@ if (step === "fullscreen") {
     await settle();
     return on();
   };
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle();
+  const fitted = await transform();
   check(await enter(), "the header's button goes full screen");
   await host.keyboard.press("Escape");
   await settle();
   check(!(await on()), "Esc ends it");
+  check((await transform()) === fitted, `…back to the view before (${await transform()})`);
   await enter();
   await host.locator("[data-fullscreen-exit]").click();
   await settle();
   check(!(await on()), "✕ ends it");
+  check((await transform()) === fitted, "…back to the view before too");
   await enter();
   await host.locator('header [data-avatar="Ada"]').click();
   await settle();
   check(!(await on()), "following Ada ends it");
   await host.locator('header [data-avatar="Ada"]').click();
 
-  // The frame goes away: so does full screen.
+  // Closing the frame goes on to the next of the row; the row's last frame ends it.
   await enter();
-  await host.evaluate((f) => (window as any).room.doc.getMap("frames").delete(f), files);
+  await frame(files).getByTitle("Remove frame").click();
   await settle();
-  check(!(await on()), "removing the frame ends it");
+  check(await on(), "closing the frame stays full screen");
+  check((await current()) === draw, "…on the next frame of the row");
+  for (const id of [draw, term, added])
+    await host.evaluate((f) => (window as any).room.doc.getMap("frames").delete(f), id);
+  await settle();
+  check(!(await on()), "removing the row's last frame ends it");
 }
 await browser.close();
