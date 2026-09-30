@@ -2,8 +2,9 @@
  * Dragging a frame by its header, or a cluster by its grip (or a frame with
  * Shift), from pointer down to the drop: where it goes is decided by the
  * pointer on the board laid out without what is dragged (`dropAt`), with Alt a
- * cluster of its own even over frames. Nothing reaches the doc before the
- * drop, which is one change; Esc calls it off.
+ * cluster of its own even over frames. A frame hits by its middle's height
+ * (`dropPoint`), and the clusters stay where they were (`pin`). Nothing
+ * reaches the doc before the drop, which is one change; Esc calls it off.
  *
  * In full screen a frame only moves along its row (`alongAt`), and held near
  * the board's left or right side it scrolls the row along.
@@ -17,7 +18,9 @@ import { edgeScroll, scrollsFurther } from "@/lib/fullscreen";
 import {
   alongAt,
   dropAt,
+  dropPoint,
   moveCluster,
+  pin,
   resolve,
   slotAt,
   without,
@@ -62,7 +65,11 @@ export function startDrag(event: React.PointerEvent, start: DragStart) {
           .map((f) => f.id),
   );
   // The board without it: what is under the pointer doesn't move as the others make room.
-  const rest = resolve(without(readTree(doc), frames));
+  // A frame's clusters stay where they were, as the preview shows them.
+  const tree = readTree(doc);
+  const lifted = resolve(without(tree, frames));
+  const rest = what.kind === "frame" ? pin(lifted, resolve(tree)) : lifted;
+  const height = allFrames(doc).find((f) => f.id === what.id)?.h ?? 0;
   let pointer = { x: px, y: py };
   let alt = event.altKey;
   let scrolled = 0;
@@ -82,7 +89,9 @@ export function startDrag(event: React.PointerEvent, start: DragStart) {
         grab,
         before: slotAt(rest, at).before,
       };
-    const target = along ? alongAt(rest, along.row, at.x) : dropAt(rest, at, { newCluster: alt });
+    const target = along
+      ? alongAt(rest, along.row, at.x)
+      : dropAt(rest, dropPoint(at, grab, height), { newCluster: alt });
     return { kind: "frame", frame: what.id, pointer: at, grab, target, along: !!along };
   };
 

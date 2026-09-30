@@ -775,6 +775,8 @@ function slot(
 
 /** How far outside a cluster a drop still goes beside its frames. */
 export const CLUSTER_REACH = CLUSTER_GAP / 3;
+/** How much of a frame's height, at its top and bottom, drops into a row above or below. */
+export const ROW_BAND = 0.2;
 
 /** The tree without some frames: the board a drag of them is hit against. */
 export function without(tree: Tree, frames: ReadonlySet<string>): Tree {
@@ -783,10 +785,12 @@ export function without(tree: Tree, frames: ReadonlySet<string>): Tree {
 
 /**
  * Where a drop at `point` goes. Over a cluster (or just outside it), beside
- * its frame nearest the pointer, by the edge the pointer is nearest: left or
- * right, before or after it in its row; top or bottom, a new row above or
- * below. Elsewhere, or with `newCluster`, a cluster of its own there
- * (`slotAt`).
+ * its frame nearest the point: in its top or bottom `ROW_BAND`, a new row
+ * above or below; else by its half, before or after it in its row. Elsewhere,
+ * or with `newCluster`, a cluster of its own there (`slotAt`).
+ *
+ * A drag hits with the pointer's x and the dragged frame's middle's y
+ * (`dropPoint`): held by its header, the pointer is at its top.
  */
 export function dropAt(
   layout: Layout,
@@ -805,14 +809,33 @@ export function dropAt(
   const f = nearest!;
   const u = Math.min(Math.max((point.x - f.x) / f.w, 0), 1);
   const v = Math.min(Math.max((point.y - f.y) / f.h, 0), 1);
-  const edges: Array<[Side, number]> = [
-    ["left", u],
-    ["right", 1 - u],
-    ["above", v],
-    ["below", 1 - v],
-  ];
-  const [side] = edges.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const side = v < ROW_BAND ? "above" : v > 1 - ROW_BAND ? "below" : u < 0.5 ? "left" : "right";
   return { anchor: f.id, side };
+}
+
+/** Where a dragged frame hits: the pointer's x, its middle's y (`dropAt`). */
+export const dropPoint = (pointer: Point, grab: Point, h: number): Point => ({
+  x: pointer.x,
+  y: pointer.y - grab.y + h / 2,
+});
+
+/**
+ * The layout with its clusters where they are in `at`, as a drag of frames
+ * shows the board and hits it: what changes inside clusters shows, but no
+ * cluster moves away from the pointer. Clusters new to it stay where they are.
+ */
+export function pin(layout: Layout, at: Layout): Layout {
+  const origins = new Map(at.clusters.map((k) => [k.id, k.box]));
+  const frames = new Map<string, Placement>();
+  const clusters = layout.clusters.map((k) => {
+    const to = origins.get(k.id);
+    const cluster = to ? place(k, to.x - k.box.x, to.y - k.box.y) : k;
+    for (const row of cluster.rows)
+      for (const column of row.columns)
+        for (const frame of column.frames) frames.set(frame.id, { cluster, row, column, frame });
+    return cluster;
+  });
+  return { ...layout, clusters, frames };
 }
 
 /**

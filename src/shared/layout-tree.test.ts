@@ -10,6 +10,7 @@ import {
   CLUSTER_REACH,
   DEFAULT_W,
   dropAt,
+  dropPoint,
   GAP,
   insert,
   migrate,
@@ -19,6 +20,7 @@ import {
   moveCluster,
   neighbour,
   nudge,
+  pin,
   prune,
   repair,
   resize,
@@ -648,6 +650,41 @@ describe("drop zones", () => {
   test("a new cluster, even over frames, when asked", () => {
     expect(dropAt(layout, inside("b", 0.2, 0.5), { newCluster: true })).toEqual({ before: "k2" });
     expect(slotAt(layout, inside("b", 0.8, 0.5))).toEqual({ before: "k2" });
+  });
+
+  test("a row above or below only in a frame's top or bottom band", () => {
+    expect(dropAt(layout, inside("a", 0.1, 0.25))).toEqual({ anchor: "a", side: "left" });
+    expect(dropAt(layout, inside("a", 0.95, 0.75))).toEqual({ anchor: "a", side: "right" });
+    expect(dropAt(layout, inside("a", 0.02, 0.1))).toEqual({ anchor: "a", side: "above" });
+    expect(dropAt(layout, inside("a", 0.98, 0.9))).toEqual({ anchor: "a", side: "below" });
+  });
+
+  test("a dragged frame hits by its middle's height, not its header's", () => {
+    // Held by its header, 10 down; along a's top edge, the pointer is above the band.
+    const pointer = inside("b", 0.7, 0.02);
+    const grab = { x: 100, y: 10 };
+    expect(dropAt(layout, pointer)).toEqual({ anchor: "b", side: "above" });
+    expect(dropAt(layout, dropPoint(pointer, grab, 200))).toEqual({ anchor: "b", side: "right" });
+  });
+
+  test("pinned, clusters stay where they were as others grow or go", () => {
+    const at = resolve(tree);
+    // d taken away: e would move up a line, and a frame in k1's row pushes d along.
+    const moved = resolve(lifted(tree, new Set(["d"])));
+    const grown = resolve(
+      applyChanges(
+        tree,
+        move(tree, "c", { anchor: "b", side: "right" }, () => "x"),
+      ),
+    );
+    for (const l of [moved, grown]) {
+      const kept = pin(l, at);
+      for (const k of kept.clusters) {
+        const was = at.clusters.find((c) => c.id === k.id)!.box;
+        expect([k.box.x, k.box.y]).toEqual([was.x, was.y]);
+      }
+    }
+    expect(pin(grown, at).frames.get("c")!.frame.x).toBe(box("b").x + 400);
   });
 
   test("hit against the board without the dragged frame: what is under the pointer holds still", () => {

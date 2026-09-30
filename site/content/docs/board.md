@@ -143,19 +143,23 @@ frame's. Clusters arrange themselves: left to right in rows of clusters,
 tops aligned, with space between them. Nothing is placed freely, and nothing overlaps: a frame on
 its own is a cluster of one.
 
-Where a dragged frame goes is decided by the **pointer**, not by where the frame is:
+Where a dragged frame goes is decided by the **pointer** from side to side, and by the **dragged
+frame's middle** up and down: you hold it by its header, at its top, so moving it sideways keeps it
+in its row.
 
-| Where the pointer is                    | The dragged frame goes                  |
-| --------------------------------------- | --------------------------------------- |
-| A frame's left or right edge            | Before or after it, in its row          |
-| A frame's top or bottom edge            | Into a new row above or below its row   |
-| Between clusters, or on the empty board | Into a new cluster there                |
+| Where it is                                     | The dragged frame goes                |
+| ----------------------------------------------- | ------------------------------------- |
+| Over a frame's left or right half               | Before or after it, in its row        |
+| Its middle in a frame's top or bottom fifth     | Into a new row above or below its row |
+| Between clusters, or on the empty board         | Into a new cluster there              |
 
-The nearest edge wins, and just outside a cluster still counts as its nearest frame's.
+Just outside a cluster still counts as its nearest frame's.
 
-- **While you drag**, the board shows the result: the other frames make room where it would land,
-  and a dashed outline marks the spot. Nothing changes for anyone else until you let go; they see
-  a ghost of the frame in your colour. **Esc** calls the drag off.
+- **While you drag**, the board shows the result: the other frames of the cluster make room where
+  it would land, and a dashed outline marks the spot. The clusters themselves stay where they are
+  until you let go, so none moves away from the pointer; a new cluster shows as a bar in the gap
+  it goes to. Nothing changes for anyone else until you let go; they see a ghost of the frame in
+  your colour. **Esc** calls the drag off.
 - **Hold Alt** to drop it into a new cluster where the pointer is, even over other frames.
 - **Moving a cluster:** drag the grip left of its name, above the cluster, or hold **Shift** and
   drag any of its frames. It goes before the cluster the pointer is at.

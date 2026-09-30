@@ -54,7 +54,7 @@ import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
-import type { Box, ResolvedCluster } from "../../shared/layout";
+import { MIN_W, type Box, type ResolvedCluster } from "../../shared/layout";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
@@ -374,9 +374,26 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
   );
 }
 
-/** Where our drag lands if dropped now: its place, the others making room around it. */
+/**
+ * Where our drag lands if dropped now: its place, the others making room
+ * around it; or, a new cluster, a bar in its gap, above the dragged frame
+ * and as thick at any zoom.
+ */
 function Landing({ box, along }: { box: Box | null; along: boolean }) {
   if (!box || along) return null;
+  if (box.w < MIN_W)
+    return (
+      <div
+        data-drop-landing=""
+        className="bg-primary pointer-events-none absolute z-[99999] -translate-x-1/2 rounded-full"
+        style={{
+          left: box.x + box.w / 2,
+          top: box.y,
+          width: "calc(4px / var(--board-scale, 1))",
+          height: box.h,
+        }}
+      />
+    );
   return (
     <div
       data-drop-landing=""
