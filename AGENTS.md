@@ -18,10 +18,10 @@ canvas
 - agents act on the board (ADR 0003): `canvas serve` gives each session an MCP server
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
   MCP server instructions, never a replaced system prompt (finding 06). The layout (ADR 0010):
-  the board is a tree — clusters, rows, columns, frames — in the doc's `layout` map and frames'
+  the board is a tree — lines, clusters, rows, columns, frames — in the doc's `layout` map and frames'
   `parent`/`pos`; `resolve` in `src/shared/layout.ts` derives every rect, operations change it by
   structural targets, and the host tidies it (`tidy` in `web/lib/board.ts`: migrates boards from
-  before, repairs, prunes)
+  before, repairs — clusters from before lines too — prunes)
 - comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with
@@ -99,7 +99,7 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|edges|fullscreen-presence|keys|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|cluster-lines|edges|fullscreen-presence|keys|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/

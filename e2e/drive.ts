@@ -1006,6 +1006,93 @@ if (step === "arrange") {
   await shot(host, "51-final");
   await shot(guest, "51-guest-final");
 }
+// Lines of clusters (ADR 0010): clusters go in lines, top to bottom, and move
+// between them — beside another however wide, or in a line of their own.
+if (step === "cluster-lines") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const add = async () => (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  const [a, b, c] = [await add(), await add(), await add()];
+  // As a board from before lines: two wide clusters wrapped, c after b.
+  await arrange(host, {
+    [a]: { x: 0, y: 0, w: 3000, h: 400 },
+    [b]: { x: 3200, y: 0, w: 3000, h: 400 },
+    [c]: { x: 6400, y: 0, w: 600, h: 400 },
+  });
+  const fit = async () => {
+    await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+    await settle(500);
+  };
+  await fit();
+  const frame = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
+  const at = async (...ids: string[]) =>
+    (await Promise.all(ids.map(async (id) => `${(await frame(id)).x},${(await frame(id)).y}`))).join(" ");
+  const box = async (id: string) => (await host.locator(`[data-frame="${id}"]`).boundingBox())!;
+  check(
+    (await frame(b)).y > 0 && (await frame(c)).y === (await frame(b)).y,
+    `a board from before lines wraps as it did: ${await at(a, b, c)}`,
+  );
+
+  /**
+   * Press on `from`, move it by the board's screen offset that takes `id`'s
+   * top-left to `to` (screen px), look, let go: the landing's box.
+   */
+  const drag = async (from: ReturnType<Page["locator"]>, id: string, to: { x: number; y: number }, name: string) => {
+    const grip = (await from.boundingBox())!;
+    const start = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
+    const was = await box(id);
+    await host.mouse.move(start.x, start.y);
+    await host.mouse.down();
+    await host.mouse.move(start.x + 20, start.y + 20, { steps: 3 });
+    const end = { x: start.x + to.x - was.x, y: start.y + to.y - was.y };
+    await host.mouse.move(end.x, end.y, { steps: 12 });
+    await settle(400);
+    const landing = host.locator("[data-drop-landing]");
+    const seen = (await landing.count()) ? await landing.boundingBox() : null;
+    await shot(host, `55-${name}`);
+    await host.mouse.up();
+    await settle();
+    return seen;
+  };
+  const grip = async (id: string) =>
+    host.locator(`[data-cluster-grip="${(await frame(id)).cluster}"] button`);
+  const scale = async () => (await box(a)).width / (await frame(a)).w;
+
+  // b's cluster beside a's, tops level: one line, however wide.
+  const A = await box(a);
+  await drag(await grip(b), b, { x: A.x + A.width + 200 * (await scale()), y: A.y }, "cluster-beside");
+  check(
+    (await frame(b)).y === (await frame(a)).y && (await frame(b)).x > (await frame(a)).x,
+    `a cluster beside another, a line 6000 wide: ${await at(a, b, c)}`,
+  );
+  check((await frame(c)).y > (await frame(a)).y, `…c on the line under: ${await at(a, b, c)}`);
+
+  // c's cluster above the first line: a line of its own on top.
+  await fit();
+  const A2 = await box(a);
+  await drag(await grip(c), c, { x: A2.x, y: A2.y - 300 * (await scale()) }, "cluster-line-above");
+  const [fa, fb, fc] = [await frame(a), await frame(b), await frame(c)];
+  check(fc.y === 0 && fa.y > fc.y + fc.h && fb.y === fa.y, `c a line of its own above: ${await at(a, b, c)}`);
+
+  // A frame by its header below the last line: a new cluster, a line of its own; a bar across.
+  await fit();
+  const B = await box(b);
+  const header = host.locator(`[data-frame="${b}"] > div`).first();
+  const k = await scale();
+  const bar = await drag(header, b, { x: B.x, y: B.y + B.height + 400 * k }, "frame-line-below");
+  check(!!bar && bar.height < 20 && bar.width > 100, `a bar across marks the new line (${bar?.width}x${bar?.height})`);
+  const [ga, gb] = [await frame(a), await frame(b)];
+  check(gb.y > ga.y + ga.h && gb.x === 0, `b a line of its own below: ${await at(a, b, c)}`);
+  await fit();
+  await shot(host, "55-lines-final");
+}
 // Frame focus: who occupies a frame drives its scroll for everyone following.
 // Needs a long file and a long markdown file: LONG (default src/big.ts), MD
 // (default docs/notes.md).
