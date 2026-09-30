@@ -18,6 +18,7 @@ export function CollabEditor({
   readOnly,
   placeholder,
   onSubmit,
+  keys,
   className,
 }: {
   text: Y.Text;
@@ -25,13 +26,17 @@ export function CollabEditor({
   placeholder?: string;
   /** ⌘/Ctrl+Enter. */
   onSubmit?: () => void;
+  /** More key bindings (CodeMirror key names), fixed when the editor is made. */
+  keys?: Record<string, () => void>;
   className?: string;
 }) {
   const room = useRoom();
   const host = useRef<HTMLDivElement>(null);
   const submit = useRef(onSubmit);
+  const extra = useRef(keys);
   useEffect(() => {
     submit.current = onSubmit;
+    extra.current = keys;
   });
 
   useEffect(() => {
@@ -51,6 +56,13 @@ export function CollabEditor({
                   return true;
                 },
               },
+              ...Object.keys(extra.current ?? {}).map((key) => ({
+                key,
+                run: () => {
+                  extra.current?.[key]?.();
+                  return true;
+                },
+              })),
             ]),
           ),
           keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),

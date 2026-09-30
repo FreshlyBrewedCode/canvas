@@ -3077,4 +3077,55 @@ if (step === "thread-nav") {
   check(gap < 40, `a click goes to the end (${gap}px left)`);
   check((await latest.count()) === 0, "…and the button goes");
 }
+if (step === "mode") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, process.env.AGENT ?? "opencode");
+  const id = (await frame.getAttribute("data-frame"))!;
+  const chip = (page: Page) => page.locator(`[data-frame="${id}"] [data-mode-chip]`);
+  const settled = async (page: Page, tone: string) => {
+    await page.locator(`[data-frame="${id}"] [data-mode-chip][data-mode-tone="${tone}"]:not([disabled])`).waitFor({ timeout: 30_000 });
+    return chip(page).getAttribute("data-mode-chip");
+  };
+  const first = await settled(host, "default");
+  check(!!first, `the chip shows the default mode, quietly: ${first}`);
+  await shot(host, "170-mode-default");
+  await chip(host).click();
+  const second = await host.waitForFunction(
+    ([id, first]) => {
+      const el = document.querySelector(`[data-frame="${id}"] [data-mode-chip]`);
+      return el && !el.hasAttribute("disabled") && el.getAttribute("data-mode-chip") !== first
+        ? el.getAttribute("data-mode-chip")
+        : null;
+    },
+    [id, first],
+    { timeout: 30_000 },
+  ).then((h) => h.jsonValue());
+  check(second !== first, `a click goes to the next mode: ${second}`);
+  check((await chip(host).getAttribute("data-mode-tone")) !== "default", "…which stands out");
+  await guest.locator(`[data-frame="${id}"] [data-mode-chip="${second}"]`).waitFor({ timeout: 10_000 });
+  check(true, "the guest sees it");
+  await shot(host, "171-mode-next");
+  await shot(guest, "171-mode-next-guest");
+  // Shift+Tab in the composer goes round, never to bypassing permissions.
+  const seen = [first, second];
+  await frame.locator(".cm-content").click();
+  // A mode the agent refuses (Claude Code's Auto on Haiku) stays put once, then is passed over.
+  for (let i = 0; i < 8; i++) {
+    await host.keyboard.press("Shift+Tab");
+    await new Promise((r) => setTimeout(r, 300));
+    await host.locator(`[data-frame="${id}"] [data-mode-chip]:not([disabled])`).waitFor({ timeout: 30_000 });
+    const now = await chip(host).getAttribute("data-mode-chip");
+    if (now !== seen.at(-1)) seen.push(now);
+    if (now === first) break;
+  }
+  check(seen.at(-1) === first, `Shift+Tab goes round: ${seen.join(" → ")}`);
+  check(!seen.some((m) => /bypass/i.test(m ?? "")), "…passing over bypassing permissions");
+}
 await browser.close();

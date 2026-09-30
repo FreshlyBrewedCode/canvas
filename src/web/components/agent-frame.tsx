@@ -16,7 +16,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { AgentSettings } from "@/components/agent-settings";
+import { AgentSettings, ModeChip, useModeCycle } from "@/components/agent-settings";
 import { MARKDOWN_LINKS, urlTransform } from "@/components/board-link";
 import { CollabEditor } from "@/components/collab-editor";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
@@ -36,7 +36,7 @@ import {
 } from "@/lib/thread";
 import { cn } from "@/lib/utils";
 import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
-import type { PlanEntry } from "../../shared/protocol";
+import type { AgentConfigValue, PlanEntry } from "../../shared/protocol";
 
 type AgentFrameData = Extract<Frame, { type: "agent" }>;
 
@@ -131,6 +131,11 @@ function AgentThread({
     }
   };
 
+  const configure = (configId: string, value: AgentConfigValue) =>
+    room.act({ t: "agent-config", sessionId: frame.id, configId, value });
+  const mode = useModeCycle(session?.options, configure);
+  const controls = readOnly || !room.hostOnline;
+
   const hint = room.isHost
     ? "⌘↵ to send"
     : access === "view"
@@ -171,6 +176,7 @@ function AgentThread({
             readOnly={readOnly}
             placeholder={`Prompt ${agentLabel}… (write together — everyone sees this draft)`}
             onSubmit={send}
+            keys={{ "Shift-Tab": () => !controls && mode.cycle() }}
             className="max-h-40 min-h-16 overflow-auto"
           />
           <div className="flex items-center gap-2 px-2.5 pb-2">
@@ -178,11 +184,10 @@ function AgentThread({
               settings={session?.meta.settings}
               options={session?.options}
               known={room.isHost || !!session}
-              disabled={readOnly || !room.hostOnline}
-              onChange={(configId, value) =>
-                room.act({ t: "agent-config", sessionId: frame.id, configId, value })
-              }
+              disabled={controls}
+              onChange={configure}
             />
+            <ModeChip settings={session?.meta.settings} mode={mode} disabled={controls} />
             <span className="text-muted-foreground flex-1 truncate text-[11px]">
               {error ? (
                 <span className="text-destructive">{error}</span>

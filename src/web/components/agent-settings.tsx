@@ -2,6 +2,7 @@ import { Check, ChevronDown, LoaderCircle, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { modeOption, modeTone, nextMode } from "@/lib/agent-mode";
 import { cn } from "@/lib/utils";
 import type { AgentConfigOption, AgentConfigValue, AgentSetting } from "../../shared/protocol";
 
@@ -280,5 +281,85 @@ function SearchList({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Going to the agent's next mode. `canvas serve` sends the options back after
+ * every change asked for, so new options are the agent's answer: still in the
+ * old mode, it refused the new one (Claude Code's Auto, on models without it).
+ */
+export function useModeCycle(
+  options: ReadonlyArray<AgentConfigOption> | undefined,
+  onChange: (configId: string, value: AgentConfigValue) => Promise<void>,
+) {
+  const [requested, setRequested] = useState<{ value: string; before: typeof options } | null>(
+    null,
+  );
+  /** Modes the agent answered without going to: not offered again. */
+  const [refused, setRefused] = useState<ReadonlySet<string>>(new Set());
+  const option = modeOption(options);
+
+  // The answer came: settle it while rendering (React's "adjusting state on a prop change").
+  if (requested && requested.before !== options) {
+    if (option?.value !== requested.value) setRefused(new Set(refused).add(requested.value));
+    setRequested(null);
+  }
+  useEffect(() => {
+    if (!requested) return;
+    const timer = setTimeout(() => setRequested(null), 15_000);
+    return () => clearTimeout(timer);
+  }, [requested]);
+
+  const next = option ? nextMode(option, refused) : null;
+  const pending = !!requested;
+  const cycle = () => {
+    if (!option || !next || pending) return;
+    setRequested({ value: next, before: options });
+    onChange(option.id, next).catch(() => setRequested(null));
+  };
+  return { option, next, pending, cycle };
+}
+
+/**
+ * The agent's mode, beside the settings chip: quiet in the default mode,
+ * coloured in any other. A click (or Shift+Tab in the composer) goes to the
+ * next mode; modes that skip permissions are only picked in the settings.
+ */
+export function ModeChip({
+  settings,
+  mode,
+  disabled,
+}: {
+  settings: ReadonlyArray<AgentSetting> | undefined;
+  mode: ReturnType<typeof useModeCycle>;
+  disabled: boolean;
+}) {
+  const { option, next, pending, cycle } = mode;
+  const known = settings?.find((setting) => setting.category === "mode");
+  if (!option && !known) return null;
+  const label = option?.choices.find((c) => c.value === option.value)?.name ?? known?.label;
+  const tone = option ? modeTone(option) : "default";
+  const nextName = next && option?.choices.find((c) => c.value === next)?.name;
+
+  return (
+    <button
+      type="button"
+      data-mode-chip={option?.value ?? known?.value}
+      data-mode-tone={tone}
+      disabled={disabled || !next || pending}
+      title={nextName ? `Mode: ${label}. Click or Shift+Tab: ${nextName}` : `Mode: ${label}`}
+      className={cn(
+        "flex max-w-32 min-w-0 shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[11px] disabled:cursor-default",
+        tone === "default" && "text-muted-foreground hover:text-foreground border-transparent",
+        tone === "plan" && "border-status-pending/45 bg-status-pending/10 text-status-pending",
+        tone === "other" && "border-status-ready/45 bg-status-ready/10 text-status-ready",
+        tone === "risky" && "border-status-blocked/45 bg-status-blocked/10 text-status-blocked",
+      )}
+      onClick={cycle}
+    >
+      {pending && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
