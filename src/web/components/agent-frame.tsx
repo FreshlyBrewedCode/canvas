@@ -13,12 +13,13 @@ import {
   Wrench,
 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { AgentSettings, ModeChip, useModeCycle } from "@/components/agent-settings";
 import { MARKDOWN_LINKS, urlTransform } from "@/components/board-link";
 import { CollabEditor } from "@/components/collab-editor";
+import { CopyButton } from "@/components/copy-button";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
@@ -373,9 +374,10 @@ function TurnView({ turn, frameId }: { turn: Turn; frameId: string }) {
   return (
     <div className="space-y-2">
       <div
-        className="bg-muted/60 border-l-[3px] px-2.5 py-2"
+        className="group/copy bg-muted/60 relative border-l-[3px] px-2.5 py-2"
         style={{ borderLeftColor: turn.author.color }}
       >
+        <CopyButton text={turn.text} title="Copy the prompt" />
         <div
           className="mb-0.5 text-[11px] font-semibold tracking-wide uppercase"
           style={{ color: turn.author.color }}
@@ -456,10 +458,13 @@ function rowBody(row: Row, frameId: string) {
   switch (row.kind) {
     case "text":
       return (
-        <div data-sel-key={row.key} className="prose-canvas text-sm">
-          <Markdown remarkPlugins={REMARK} components={MARKDOWN_LINKS} urlTransform={urlTransform}>
-            {row.content}
-          </Markdown>
+        <div className="group/copy relative">
+          <CopyButton text={row.content} title="Copy the message (markdown)" />
+          <div data-sel-key={row.key} className="prose-canvas text-sm">
+            <Markdown remarkPlugins={REMARK} components={MARKDOWN} urlTransform={urlTransform}>
+              {row.content}
+            </Markdown>
+          </div>
         </div>
       );
     case "thinking":
@@ -492,13 +497,19 @@ function rowBody(row: Row, frameId: string) {
               </span>
             }
           >
-            <pre
-              data-sel-key={row.key}
-              className="bg-muted/60 max-h-60 overflow-auto p-2 font-mono text-[11px] whitespace-pre-wrap"
-            >
-              {row.args}
-              {row.result !== undefined && `\n\n→ ${row.result}`}
-            </pre>
+            <div className="group/copy relative">
+              <CopyButton
+                text={row.result ?? row.args}
+                title={row.result === undefined ? "Copy the input" : "Copy the output"}
+              />
+              <pre
+                data-sel-key={row.key}
+                className="bg-muted/60 max-h-60 overflow-auto p-2 font-mono text-[11px] whitespace-pre-wrap"
+              >
+                {row.args}
+                {row.result !== undefined && `\n\n→ ${row.result}`}
+              </pre>
+            </div>
           </Disclosure>
           {row.permissions.map((permission) => (
             <PermissionCard key={permission.requestId} permission={permission} frameId={frameId} />
@@ -508,8 +519,25 @@ function rowBody(row: Row, frameId: string) {
   }
 }
 
-/** A board tool as each agent names it (`mcp__canvas__open_frame`, `canvas_open_frame`). */
 const REMARK = [remarkGfm];
+
+/** An agent's markdown: board links, and code blocks with a copy button. */
+const MARKDOWN: Components = {
+  ...MARKDOWN_LINKS,
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+};
+
+function CodeBlock({ children }: { children: React.ReactNode }) {
+  const pre = useRef<HTMLPreElement>(null);
+  return (
+    <div className="group/code relative">
+      <CopyButton get={() => pre.current?.textContent ?? ""} title="Copy the code" group="code" />
+      <pre ref={pre}>{children}</pre>
+    </div>
+  );
+}
+
+/** A board tool as each agent names it (`mcp__canvas__open_frame`, `canvas_open_frame`). */
 
 const BOARD_TOOL = new RegExp(
   `^(?:mcp__${BOARD_SERVER_NAME}__|${BOARD_SERVER_NAME}_)(${BOARD_TOOL_NAMES.join("|")})$`,
