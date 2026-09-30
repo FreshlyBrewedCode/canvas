@@ -6,8 +6,7 @@
  * the same on every peer, and operations change it by structural targets.
  *
  * Before the tree, positions were the truth, and structure was read off
- * them — still how boards from then are migrated (`migrate`), and, until the
- * drag goes by the pointer, where a dragged frame snaps (`snapTarget`):
+ * them — still how boards from then are migrated (`migrate`):
  *
  *   cluster  frames within `NEAR` of each other, transitively
  *   row      frames of a cluster whose top edges line up, left to right
@@ -26,6 +25,10 @@ export interface Rect {
 export type Box = Omit<Rect, "id">;
 export type Size = Pick<Rect, "w" | "h">;
 export type Side = "left" | "right" | "above" | "below";
+export interface Point {
+  readonly x: number;
+  readonly y: number;
+}
 /** Beside a frame: left or right of it in its row, or a new row above or below its row. */
 export interface Beside {
   readonly anchor: string;
@@ -100,74 +103,6 @@ function cluster<R extends Rect>(members: R[]): Cluster<R> {
       h: Math.max(...members.map((f) => f.y + f.h)) - y,
     },
   };
-}
-
-/** The cluster and row a frame is in. */
-function locate<R extends Rect>(rects: ReadonlyArray<R>, id: string) {
-  for (const c of clusters(rects)) {
-    const row = c.rows.find((r) => r.some((f) => f.id === id));
-    if (row) return { cluster: c, row, frame: row.find((f) => f.id === id)! };
-  }
-  throw new Error(`no frame ${id}`);
-}
-
-const rowBottom = (row: ReadonlyArray<Rect>) => Math.max(...row.map((f) => f.y + f.h));
-
-/**
- * Whether placing next to `target` goes in between two frames — two of a
- * row, or two rows — and if so the gap's centre line (`w` or `h` is 0), for a
- * drop's preview. `movingId`, the frame being placed, is no neighbour.
- */
-export function insertion(
-  rects: ReadonlyArray<Rect>,
-  target: Beside,
-  movingId?: string,
-): Box | null {
-  const rest = rects.filter((f) => f.id !== movingId);
-  const { cluster: c, row, frame: anchor } = locate(rest, target.anchor);
-  switch (target.side) {
-    case "right":
-    case "left": {
-      const i = row.indexOf(anchor);
-      const [l, r] = target.side === "right" ? [anchor, row[i + 1]] : [row[i - 1], anchor];
-      if (!l || !r) return null;
-      const y = Math.min(l.y, r.y);
-      return { x: (l.x + l.w + r.x) / 2, y, w: 0, h: Math.max(l.y + l.h, r.y + r.h) - y };
-    }
-    case "below":
-    case "above": {
-      const i = c.rows.indexOf(row);
-      const [upper, lower] = target.side === "below" ? [row, c.rows[i + 1]] : [c.rows[i - 1], row];
-      if (!upper || !lower) return null;
-      const y = (rowBottom(upper) + Math.min(...lower.map((f) => f.y))) / 2;
-      return { x: c.bounds.x, y, w: c.bounds.w, h: 0 };
-    }
-  }
-}
-
-/** Where a frame being dragged would snap to: next to the nearest frame within reach. */
-export function snapTarget(rects: ReadonlyArray<Rect>, movingId: string): Beside | null {
-  const moving = rects.find((f) => f.id === movingId);
-  if (!moving) return null;
-  const centre = (f: Box) => ({ x: f.x + f.w / 2, y: f.y + f.h / 2 });
-  const mc = centre(moving);
-  let best: { frame: Rect; distance: number; gap: number } | null = null;
-  for (const frame of rects) {
-    if (frame.id === movingId || !near(moving, frame)) continue;
-    const g = gaps(moving, frame);
-    const fc = centre(frame);
-    const distance = Math.hypot(mc.x - fc.x, mc.y - fc.y);
-    const gap = g.x + g.y;
-    if (!best || gap < best.gap || (gap === best.gap && distance < best.distance))
-      best = { frame, distance, gap };
-  }
-  if (!best) return null;
-  const fc = centre(best.frame);
-  const dx = (mc.x - fc.x) / ((best.frame.w + moving.w) / 2);
-  const dy = (mc.y - fc.y) / ((best.frame.h + moving.h) / 2);
-  const side: Side =
-    Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : dy >= 0 ? "below" : "above";
-  return { anchor: best.frame.id, side };
 }
 
 // ===========================================================================
@@ -830,4 +765,89 @@ function slot(
     }));
     return { pos: keys[index]!, rekey };
   }
+}
+
+// --- Drop zones ----------------------------------------------------------------
+//
+// A drag goes by the pointer, not by the dragged frame's geometry, and is hit
+// against the board laid out without what is dragged (`without`): what the
+// pointer is over doesn't change as the others make room.
+
+/** How far outside a cluster a drop still goes beside its frames. */
+export const CLUSTER_REACH = CLUSTER_GAP / 3;
+
+/** The tree without some frames: the board a drag of them is hit against. */
+export function without(tree: Tree, frames: ReadonlySet<string>): Tree {
+  return { ...tree, frames: tree.frames.filter((f) => !frames.has(f.id)) };
+}
+
+/**
+ * Where a drop at `point` goes. Over a cluster (or just outside it), beside
+ * its frame nearest the pointer, by the edge the pointer is nearest: left or
+ * right, before or after it in its row; top or bottom, a new row above or
+ * below. Elsewhere, or with `newCluster`, a cluster of its own there
+ * (`slotAt`).
+ */
+export function dropAt(
+  layout: Layout,
+  point: Point,
+  { newCluster = false }: { readonly newCluster?: boolean } = {},
+): Target {
+  const cluster = newCluster
+    ? undefined
+    : layout.clusters.find(({ box }) => distance(box, point) <= CLUSTER_REACH);
+  if (!cluster) return slotAt(layout, point);
+  let nearest: Rect | null = null;
+  for (const row of cluster.rows)
+    for (const column of row.columns)
+      for (const frame of column.frames)
+        if (!nearest || distance(frame, point) < distance(nearest, point)) nearest = frame;
+  const f = nearest!;
+  const u = Math.min(Math.max((point.x - f.x) / f.w, 0), 1);
+  const v = Math.min(Math.max((point.y - f.y) / f.h, 0), 1);
+  const edges: Array<[Side, number]> = [
+    ["left", u],
+    ["right", 1 - u],
+    ["above", v],
+    ["below", 1 - v],
+  ];
+  const [side] = edges.reduce((a, b) => (b[1] < a[1] ? b : a));
+  return { anchor: f.id, side };
+}
+
+/**
+ * A new cluster where `point` is, reading the board as clusters do: in the
+ * row of clusters the point is at or below, before the first whose middle
+ * it is left of; past a row's last, before the next row's first; under
+ * the last row, at the end.
+ */
+export function slotAt(layout: Layout, point: Point): NewCluster {
+  const tops = [...new Set(layout.clusters.map((k) => k.box.y))];
+  const line = tops.filter((y) => y <= point.y).at(-1) ?? tops[0];
+  const last = layout.clusters.filter((k) => k.box.y === tops.at(-1));
+  if (point.y > Math.max(...last.map((k) => k.box.y + k.box.h))) return { before: null };
+  const index = layout.clusters.findIndex(
+    ({ box }) => box.y > line! || (box.y === line && point.x < box.x + box.w / 2),
+  );
+  return { before: index < 0 ? null : layout.clusters[index]!.id };
+}
+
+/**
+ * Along a row, as full screen moves frames: before or after the frame the
+ * pointer is over (or nearest), by its half; null when the row has none.
+ */
+export function alongAt(layout: Layout, row: string, x: number): Beside | null {
+  const columns = layout.clusters.flatMap((k) => k.rows).find((r) => r.id === row)?.columns;
+  if (!columns?.length) return null;
+  const at = (c: ResolvedColumn) => Math.max(c.box.x - x, 0, x - c.box.x - c.box.w);
+  const column = columns.reduce((a, b) => (at(b) < at(a) ? b : a));
+  const side = x < column.box.x + column.box.w / 2 ? "left" : "right";
+  return { anchor: column.frames[0]!.id, side };
+}
+
+/** How far a point is from a box; 0 inside it. */
+function distance(box: Box, point: Point): number {
+  const dx = Math.max(box.x - point.x, 0, point.x - box.x - box.w);
+  const dy = Math.max(box.y - point.y, 0, point.y - box.y - box.h);
+  return Math.hypot(dx, dy);
 }

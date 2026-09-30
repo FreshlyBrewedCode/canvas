@@ -45,6 +45,7 @@ import type {
   WelcomeRelay,
 } from "../../shared/protocol";
 import { allFrames, tidy, type Frame } from "./board";
+import type { DragGhost } from "./drag";
 import {
   CLOSED_TREE,
   resolveOccupants,
@@ -86,6 +87,8 @@ export interface Presence {
     readonly h: number;
   } | null;
   readonly selection: Selection | null;
+  /** A frame or cluster we drag, for a ghost of it (`drag.ts`). */
+  readonly drag?: DragGhost | null;
   /** The frame we occupy, or would if nobody else did (see `focus.ts`). */
   readonly focus: Focus | null;
   /** Host only: the frames agents are working on. */

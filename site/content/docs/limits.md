@@ -52,4 +52,5 @@ canvas is a prototype. These are known, and not bugs to report.
 - **Links to frames** name a frame's id: once it's closed, they go nowhere.
 - **Files are read-only.** The board cannot create or edit files; agents do.
 - **The shared set is fixed by rule.** There is no `.canvasignore` yet.
-- **Layout**: only rows, no stacks; a dropped frame can still run into a neighbouring cluster.
+- **Layout**: a column holds one frame, no stacks yet; clusters arrange themselves, none can be
+  placed freely. Two people dropping the same frame at once: the last drop wins.

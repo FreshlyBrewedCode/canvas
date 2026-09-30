@@ -6,7 +6,7 @@
 //
 //   STEP=setup  an agent shows the login code on the board; a terminal, a preview
 //   STEP=shots  everything else, on the board setup left
-//   STEP=snap   a drag with its snap preview
+//   STEP=snap   a drag, the others making room
 //   STEP=comments  comments on login.ts (the one setup left, else a new frame)
 //   STEP=drawing  a drawing: Karl sketches, Ada looks on, an agent adds a flowchart
 import { chromium, type Locator, type Page } from "playwright";
@@ -275,20 +275,25 @@ if (step === "shots") {
   await approveUntilIdle(agent, "agent");
 }
 
-// Drag the preview a little out of its row: the snap preview shows where it lands.
+// Drag the preview over the right edge of another frame: the others make room,
+// the outline shows where it lands (ADR 0010). Esc calls it off.
 if (step === "snap") {
   await fit(host);
-  const preview = (await frames(host)).find((fr) => fr.type === "browser")!;
-  const box = (await frameOf(host, preview.id).boundingBox())!;
-  const k = box.width / preview.w;
-  // By the header's icon: the title input keeps the pointer for itself.
-  const from = { x: box.x + 14 * k, y: box.y + 18 * k };
+  const all = await frames(host);
+  const preview = all.find((fr) => fr.type === "browser")!;
+  const other = all.find((fr) => fr.type === "file")!;
+  const header = (await frameOf(host, preview.id).locator("> div").first().boundingBox())!;
+  // The header's empty part: the title input keeps the pointer for itself.
+  const from = { x: header.x + header.width * 0.6, y: header.y + header.height / 2 };
   await host.mouse.move(from.x, from.y);
   await host.mouse.down();
-  await host.mouse.move(from.x - 8, from.y + 45, { steps: 8 });
-  await wait(400);
+  await host.mouse.move(from.x - 30, from.y + 30, { steps: 4 });
+  await wait(300);
+  const over = (await frameOf(host, other.id).boundingBox())!;
+  await host.mouse.move(over.x + over.width * 0.93, over.y + over.height * 0.45, { steps: 12 });
+  await wait(700);
   await shot(host, "snap");
-  await host.mouse.move(from.x, from.y, { steps: 8 });
+  await host.keyboard.press("Escape");
   await host.mouse.up();
 }
 
