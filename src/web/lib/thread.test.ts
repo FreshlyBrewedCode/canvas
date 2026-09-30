@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import type { AgentEvent } from "../../shared/protocol";
-import { foldThread } from "./thread";
+import { foldThread, latestPlan } from "./thread";
 
 /** A real opencode session: one turn, three shell permissions approved by the host. */
 const corpus = readFileSync(
@@ -80,5 +80,47 @@ describe("foldThread", () => {
     const tool = turn!.rows.find((row) => row.kind === "tool");
     expect(tool?.kind === "tool" && tool.permissions.map((p) => p.requestId)).toEqual(["p1"]);
     expect(turn!.permissions).toHaveLength(0);
+  });
+});
+
+describe("latestPlan", () => {
+  const plan = (turnId: string, ...statuses: Array<"pending" | "in_progress" | "completed">) =>
+    ({
+      kind: "chunk",
+      turnId,
+      chunk: {
+        type: "CUSTOM",
+        name: "plan",
+        value: { entries: statuses.map((status, i) => ({ content: `step ${i}`, status })) },
+      },
+    }) satisfies AgentEvent;
+  const turn = (turnId: string): AgentEvent => ({
+    kind: "turn",
+    turnId,
+    text: "go",
+    author: { name: "a", color: "#000" },
+    at: 0,
+  });
+
+  test("none until the agent sends one", () => {
+    expect(latestPlan(corpus)).toBeNull();
+  });
+
+  test("the last one wins, across turns", () => {
+    const events: AgentEvent[] = [
+      turn("t1"),
+      plan("t1", "in_progress", "pending"),
+      plan("t1", "completed", "in_progress"),
+      { kind: "turn-end", turnId: "t1" },
+      turn("t2"),
+    ];
+    expect(latestPlan(events)?.map((e) => e.status)).toEqual(["completed", "in_progress"]);
+    events.push(plan("t2", "pending"));
+    expect(latestPlan(events)).toEqual([{ content: "step 0", status: "pending" }]);
+  });
+
+  test("other custom chunks are not plans", () => {
+    const other = { kind: "chunk", turnId: "t", chunk: { type: "CUSTOM", name: "x.session-id" } };
+    expect(latestPlan([turn("t"), other as AgentEvent])).toBeNull();
   });
 });

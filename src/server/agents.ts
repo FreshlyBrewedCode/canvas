@@ -45,6 +45,8 @@ import type {
   SessionMeta,
   SessionSnapshot,
 } from "../shared/protocol";
+import { PLAN_EVENT } from "../shared/protocol";
+import { todoPlan } from "./todo-plan";
 import { fromAcp, pendingChanges, settingsOf } from "./agent-config";
 import { SKILLS_DIR } from "./skills";
 import { trimEvent } from "./trim-event";
@@ -264,6 +266,7 @@ export class AgentManager {
         labels: {
           sessionIdEvent: `${session.meta.agent}.session-id`,
           contentEvent: `${session.meta.agent}.message-content`,
+          planEvent: PLAN_EVENT,
         },
       });
       for await (const chunk of chunks) {
@@ -425,6 +428,8 @@ export class AgentManager {
     if (update.sessionUpdate === "config_option_update")
       return this.setOptions(session, update.configOptions);
     session.turn?.queue.push({ kind: "update", update: update as AcpSessionUpdate });
+    const plan = todoPlan(update);
+    if (plan) session.turn?.queue.push({ kind: "update", update: plan as AcpSessionUpdate });
   }
 
   /** Park the agent's ask until the host answers it in the browser. */

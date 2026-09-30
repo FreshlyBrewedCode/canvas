@@ -119,6 +119,18 @@ export type AgentEvent =
       readonly cancelled?: boolean;
     };
 
+/**
+ * The name of the AG-UI `CUSTOM` chunk that carries the agent's plan (an ACP
+ * `plan` update): `{ entries: PlanEntry[] }`, the whole plan each time.
+ */
+export const PLAN_EVENT = "plan";
+
+export interface PlanEntry {
+  readonly content: string;
+  readonly status: "pending" | "in_progress" | "completed";
+  readonly priority?: "high" | "medium" | "low";
+}
+
 export interface SessionSnapshot {
   readonly meta: SessionMeta;
   readonly events: ReadonlyArray<AgentEvent>;
