@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import type { AgentEvent } from "../../shared/protocol";
-import { foldThread, groupSteps, latestPlan, type Row } from "./thread";
+import { foldThread, groupSteps, latestPlan, sessionTotals, type Row } from "./thread";
 
 /** A real opencode session: one turn, three shell permissions approved by the host. */
 const corpus = readFileSync(
@@ -159,5 +159,59 @@ describe("groupSteps", () => {
 
   test("a call waiting on a permission breaks the run and shows", () => {
     expect(shape([tool("1"), tool("2"), tool("3", true), tool("4")])).toEqual(["[1 2]", "3", "4"]);
+  });
+});
+
+describe("usage and time", () => {
+  const author = { name: "a", color: "#000" };
+  const finished = (turnId: string, usage: Record<string, unknown>): AgentEvent => ({
+    kind: "chunk",
+    turnId,
+    chunk: { type: "RUN_FINISHED", runId: turnId, finishReason: "stop", usage },
+  });
+
+  test("a turn keeps the usage its run reports, and when it ended", () => {
+    const [turn] = foldThread([
+      { kind: "turn", turnId: "t", text: "go", author, at: 1000 },
+      finished("t", {
+        promptTokens: 17209,
+        completionTokens: 15,
+        totalTokens: 19162,
+        promptTokensDetails: { cachedTokens: 1938 },
+      }),
+      { kind: "turn-end", turnId: "t", at: 33_000 },
+    ]);
+    expect(turn!.usage).toEqual({ input: 17209, output: 15, total: 19162, cached: 1938 });
+    expect(turn!.end?.at).toBe(33_000);
+  });
+
+  test("the recorded session reports its usage", () => {
+    expect(foldThread(corpus)[0]!.usage?.total).toBeGreaterThan(0);
+  });
+
+  test("totals add up the turns that report", () => {
+    const turns = foldThread([
+      { kind: "turn", turnId: "a", text: "1", author, at: 0 },
+      finished("a", { promptTokens: 100, completionTokens: 10, totalTokens: 110 }),
+      { kind: "turn-end", turnId: "a", at: 5000 },
+      { kind: "turn", turnId: "b", text: "2", author, at: 10_000 },
+      finished("b", {
+        promptTokens: 200,
+        completionTokens: 20,
+        completionTokensDetails: { reasoningTokens: 5 },
+      }),
+      // An older log: no end time.
+      { kind: "turn-end", turnId: "b" },
+      { kind: "turn", turnId: "c", text: "3", author, at: 20_000 },
+    ]);
+    expect(sessionTotals(turns)).toEqual({
+      turns: 3,
+      input: 300,
+      output: 30,
+      cached: 0,
+      reasoning: 5,
+      total: 330,
+      time: 5000,
+    });
   });
 });

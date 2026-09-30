@@ -50,7 +50,24 @@ export interface Turn {
   readonly rows: ReadonlyArray<Row>;
   /** Permissions not tied to a tool call shown in the thread. */
   readonly permissions: ReadonlyArray<Permission>;
-  readonly end: { readonly error?: string; readonly cancelled?: boolean } | null;
+  readonly end: {
+    readonly error?: string;
+    readonly cancelled?: boolean;
+    /** When it ended, in logs that keep it. */
+    readonly at?: number;
+  } | null;
+  /** The tokens it took, if the agent said. */
+  readonly usage?: TurnUsage;
+}
+
+export interface TurnUsage {
+  readonly input: number;
+  readonly output: number;
+  readonly total: number;
+  /** Read from the agent's cache, besides `input`. */
+  readonly cached?: number;
+  /** Of `output`, spent reasoning. */
+  readonly reasoning?: number;
 }
 
 interface Accumulator {
@@ -82,9 +99,14 @@ export function foldThread(events: ReadonlyArray<AgentEvent>): Turn[] {
         byId.set(event.turnId, acc);
         break;
       }
-      case "chunk":
-        byId.get(event.turnId)?.chunks.push(event.chunk as StreamChunk);
+      case "chunk": {
+        const acc = byId.get(event.turnId);
+        if (!acc) break;
+        acc.chunks.push(event.chunk as StreamChunk);
+        const usage = turnUsage(event.chunk);
+        if (usage) acc.turn = { ...acc.turn, usage };
         break;
+      }
       case "permission": {
         const acc = byId.get(event.turnId);
         if (!acc) break;
@@ -105,7 +127,10 @@ export function foldThread(events: ReadonlyArray<AgentEvent>): Turn[] {
       case "turn-end": {
         const acc = byId.get(event.turnId);
         if (acc)
-          acc.turn = { ...acc.turn, end: { error: event.error, cancelled: event.cancelled } };
+          acc.turn = {
+            ...acc.turn,
+            end: { error: event.error, cancelled: event.cancelled, at: event.at },
+          };
         break;
       }
     }
@@ -208,4 +233,65 @@ export function groupSteps(rows: ReadonlyArray<Row>): Array<Row | Steps> {
   }
   flush();
   return out;
+}
+
+/** The usage a run's last chunk reports (AG-UI's names for ACP's `PromptResponse.usage`). */
+function turnUsage(chunk: unknown): TurnUsage | null {
+  const { type, usage } = chunk as {
+    type?: string;
+    usage?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      promptTokensDetails?: { cachedTokens?: number };
+      completionTokensDetails?: { reasoningTokens?: number };
+    };
+  };
+  if (type !== "RUN_FINISHED" || !usage) return null;
+  const input = usage.promptTokens ?? 0;
+  const output = usage.completionTokens ?? 0;
+  const cached = usage.promptTokensDetails?.cachedTokens;
+  const reasoning = usage.completionTokensDetails?.reasoningTokens;
+  return {
+    input,
+    output,
+    total: usage.totalTokens ?? input + output,
+    ...(cached && { cached }),
+    ...(reasoning && { reasoning }),
+  };
+}
+
+export interface SessionTotals {
+  readonly turns: number;
+  readonly input: number;
+  readonly output: number;
+  readonly cached: number;
+  readonly reasoning: number;
+  readonly total: number;
+  /** Time the agent spent on turns that say when they ended, in ms. */
+  readonly time: number;
+}
+
+/** A session's usage and time, over the turns that report them. */
+export function sessionTotals(turns: ReadonlyArray<Turn>): SessionTotals {
+  const totals = {
+    turns: turns.length,
+    input: 0,
+    output: 0,
+    cached: 0,
+    reasoning: 0,
+    total: 0,
+    time: 0,
+  };
+  for (const turn of turns) {
+    if (turn.usage) {
+      totals.input += turn.usage.input;
+      totals.output += turn.usage.output;
+      totals.cached += turn.usage.cached ?? 0;
+      totals.reasoning += turn.usage.reasoning ?? 0;
+      totals.total += turn.usage.total;
+    }
+    if (turn.end?.at) totals.time += Math.max(0, turn.end.at - turn.at);
+  }
+  return totals;
 }

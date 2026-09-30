@@ -17,6 +17,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { AgentSettings, ModeChip, useModeCycle } from "@/components/agent-settings";
+import { TurnFooter, UsageRing } from "@/components/agent-usage";
 import { MARKDOWN_LINKS, urlTransform } from "@/components/board-link";
 import { CollabEditor } from "@/components/collab-editor";
 import { CopyButton } from "@/components/copy-button";
@@ -37,9 +38,11 @@ import {
 } from "@/lib/thread";
 import { cn } from "@/lib/utils";
 import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
-import type { AgentConfigValue, PlanEntry } from "../../shared/protocol";
+import type { AgentConfigValue, AgentEvent, PlanEntry } from "../../shared/protocol";
 
 type AgentFrameData = Extract<Frame, { type: "agent" }>;
+
+const NO_EVENTS: AgentEvent[] = [];
 
 export function AgentFrame({ frame, readOnly }: { frame: AgentFrameData; readOnly: boolean }) {
   const room = useRoomState();
@@ -111,6 +114,11 @@ function AgentThread({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const text = useMemo(() => promptText(room.doc, frame.id), [room.doc, frame.id]);
+  const events = session?.events ?? NO_EVENTS;
+  const version = session?.version ?? 0;
+  // `events` is appended in place; `version` is what changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const turns = useMemo(() => foldThread(events), [events, version]);
   const status = session?.meta.status ?? "idle";
   const busy = status !== "idle" || sending;
   const agentLabel =
@@ -151,7 +159,7 @@ function AgentThread({
       readOnly={readOnly}
       status={
         <>
-          <span className="bg-secondary text-secondary-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
+          <span className="bg-secondary text-secondary-foreground shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap">
             {agentLabel}
           </span>
           {room.hostOnline && status === "waiting" ? (
@@ -166,11 +174,11 @@ function AgentThread({
       <div className="flex h-full flex-col">
         <Thread
           frameId={frame.id}
-          events={session?.events ?? []}
-          version={session?.version ?? 0}
+          turns={turns}
+          version={version}
           loading={room.hostOnline && (session ? session.loading : !room.isHost)}
         />
-        <Plan events={session?.events ?? []} version={session?.version ?? 0} />
+        <Plan events={events} version={version} />
         <div className="border-t">
           <CollabEditor
             text={text}
@@ -208,6 +216,7 @@ function AgentThread({
                 <CircleStop /> Stop
               </Button>
             )}
+            <UsageRing usage={session?.meta.usage} turns={turns} />
             <Button
               size="sm"
               onClick={() => void send()}
@@ -224,19 +233,16 @@ function AgentThread({
 
 function Thread({
   frameId,
-  events,
+  turns,
   version,
   loading,
 }: {
   frameId: string;
-  events: Parameters<typeof foldThread>[0];
+  turns: ReadonlyArray<Turn>;
   version: number;
   /** The host has not sent the conversation yet. */
   loading: boolean;
 }) {
-  // `events` is appended in place; `version` is what changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const turns = useMemo(() => foldThread(events), [events, version]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   /** Scrolled away from the end, and whether more came since. */
@@ -398,11 +404,9 @@ function TurnView({ turn, frameId }: { turn: Turn; frameId: string }) {
       {turn.permissions.map((permission) => (
         <PermissionCard key={permission.requestId} permission={permission} frameId={frameId} />
       ))}
-      {!turn.end && turn.rows.length === 0 && turn.permissions.length === 0 && (
-        <p className="text-muted-foreground animate-pulse text-xs">thinking…</p>
-      )}
       {turn.end?.error && <p className="text-destructive font-mono text-xs">{turn.end.error}</p>}
       {turn.end?.cancelled && <p className="text-muted-foreground font-mono text-xs">stopped</p>}
+      <TurnFooter turn={turn} />
     </div>
   );
 }

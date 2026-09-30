@@ -37,6 +37,17 @@ export interface SessionMeta {
    * shown while the agent is not connected, and re-applied when it reconnects.
    */
   readonly settings?: ReadonlyArray<AgentSetting>;
+  /** How full the agent's context is, as it last said (ACP `usage_update`); not every agent does. */
+  readonly usage?: ContextUsage;
+}
+
+export interface ContextUsage {
+  /** Tokens in the context now. */
+  readonly used: number;
+  /** The context window, in tokens. */
+  readonly size: number;
+  /** The session's cost so far, if the agent knows it. */
+  readonly cost?: { readonly amount: number; readonly currency: string };
 }
 
 export type AgentConfigValue = string | boolean;
@@ -115,6 +126,8 @@ export type AgentEvent =
   | {
       readonly kind: "turn-end";
       readonly turnId: string;
+      /** When it ended (absent in logs from before it was kept). */
+      readonly at?: number;
       readonly error?: string;
       readonly cancelled?: boolean;
     };
