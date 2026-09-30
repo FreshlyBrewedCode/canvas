@@ -795,7 +795,7 @@ export class Room {
             "server",
           );
         // Boards from before the tree are migrated before anyone joins.
-        tidy(this.doc);
+        tidy(this.doc, { screen: boardHeight() });
         this.sessions.clear();
         for (const snapshot of message.sessions) this.putSession(snapshot, snapshot.events);
         this.emit("sessions");
@@ -854,7 +854,7 @@ export class Room {
   private scheduleTidy() {
     if (this.tidyTimer) clearTimeout(this.tidyTimer);
     this.tidyTimer = setTimeout(() => {
-      if (this.serverStatus === "open") tidy(this.doc);
+      if (this.serverStatus === "open") tidy(this.doc, { screen: boardHeight() });
     }, 200);
   }
 
@@ -1100,6 +1100,10 @@ export class Room {
     this.awareness.destroy();
   }
 }
+
+/** Host: how tall our board is on screen — what full screen shows frames at. */
+const boardHeight = () =>
+  document.querySelector("[data-board]")?.clientHeight || globalThis.innerHeight || 0;
 
 interface MirroredSession {
   meta: SessionMeta;

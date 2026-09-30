@@ -290,12 +290,18 @@ export function applyLayout(doc: Y.Doc, changes: ReadonlyArray<Change>): void {
   });
 }
 
+/** A terminal's height, as a share of the host's screen, until someone sets another. */
+export const TERMINAL_SHARE = 0.5;
+
 /**
  * The host keeps the tree tidy: frames from before it are read into it by
  * where they were, what lost its place gets real containers where it shows,
- * and empty containers go. False if there was nothing to do.
+ * and empty containers go. Terminals without a height get their share of the
+ * host's `screen` height: the host's terminal sizes the PTY for everyone, so
+ * everyone shows it that tall (ADR 0010, decision 7). False if there was
+ * nothing to do.
  */
-export function tidy(doc: Y.Doc): boolean {
+export function tidy(doc: Y.Doc, { screen }: { readonly screen?: number } = {}): boolean {
   let tree = readTree(doc);
   const old: Array<Rect> = [];
   framesOf(doc).forEach((map, id) => {
@@ -309,6 +315,11 @@ export function tidy(doc: Y.Doc): boolean {
     changes.push(...next);
     tree = applyChanges(tree, next);
   }
+  if (screen)
+    framesOf(doc).forEach((map, id) => {
+      if (map.get("type") === "terminal" && !map.has("height"))
+        changes.push(...resize({ frame: id, height: screen * TERMINAL_SHARE }));
+    });
   if (!changes.length) return false;
   applyLayout(doc, changes);
   return true;

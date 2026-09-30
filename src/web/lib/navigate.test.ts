@@ -79,7 +79,7 @@ describe("navigate", () => {
       view: "source",
       x: expect.any(Number),
     });
-    expect(frame(where!.frame!).x as number).toBeGreaterThan(400);
+    expect(frame(where!.frame!).x as number).toBeGreaterThanOrEqual(400);
     expect(frame(where!.frame!).lines).toBeUndefined();
   });
 

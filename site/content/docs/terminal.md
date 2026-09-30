@@ -11,7 +11,10 @@ its output live.
 ![A terminal frame running the project's dev server](./screenshots/terminal.webp)
 
 - **Who types**: the host, and guests with trusted access. Everyone else reads.
-- **Size**: the shell follows the size of the host's frame.
+- **Size**: the shell follows the size of the host's frame. In
+  [full screen](/docs/board#full-screen) a terminal keeps a height of its own: half the host's
+  screen to begin with; drag its bottom edge there to change it. Everyone's full screen shows the
+  host's height, so what the shell draws fits for all.
 - **Scroll**: whoever occupies the frame drives its scrollback for everyone following
   ([Focus](/docs/focus)).
 

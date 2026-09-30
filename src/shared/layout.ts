@@ -44,8 +44,8 @@ export interface Cluster<R extends Rect = Rect> {
   readonly bounds: Box;
 }
 
-/** Space between frames in a cluster. */
-export const GAP = 24;
+/** Space between frames in a cluster: none, they share their borders (ADR 0010). */
+export const GAP = 0;
 /** Frames this close (or closer) are one cluster. */
 export const NEAR = 48;
 /** Top edges this close are one row. */

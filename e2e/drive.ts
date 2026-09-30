@@ -854,12 +854,12 @@ if (step === "arrange") {
   check(seen.landing, "the landing shows where it goes");
   check(seen.boxes[0]!.x > before.x + 100, `B makes room while it goes (${before.x} → ${seen.boxes[0]!.x})`);
   check(seen.ghost === 1, "the guest sees a ghost of the drag");
-  check((await at(a, d, b, c)) === "0,0 624,0 1248,0 1872,0", `row reads A D B C: ${await at(a, d, b, c)}`);
+  check((await at(a, d, b, c)) === "0,0 600,0 1200,0 1800,0", `row reads A D B C, no gaps: ${await at(a, d, b, c)}`);
   check((await guest.locator("[data-drag-ghost]").count()) === 0, "…gone after the drop");
 
   // D over C's right edge: the row's end; B and C close up behind it.
-  await drag(header(d), 1248 + 590, 200, "append-to-row");
-  check((await at(a, b, c, d)) === "0,0 624,0 1248,0 1872,0", `D at the row's end: ${await at(a, b, c, d)}`);
+  await drag(header(d), 1200 + 590, 200, "append-to-row");
+  check((await at(a, b, c, d)) === "0,0 600,0 1200,0 1800,0", `D at the row's end: ${await at(a, b, c, d)}`);
 
   // A new row under A, then D over A's bottom edge: a row of its own between.
   const e = await add();
@@ -873,17 +873,17 @@ if (step === "arrange") {
   await fit();
   await drag(header(d), 300, 390, "insert-between-rows");
   check(
-    (await at(a, b, c, d, e)) === "0,0 624,0 1248,0 0,424 0,848",
+    (await at(a, b, c, d, e)) === "0,0 600,0 1200,0 0,400 0,800",
     `D a row of its own between, E pushed down: ${await at(a, b, c, d, e)}`,
   );
 
   // Removing B closes the row; removing D, alone in its row, pulls E up.
   await host.locator(`[data-frame="${b}"]`).getByTitle("Remove frame").click();
   await settle();
-  check((await at(c)) === "624,0", `B removed, C moved into its place: ${await at(c)}`);
+  check((await at(c)) === "600,0", `B removed, C moved into its place: ${await at(c)}`);
   await host.locator(`[data-frame="${d}"]`).getByTitle("Remove frame").click();
   await settle();
-  check((await at(e)) === "0,424", `D removed, E's row moved up: ${await at(e)}`);
+  check((await at(e)) === "0,400", `D removed, E's row moved up: ${await at(e)}`);
 
   // A over the right edge of a frame in another cluster: into that row; C closes up.
   const far = await add();
@@ -893,7 +893,7 @@ if (step === "arrange") {
   await drag(header(a), { over: far, u: 0.95, v: 0.5 }, 0, "move-to-other-cluster");
   const farNow = await frame(far);
   check(
-    (await at(a, c)) === `${farNow.x + farNow.w + 24},${farNow.y} 0,0` &&
+    (await at(a, c)) === `${farNow.x + farNow.w},${farNow.y} 0,0` &&
       (await frame(a)).cluster === farNow.cluster,
     `A beside the other cluster's frame, C at the row's start: ${await at(a, c, far)}`,
   );
@@ -2794,7 +2794,10 @@ if (step === "fullscreen") {
   check((await mode(draw)) === "in" && (await mode(term)) === "in", "…with its row");
   check((await mode(web)) === "hidden", "…and the row under it hidden");
   const termBox = (await frame(term).boundingBox())!;
-  check(Math.abs(termBox.height - 400) < 1, `a terminal keeps its height (${termBox.height})`);
+  check(
+    Math.abs(termBox.height - board.height / 2) < 2,
+    `a terminal is half the host's screen tall (${termBox.height} of ${board.height})`,
+  );
   check((await docH(files)) === 400, "the doc keeps the frame's height");
   check(
     (await host.locator("[data-hud]").getByTitle("Zoom in").count()) === 0 ||
@@ -2863,7 +2866,7 @@ if (step === "fullscreen") {
   await settle();
   const [moved, swapped] = [await at(files), await at(draw)];
   check(
-    moved.x === 624 && moved.y === 0 && swapped.x === 0 && swapped.y === 0,
+    moved.x === 600 && moved.y === 0 && swapped.x === 0 && swapped.y === 0,
     `…and drops it into the row, not up or down (${moved.x},${moved.y} / ${swapped.x})`,
   );
   check(await on(), "…still full screen");
@@ -2893,7 +2896,7 @@ if (step === "fullscreen") {
   let scrolled = await edgeDrag(board.x + board.width - 5);
   check(scrolled.held !== scrolled.from, `the right side scrolls the row (${scrolled.held})`);
   check(
-    (await at(files)).x === 1208 && (await at(term)).x === 624 && (await at(files)).y === 0,
+    (await at(files)).x === 1160 && (await at(term)).x === 600 && (await at(files)).y === 0,
     `…the frame dropped past the terminal (${(await at(files)).x})`,
   );
   check(
@@ -2906,7 +2909,7 @@ if (step === "fullscreen") {
   check(
     JSON.stringify(await order()) === JSON.stringify([files, draw, term]) &&
       (await at(files)).x === 0 &&
-      (await at(term)).x === 1248,
+      (await at(term)).x === 1200,
     `…the frame first in the row (${(await at(files)).x})`,
   );
   check((await current()) === files, "…the view going after it");
@@ -2923,7 +2926,7 @@ if (step === "fullscreen") {
   const added = (await current())!;
   const addedAt = await at(added);
   check(
-    addedAt.type === "drawing" && addedAt.x === 1248 + 560 + 24 && addedAt.y === 0,
+    addedAt.type === "drawing" && addedAt.x === 1200 + 560 && addedAt.y === 0,
     `…after the terminal, and goes there (${JSON.stringify(addedAt)})`,
   );
   await shot(host, "141-fullscreen-added");
@@ -2983,6 +2986,110 @@ if (step === "fullscreen") {
     await host.evaluate((f) => (window as any).room.doc.getMap("frames").delete(f), id);
   await settle();
   check(!(await on()), "removing the row's last frame ends it");
+}
+// Edges (ADR 0010): frames of a cluster share their borders, and every edge
+// resizes — a vertical one its column's width, a horizontal one its row's
+// height, a corner both. In full screen, widths, and a terminal's own height.
+if (step === "edges") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const add = async (name: string) => (await (await addFrame(host, name)).getAttribute("data-frame"))!;
+  const [a, b, c] = [await add("Files"), await add("Drawing"), await add("Files")];
+  await arrange(host, {
+    [a]: { x: 0, y: 0, w: 600, h: 400 },
+    [b]: { x: 624, y: 0, w: 600, h: 400 },
+    [c]: { x: 0, y: 424, w: 600, h: 300 },
+  });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(600);
+  const frame = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
+  const dom = async (id: string) => (await host.locator(`[data-frame="${id}"]`).boundingBox())!;
+  /** Press at a client point, move by board (dx, dy), let go. */
+  const pull = async (x: number, y: number, dx: number, dy: number) => {
+    await host.mouse.move(x, y);
+    await host.mouse.down();
+    const s = (await dom(a)).width / (await frame(a)).w;
+    await host.mouse.move(x + (dx * s) / 2, y + (dy * s) / 2, { steps: 4 });
+    await host.mouse.move(x + dx * s, y + dy * s, { steps: 4 });
+    await host.mouse.up();
+    await settle();
+  };
+
+  let [A, B, C] = [await frame(a), await frame(b), await frame(c)];
+  check(B.x === A.x + A.w && C.y === A.y + A.h, `no gaps: B at ${B.x}, C at ${C.y}`);
+  check((await host.locator("[data-frame] .cursor-nwse-resize").count()) === 0, "no corner handle in frames");
+
+  // The edge A and B share: A wider, B along.
+  let box = await dom(a);
+  await pull(box.x + box.width, box.y + box.height / 2, 100, 0);
+  [A, B] = [await frame(a), await frame(b)];
+  check(A.w === 700 && B.x === 700 && B.w === 600, `the shared vertical edge: A ${A.w} wide, B at ${B.x}`);
+
+  // The edge between the rows: the first row taller, C down.
+  box = await dom(b);
+  await pull(box.x + box.width / 2, box.y + box.height, 0, 80);
+  [A, B, C] = [await frame(a), await frame(b), await frame(c)];
+  check(A.h === 480 && B.h === 480 && C.y === 480, `the edge between rows: row ${A.h} tall, C at ${C.y}`);
+
+  // C's bottom-right corner: both.
+  // Fitted again: the taller row pushed C down.
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(600);
+  box = await dom(c);
+  await pull(box.x + box.width, box.y + box.height, 50, 40);
+  C = await frame(c);
+  check(C.w === 650 && C.h === 340, `a corner: C ${C.w}x${C.h}`);
+  await settle(300);
+  check((await guest.locator(`[data-frame="${c}"]`).getAttribute("style"))!.includes("width: 650px"), "the guest sees it");
+  await shot(host, "60-edges");
+
+  // Full screen: a terminal in the row, half the host's screen tall; its bottom edge sets its height.
+  const t = await add("Terminal");
+  await arrange(host, {
+    [a]: { x: 0, y: 0, w: 700, h: 480 },
+    [b]: { x: 700, y: 0, w: 600, h: 480 },
+    [t]: { x: 1300, y: 0, w: 560, h: 480 },
+    [c]: { x: 0, y: 480, w: 650, h: 340 },
+  });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(600);
+  await host.locator(`[data-frame="${a}"] [data-fullscreen-toggle]`).click();
+  await settle(800);
+  const screen = (await host.locator("[data-board]").boundingBox())!;
+  check((await host.locator("[data-edge=horizontal]").count()) === 1, "full screen: only the terminal's bottom edge is horizontal");
+  const before = (await frame(a)).w;
+  box = await dom(a);
+  await pull(box.x + box.width, box.y + 300, -120, 0);
+  check((await frame(a)).w === before - 120, `…a vertical edge sets widths (${before} → ${(await frame(a)).w})`);
+  await host.locator(`[data-fullscreen-dot="${t}"]`).click();
+  await settle(800);
+  let tb = await dom(t);
+  check(Math.abs(tb.height - screen.height / 2) < 2, `the terminal is half the screen tall (${tb.height})`);
+  await pull(tb.x + tb.width / 2, tb.y + tb.height, 0, 150);
+  tb = await dom(t);
+  const height = (await frame(t)).height;
+  check(Math.abs(tb.height - height) < 1 && Math.abs(height - (screen.height / 2 + 150)) < 2, `…its bottom edge sets its height (${height})`);
+  // The guest's full screen shows the host's height.
+  await guest.locator(`[data-frame="${t}"] [data-fullscreen-toggle]`).click();
+  await settle(800);
+  check(
+    Math.abs((await guest.locator(`[data-frame="${t}"]`).boundingBox())!.height - height) < 1,
+    "the guest's full screen shows the terminal at the host's height",
+  );
+  await guest.keyboard.press("Escape");
+  // "+" sits on the edge the frame shares with the next.
+  tb = await dom(t);
+  await host.mouse.move(tb.x + tb.width / 2, tb.y + 60);
+  const plus = (await host.locator("[data-fullscreen-insert=left]").boundingBox())!;
+  check(Math.abs(plus.x + plus.width / 2 - tb.x) < 2, "the + sits on the shared edge");
+  await shot(host, "61-edges-fullscreen");
 }
 if (step === "needs-you") {
   const check = (ok: boolean, what: string) => {

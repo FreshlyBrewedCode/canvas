@@ -9,7 +9,6 @@ import { addFrame, allFrames, DEFAULT_SIZE, newFrame, type FrameType } from "@/l
 import { currentIn } from "@/lib/fullscreen";
 import { useRoom } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
-import { GAP } from "../../shared/layout";
 
 /**
  * Full screen's own bar, in the top bar: a dot for each frame of the row, the
@@ -86,8 +85,8 @@ export function FullscreenBar({
 }
 
 /**
- * In the gaps beside the frame under the mouse, a "+" that adds a frame of
- * the row there (those after it make room) and goes to it.
+ * On the edges of the frame under the mouse, shared with its neighbours, a
+ * "+" that adds a frame of the row there (those after it make room) and goes to it.
  * Board space: full screen is at 100%.
  */
 export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
@@ -108,7 +107,7 @@ export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
 
   const frame = row?.frames.find((f) => f.id === hovered);
   if (!row || !frame) return null;
-  const middle = row.top + (frame.type === "terminal" ? frame.h : height) / 2;
+  const middle = row.top + (frame.type === "terminal" ? (frame.height ?? frame.h) : height) / 2;
 
   const insert = (side: "left" | "right", type: FrameType) => {
     setMenu(null);
@@ -136,7 +135,7 @@ export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
                 menu === side && "text-foreground",
               )}
               style={{
-                left: side === "left" ? frame.x - GAP / 2 : frame.x + frame.w + GAP / 2,
+                left: side === "left" ? frame.x : frame.x + frame.w,
                 top: middle,
               }}
             >

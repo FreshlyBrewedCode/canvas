@@ -44,14 +44,16 @@ time.
 | **Esc**, **F**, the **×** in the top bar, or zoom | Leave full screen           |
 
 - **It is yours alone.** The frames of the row take your screen's height on your board only;
-  everyone else sees them as they are. Terminals keep their height: the host's terminal sizes it
-  for everyone.
+  everyone else sees them as they are. Terminals keep a height of their own, half the host's
+  screen until someone drags their bottom edge: the host's terminal sizes it for everyone, so
+  everyone's full screen shows that height, taller or shorter than their screen.
 - **Going to a frame occupies it**, as pressing on it does ([Focus](/docs/focus)).
 - **The rest of the board is hidden**, and so are the toolbar and zoom controls: **+** beside the
-  frame under your mouse adds one, and the frames after it make room.
+  frame under your mouse, on the edges it shares with its neighbours, adds one, and the frames
+  after it make room.
 - **Frames only move along the row**: over the left or right half of another, a dragged frame
   goes before or after it, and the others make room. Hold a frame near the left or right side of
-  the screen to scroll the row that way. They don't resize in full screen.
+  the screen to scroll the row that way. The edges between frames set their widths.
 - **Leaving with Esc, F or ×** takes you back to where you were before full screen.
 - **Closing a frame** goes on to the next one in the row; closing the last leaves full screen.
 - **Keys are the frame's while you type** in it: a prompt, a terminal, a title. Press the board
@@ -91,15 +93,16 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
 - **Add** a frame from the toolbar: **Agent**, **Files**, **Browser**, **Terminal**, **Drawing**.
   It goes beside the frame you are in, or, if you are in none, in a cluster of its own, and the
   board takes you there.
-- **Move** it by its header, **resize** it from its bottom-right corner.
+- **Move** it by its header, **resize** it by its edges.
 - **Rename** it by clicking its title in the header.
 - **Remove** it with the **×** in its header.
 
 ## Layout
 
 The board is **clusters** of frames. A cluster is **rows**, top to bottom, and a row is
-**columns**, left to right, each holding one frame. The frames of a row share its height; a
-column's width is its frame's. Clusters arrange themselves: left to right in rows of clusters,
+**columns**, left to right, each holding one frame. Frames in a cluster share their borders, with
+no space between them; the frames of a row share its height, and a column's width is its
+frame's. Clusters arrange themselves: left to right in rows of clusters,
 tops aligned, with space between them. Nothing is placed freely, and nothing overlaps: a frame on
 its own is a cluster of one.
 
@@ -121,8 +124,10 @@ The nearest edge wins, and just outside a cluster still counts as its nearest fr
   drag any of its frames. It goes before the cluster the pointer is at.
 - **Naming a cluster:** click the name field above it (it reads _cluster_ until named).
 - **Moving or removing** a frame closes the gap it leaves.
-- **Resizing** a frame sets its column's width and its row's height: the rest of the row moves
-  along, and so do the rows below.
+- **Resizing:** every edge is a handle, one where two frames or two rows meet. Drag a vertical
+  edge to set the width of the frame left of it: the rest of the row moves along. Drag a
+  horizontal edge to set the height of the row above it: the rows below move. A corner does both.
+  A cluster's left and top edges stay where the board arranges it.
 
 ![Dragging a frame over another's edge: the others make room, the outline shows where it lands](./screenshots/snap.webp)
 

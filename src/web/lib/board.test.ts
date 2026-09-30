@@ -54,8 +54,8 @@ describe("the board on the tree", () => {
       file(5000, 5000),
     ]);
     expect(at(doc, a!)).toEqual({ x: 0, y: 0, w: 600, h: 400 });
-    expect(at(doc, b!)).toEqual({ x: 624, y: 0, w: 500, h: 400 });
-    expect(at(doc, c!)).toEqual({ x: 0, y: 424, w: 700, h: 300 });
+    expect(at(doc, b!)).toEqual({ x: 600 + GAP, y: 0, w: 500, h: 400 });
+    expect(at(doc, c!)).toEqual({ x: 0, y: 400 + GAP, w: 700, h: 300 });
     expect(allFrames(doc).find((f) => f.id === far)!.cluster).not.toBe(
       allFrames(doc).find((f) => f.id === a)!.cluster,
     );
@@ -93,5 +93,18 @@ describe("the board on the tree", () => {
     const [fa, fb] = [a, b].map((id) => allFrames(doc).find((f) => f.id === id)!);
     expect(fa!.cluster).not.toBe(fb!.cluster);
     expect(fb!.x).toBeGreaterThan(fa!.x + fa!.w);
+  });
+});
+
+describe("terminals", () => {
+  test("the host gives a terminal without a height its share of the host's screen", () => {
+    const doc = new Y.Doc();
+    const t = addFrame(doc, { type: "terminal", title: "shell" });
+    tidy(doc, { screen: 900 });
+    expect(allFrames(doc).find((f) => f.id === t)!.height).toBe(450);
+    // What someone set stays.
+    framesOf(doc).get(t)!.set("height", 300);
+    tidy(doc, { screen: 1200 });
+    expect(allFrames(doc).find((f) => f.id === t)!.height).toBe(300);
   });
 });
