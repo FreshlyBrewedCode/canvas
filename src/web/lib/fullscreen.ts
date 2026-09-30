@@ -1,7 +1,7 @@
 // Full screen (finding 20): one person's own view of a row at 100%, its
 // frames as tall as their screen. The geometry, free of the DOM.
 
-import { clusters, type Beside, type Rect } from "../../shared/layout";
+import type { Beside, Rect } from "../../shared/layout";
 import type { Transform } from "./viewport";
 
 export interface FullscreenRow<R extends Rect = Rect> {
@@ -11,16 +11,15 @@ export interface FullscreenRow<R extends Rect = Rect> {
   readonly top: number;
 }
 
-/** The row a frame is in (`shared/layout.ts`); null once the frame is gone. */
-export function fullscreenRow<R extends Rect>(
-  rects: ReadonlyArray<R>,
+/** The row a frame is in (ADR 0010); null once the frame is gone. */
+export function fullscreenRow<R extends Rect & { readonly row: string }>(
+  frames: ReadonlyArray<R>,
   id: string,
 ): FullscreenRow<R> | null {
-  for (const c of clusters(rects)) {
-    const row = c.rows.find((r) => r.some((f) => f.id === id));
-    if (row) return { frames: row, top: Math.min(...row.map((f) => f.y)) };
-  }
-  return null;
+  const frame = frames.find((f) => f.id === id);
+  if (!frame) return null;
+  const row = frames.filter((f) => f.row === frame.row).sort((a, b) => a.x - b.x);
+  return { frames: row, top: Math.min(...row.map((f) => f.y)) };
 }
 
 /** Show a frame at 100%, the row's top at the screen's: centred, or from its left edge if wider. */

@@ -31,7 +31,6 @@ import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { useFollowTreePanel, type TreePanel } from "@/hooks/use-follow-tree";
 import {
   addFrame,
-  allFrames,
   fileView,
   hasPreview,
   isHtml,
@@ -55,7 +54,6 @@ import {
 } from "@/lib/comments";
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import { quoteOf, relocate } from "../../shared/comments";
-import { placeNew } from "../../shared/layout";
 import { parseLink, Slugger } from "@/lib/board-link";
 import { bridgedLink, withLinkBridge } from "@/lib/link-bridge";
 import { entryFor } from "@/lib/file-list";
@@ -118,17 +116,14 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   const show = useCallback(
     (path: string, lines: LineRange | null, title: string, newFrame: boolean) => {
       const { id, w, h, files } = latest.current;
-      if (newFrame) {
-        const { rect, patches } = placeNew(
-          allFrames(room.doc),
+      if (newFrame)
+        addFrame(
+          room.doc,
+          { type: "file", path, title, lines },
           { anchor: id, side: "right" },
-          {
-            w,
-            h,
-          },
+          { w, h },
         );
-        addFrame(room.doc, { type: "file", path, title, lines, ...rect }, patches);
-      } else
+      else
         updateFrame(room.doc, id, {
           path,
           view: null,

@@ -28,22 +28,14 @@ import type {
   ViewBoardArgs,
   ViewFrameArgs,
 } from "../../shared/board-tools";
-import {
-  clusters,
-  moveFrame,
-  lift,
-  placeNear,
-  placeNew,
-  type Cluster,
-  type Patch,
-  type Side,
-} from "../../shared/layout";
+import { type Layout, type ResolvedCluster, type Side, type Target } from "../../shared/layout";
 import type { AgentInfo } from "../../shared/protocol";
 import {
   addFrame,
   allFrames,
-  applyPatches,
+  boardLayout,
   DEFAULT_SIZE,
+  moveFrame,
   promptText,
   removeFrame,
   updateFrame,
@@ -121,7 +113,8 @@ export function runBoardTool(ctx: BoardToolContext, name: string, args: unknown)
 // ---------------------------------------------------------------------------
 
 function viewBoard(ctx: BoardToolContext, frames: Frame[], args: ViewBoardArgs): string {
-  const all = clusters(frames);
+  const byId = new Map(frames.map((f) => [f.id, f]));
+  const all = boardLayout(ctx.doc).clusters.map((c) => clusterOf(c, byId));
   const mine = all.find((c) => c.frames.some((f) => f.id === ctx.self))!;
   const others = all.filter((c) => c !== mine);
   const full = args.scope === "board";
@@ -143,7 +136,27 @@ function viewBoard(ctx: BoardToolContext, frames: Frame[], args: ViewBoardArgs):
   return lines.join("\n");
 }
 
-function rows(ctx: BoardToolContext, cluster: Cluster<Frame>) {
+interface Cluster {
+  readonly frames: ReadonlyArray<Frame>;
+  /** Top to bottom; each left to right. */
+  readonly rows: ReadonlyArray<ReadonlyArray<Frame>>;
+}
+
+function clusterOf(cluster: ResolvedCluster, frames: ReadonlyMap<string, Frame>): Cluster {
+  const rows = cluster.rows.map((r) =>
+    r.columns.flatMap((c) => c.frames.flatMap((f) => frames.get(f.id) ?? [])),
+  );
+  return { frames: rows.flat(), rows };
+}
+
+/** Where an agent's new frame goes by default: at the end of its own row. */
+function besideSelf(layout: Layout, self: string): Target {
+  const row = layout.frames.get(self)!.row;
+  const last = row.columns.at(-1)!.frames.at(-1)!;
+  return { anchor: last.id, side: "right" };
+}
+
+function rows(ctx: BoardToolContext, cluster: Cluster) {
   return cluster.rows.map(
     (row, i) => `  row ${i + 1}: ${row.map((f) => describe(ctx, f)).join(" · ")}`,
   );
@@ -191,13 +204,6 @@ function describe(ctx: BoardToolContext, frame: Frame): string {
   return parts.join(" ");
 }
 
-/** A new frame without its geometry, for each kind of frame. */
-type Content = NewFrame extends infer F
-  ? F extends NewFrame
-    ? Omit<F, "x" | "y" | "w" | "h">
-    : never
-  : never;
-
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 // ---------------------------------------------------------------------------
@@ -205,7 +211,7 @@ const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs): BoardToolResult {
   const numbered = (prefix: string, type: Frame["type"]) =>
     `${prefix}-${frames.filter((f) => f.type === type).length + 1}`;
-  let frame: Content;
+  let frame: NewFrame;
   switch (args.type) {
     case "file": {
       const files = fileList(args.files);
@@ -241,13 +247,14 @@ function openFrame(ctx: BoardToolContext, frames: Frame[], args: OpenFrameArgs):
       );
   }
   const size = DEFAULT_SIZE[args.type];
-  const { rect, patches } = args.next_to
-    ? placeNew(frames, { anchor: known(frames, args.next_to).id, side: side(args.side) }, size)
-    : placeNear(frames, ctx.self, size);
+  const target = args.next_to
+    ? { anchor: known(frames, args.next_to).id, side: side(args.side) }
+    : besideSelf(boardLayout(ctx.doc), ctx.self);
   const id = addFrame(
     ctx.doc,
-    { ...frame, ...rect, ...(args.title && { title: args.title }), origin: ctx.self } as NewFrame,
-    patches,
+    { ...frame, ...(args.title && { title: args.title }), origin: ctx.self } as NewFrame,
+    target,
+    size,
   );
   if (args.type === "agent" && args.draft) promptText(ctx.doc, id).insert(0, args.draft);
   if (args.type === "drawing" && args.elements) {
@@ -309,16 +316,16 @@ function changeFrame(
   if (frame.type === "browser" && args.url !== undefined) patch.url = webUrl(args.url);
   if (args.title) patch.title = args.title;
 
-  let moves: Patch[] = [];
+  let to: Target | null = null;
   if (args.next_to) {
     const anchor = known(frames, args.next_to);
     if (anchor.id === frame.id) throw new Error("next_to can't be the frame itself");
-    moves = moveFrame(frames, frame.id, { anchor: anchor.id, side: side(args.side) });
+    to = { anchor: anchor.id, side: side(args.side) };
   }
-  if (!Object.keys(patch).length && !moves.length) throw new Error("nothing to change");
+  if (!Object.keys(patch).length && !to) throw new Error("nothing to change");
   ctx.doc.transact(() => {
     updateFrame(ctx.doc, frame.id, patch);
-    applyPatches(ctx.doc, moves);
+    if (to) moveFrame(ctx.doc, frame.id, to);
   });
   return { text: `Updated ${describe(ctx, reread(ctx, frame.id))}.`, frame: frame.id };
 }
@@ -327,7 +334,7 @@ function closeFrame(ctx: BoardToolContext, frames: Frame[], args: CloseFrameArgs
   const frame = known(frames, args.frame);
   if (frame.id === ctx.self) throw new Error("you can't close your own frame");
   const text = describe(ctx, frame);
-  removeFrame(ctx.doc, frame.id, lift(frames, frame.id));
+  removeFrame(ctx.doc, frame.id);
   return `Closed ${text}.`;
 }
 

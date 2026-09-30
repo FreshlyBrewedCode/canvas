@@ -5,19 +5,12 @@
  * frames, stored as structure; `resolve` derives every frame's rect from it,
  * the same on every peer, and operations change it by structural targets.
  *
- * Until the board runs on the tree, positions are the truth, and structure is
- * read off them:
+ * Before the tree, positions were the truth, and structure was read off
+ * them — still how boards from then are migrated (`migrate`), and, until the
+ * drag goes by the pointer, where a dragged frame snaps (`snapTarget`):
  *
- *   cluster  frames within `NEAR` of each other, transitively — what people
- *            group together belongs together
+ *   cluster  frames within `NEAR` of each other, transitively
  *   row      frames of a cluster whose top edges line up, left to right
- *
- * Placing a frame (by a person's drop or an agent's tool call) returns the
- * new frame's rect and patches for the frames that make room: frames later in
- * the row shift right, rows further down shift down. Nothing outside the
- * anchor's cluster moves. Anything placed away from other frames stays free.
- * A frame leaving (moved or removed) closes its gap the same way, reversed.
- * Boards from then are migrated to the tree by reading them this way.
  */
 
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
@@ -32,7 +25,6 @@ export interface Rect {
 
 export type Box = Omit<Rect, "id">;
 export type Size = Pick<Rect, "w" | "h">;
-export type Patch = { readonly id: string } & Partial<Box>;
 export type Side = "left" | "right" | "above" | "below";
 /** Beside a frame: left or right of it in its row, or a new row above or below its row. */
 export interface Beside {
@@ -111,7 +103,7 @@ function cluster<R extends Rect>(members: R[]): Cluster<R> {
 }
 
 /** The cluster and row a frame is in. */
-export function locate<R extends Rect>(rects: ReadonlyArray<R>, id: string) {
+function locate<R extends Rect>(rects: ReadonlyArray<R>, id: string) {
   for (const c of clusters(rects)) {
     const row = c.rows.find((r) => r.some((f) => f.id === id));
     if (row) return { cluster: c, row, frame: row.find((f) => f.id === id)! };
@@ -120,86 +112,6 @@ export function locate<R extends Rect>(rects: ReadonlyArray<R>, id: string) {
 }
 
 const rowBottom = (row: ReadonlyArray<Rect>) => Math.max(...row.map((f) => f.y + f.h));
-
-/** Where a new frame of `size` goes next to `target.anchor`, and what moves for it. */
-export function placeNew(
-  rects: ReadonlyArray<Rect>,
-  target: Beside,
-  size: Size,
-): { rect: Box; patches: Patch[] } {
-  const { cluster: c, row, frame: anchor } = locate(rects, target.anchor);
-  switch (target.side) {
-    case "right":
-    case "left": {
-      const rect = {
-        x: target.side === "right" ? anchor.x + anchor.w + GAP : anchor.x,
-        y: anchor.y,
-        w: size.w,
-        h: anchor.h,
-      };
-      const moves = (f: Rect) => (target.side === "right" ? f.x > anchor.x : f.x >= anchor.x);
-      return {
-        rect,
-        patches: row.filter(moves).map((f) => ({ id: f.id, x: f.x + size.w + GAP })),
-      };
-    }
-    case "below":
-    case "above": {
-      const y = target.side === "below" ? rowBottom(row) + GAP : row[0]!.y;
-      const from = target.side === "below" ? rowBottom(row) : y;
-      return {
-        rect: { x: anchor.x, y, w: size.w, h: size.h },
-        patches: c.frames
-          .filter((f) => f.y >= from)
-          .map((f) => ({ id: f.id, y: f.y + size.h + GAP })),
-      };
-    }
-  }
-}
-
-/**
- * Where an agent's new frame goes: its own cluster, without running into
- * another cluster — the end of its row, else a row under it, else under the
- * whole cluster (taken even if it touches another cluster).
- */
-export function placeNear(
-  rects: ReadonlyArray<Rect>,
-  selfId: string,
-  size: Size,
-): { rect: Box; patches: Patch[] } {
-  const { cluster: c, row } = locate(rects, selfId);
-  const bottom = {
-    rect: { x: c.bounds.x, y: c.bounds.y + c.bounds.h + GAP, ...size },
-    patches: [],
-  };
-  const candidates = [
-    placeNew(rects, { anchor: row.at(-1)!.id, side: "right" }, size),
-    placeNew(rects, { anchor: row[0]!.id, side: "below" }, size),
-    bottom,
-  ];
-  const inCluster = new Set(c.frames.map((f) => f.id));
-  const outside = rects.filter((f) => !inCluster.has(f.id));
-  return (
-    candidates.find(({ rect, patches }) => {
-      const moved = [rect, ...applyPatches(c.frames, patches)];
-      return !moved.some((m) => outside.some((o) => near(m, o)));
-    }) ?? bottom
-  );
-}
-
-/**
- * A frame leaves its place: the frames after it in its row close the gap, or,
- * when it was alone in its row, the rows below move up into it.
- */
-export function lift(rects: ReadonlyArray<Rect>, id: string): Patch[] {
-  const { cluster: c, row, frame } = locate(rects, id);
-  if (row.length > 1)
-    return row.filter((f) => f.x > frame.x).map((f) => ({ id: f.id, x: f.x - frame.w - GAP }));
-  const below = c.rows.slice(c.rows.indexOf(row) + 1).flat();
-  if (below.length === 0) return [];
-  const dy = Math.min(...below.map((f) => f.y)) - frame.y;
-  return below.map((f) => ({ id: f.id, y: f.y - dy }));
-}
 
 /**
  * Whether placing next to `target` goes in between two frames — two of a
@@ -256,52 +168,6 @@ export function snapTarget(rects: ReadonlyArray<Rect>, movingId: string): Beside
   const side: Side =
     Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : dy >= 0 ? "below" : "above";
   return { anchor: best.frame.id, side };
-}
-
-/** Move an existing frame next to `target`: it leaves its row, then is placed like a new one. */
-export function moveFrame(rects: ReadonlyArray<Rect>, id: string, target: Beside): Patch[] {
-  const frame = rects.find((f) => f.id === id);
-  if (!frame) throw new Error(`no frame ${id}`);
-  const lifted = lift(rects, id);
-  const rest = applyPatches(rects, lifted).filter((f) => f.id !== id);
-  const { rect, patches } = placeNew(rest, target, frame);
-  return merge([...lifted, ...patches, { id, ...rect }]);
-}
-
-/**
- * Resize a frame and keep its row a row: the others take its height, the
- * frames to its right follow its width, and rows below move with the row's
- * bottom edge.
- */
-export function resizeInRow(rects: ReadonlyArray<Rect>, id: string, size: Size): Patch[] {
-  const { cluster: c, row, frame } = locate(rects, id);
-  const patches: Patch[] = [{ id, w: size.w, h: size.h }];
-  if (row.length === 1) return patches;
-  const dw = size.w - frame.w;
-  for (const f of row)
-    if (f.id !== id)
-      patches.push(f.x > frame.x ? { id: f.id, x: f.x + dw, h: size.h } : { id: f.id, h: size.h });
-  const before = rowBottom(row);
-  const after = rowBottom(applyPatches(row, patches));
-  if (after !== before)
-    for (const f of c.frames)
-      if (!row.includes(f) && f.y >= before) patches.push({ id: f.id, y: f.y + after - before });
-  return patches;
-}
-
-export function applyPatches<R extends Rect>(
-  rects: ReadonlyArray<R>,
-  patches: ReadonlyArray<Patch>,
-): R[] {
-  const byId = new Map(merge(patches).map((p) => [p.id, p]));
-  return rects.map((r) => (byId.has(r.id) ? { ...r, ...byId.get(r.id) } : r));
-}
-
-/** One patch per frame; later patches win field by field. */
-function merge(patches: ReadonlyArray<Patch>): Patch[] {
-  const byId = new Map<string, Patch>();
-  for (const patch of patches) byId.set(patch.id, { ...byId.get(patch.id), ...patch });
-  return [...byId.values()];
 }
 
 // ===========================================================================

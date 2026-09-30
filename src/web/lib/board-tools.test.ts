@@ -2,19 +2,20 @@ import { describe, expect, test } from "bun:test";
 import * as Y from "yjs";
 
 import { GAP } from "../../shared/layout";
-import { addFrame, allFrames, promptText, type Frame, type NewFrame } from "./board";
+import { allFrames, promptText, type Frame } from "./board";
 import { runBoardTool } from "./board-tools";
 import { addComment, readComments } from "./comments";
 import { readElements, writeElements } from "./drawing";
+import { placeFrames, type Placed } from "./test-board";
 
 const AGENTS = [
   { kind: "claude", label: "Claude Code" },
   { kind: "opencode", label: "opencode" },
 ];
 
-function board(...frames: NewFrame[]) {
+function board(...frames: Placed[]) {
   const doc = new Y.Doc();
-  const ids = frames.map((frame) => addFrame(doc, frame));
+  const ids = placeFrames(doc, frames);
   const self = ids[0]!;
   const run = (name: string, args: Record<string, unknown> = {}) =>
     runBoardTool({ doc, self, agents: AGENTS }, name, args).text;
@@ -25,7 +26,7 @@ function board(...frames: NewFrame[]) {
   return { doc, ids, self, run, touched, frame, newest };
 }
 
-const agent = (x: number, y: number): NewFrame => ({
+const agent = (x: number, y: number): Placed => ({
   type: "agent",
   agent: "claude",
   title: "claude-1",
@@ -34,7 +35,7 @@ const agent = (x: number, y: number): NewFrame => ({
   w: 460,
   h: 620,
 });
-const file = (x: number, y: number, path: string, extra = {}): NewFrame => ({
+const file = (x: number, y: number, path: string, extra = {}): Placed => ({
   type: "file",
   path,
   title: path.split("/").at(-1)!,
@@ -352,7 +353,7 @@ describe("comments", () => {
 });
 
 describe("drawings", () => {
-  const drawingFrame = (x: number): NewFrame => ({
+  const drawingFrame = (x: number): Placed => ({
     type: "drawing",
     title: "sketch",
     x,

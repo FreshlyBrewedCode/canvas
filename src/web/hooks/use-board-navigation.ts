@@ -15,7 +15,7 @@ import type { Room } from "@/lib/room";
  */
 export function useBoardNavigation(
   room: Room,
-  viewport: Pick<BoardViewport, "show" | "centre">,
+  viewport: Pick<BoardViewport, "show">,
   readOnly: boolean,
 ): Go {
   const latest = useRef({ viewport, readOnly });
@@ -34,7 +34,6 @@ export function useBoardNavigation(
         room.detach(frameId);
       },
       fit: (box) => latest.current.viewport.show(box),
-      centre: () => latest.current.viewport.centre(),
     }),
     [room],
   );

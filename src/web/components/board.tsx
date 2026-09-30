@@ -25,14 +25,7 @@ import { useBoardNavigation } from "@/hooks/use-board-navigation";
 import { useFollowView } from "@/hooks/use-follow-view";
 import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
 import { FullscreenProvider, useFullscreen, type Fullscreen } from "@/hooks/use-fullscreen";
-import {
-  addFrame,
-  DEFAULT_SIZE,
-  newFrame,
-  useFrames,
-  type Frame,
-  type FrameType,
-} from "@/lib/board";
+import { addFrame, newFrame, useFrames, type Frame, type FrameType } from "@/lib/board";
 import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Presence } from "@/lib/room";
 import {
@@ -146,16 +139,14 @@ export function Board() {
     };
   }, [room, screen, subscribe]);
 
+  // Beside the frame we are in; else a cluster of its own. Then we go there.
   const create = (type: FrameType, extra: Record<string, string> = {}) => {
-    const size = DEFAULT_SIZE[type];
-    const centre = viewport.centre();
-    const offset = (frames.length % 5) * 24;
-    const box = {
-      x: Math.round(centre.x - size.w / 2 + offset),
-      y: Math.round(centre.y - size.h / 2 + offset),
-      ...size,
-    };
-    addFrame(room.doc, newFrame(type, box, frames, extra));
+    const own = room.ownFrame();
+    const target = frames.some((f) => f.id === own)
+      ? { anchor: own!, side: "right" as const }
+      : { before: null };
+    const id = addFrame(room.doc, newFrame(type, frames, extra), target);
+    go({ kind: "board", target: { frame: id } });
   };
 
   return (

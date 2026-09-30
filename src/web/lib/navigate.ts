@@ -11,11 +11,9 @@
 
 import type * as Y from "yjs";
 
-import { placeNew } from "../../shared/layout";
 import {
   addFrame,
   allFrames,
-  DEFAULT_SIZE,
   fileView,
   isMarkdown,
   raiseFrame,
@@ -37,8 +35,6 @@ export interface NavigateContext {
   /** Claim the frame if it is free; follow whoever holds it otherwise (`Room.focusFrame`). */
   readonly focus: (frameId: string) => void;
   readonly fit: (box: Box) => void;
-  /** Where a new frame goes with no frame to put it beside. */
-  readonly centre: () => { readonly x: number; readonly y: number };
 }
 
 export interface NavigateOptions {
@@ -78,17 +74,12 @@ export function navigate(
   if (!frame) {
     // No frame shows the file: open one beside the link.
     if (!path || !ctx.canEdit) return null;
-    const box = newFrameBox(ctx, frames, from);
+    // Beside the link's frame; with none, a cluster of its own.
+    const beside = from && frames.some((f) => f.id === from);
     const id = addFrame(
       ctx.doc,
-      {
-        type: "file",
-        path,
-        title: basename(path),
-        view: viewFor(path, lines, heading),
-        ...box.rect,
-      },
-      box.patches,
+      { type: "file", path, title: basename(path), view: viewFor(path, lines, heading) },
+      beside ? { anchor: from, side: "right" } : { before: null },
     );
     frame = allFrames(ctx.doc).find((f) => f.id === id)!;
   } else if (frame.type === "file" && path) {
@@ -157,21 +148,6 @@ function retarget(
 /** Lines mean the source; otherwise the file's default. */
 const viewFor = (path: string, lines?: LineRange, heading?: string) =>
   lines ? "source" : heading && isMarkdown(path) ? "preview" : null;
-
-function newFrameBox(ctx: NavigateContext, frames: ReadonlyArray<Frame>, from: string | null) {
-  const size = DEFAULT_SIZE.file;
-  if (from && frames.some((f) => f.id === from))
-    return placeNew(frames, { anchor: from, side: "right" }, size);
-  const centre = ctx.centre();
-  return {
-    rect: {
-      x: Math.round(centre.x - size.w / 2),
-      y: Math.round(centre.y - size.h / 2),
-      ...size,
-    },
-    patches: [],
-  };
-}
 
 const distance = (a: Box, b: Box) =>
   Math.hypot(a.x + a.w / 2 - (b.x + b.w / 2), a.y + a.h / 2 - (b.y + b.h / 2));
