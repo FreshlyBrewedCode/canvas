@@ -12,14 +12,13 @@ import {
 } from "./fullscreen";
 import { toViewport } from "./viewport";
 
-// A row of three (the middle one a few px lower: still the row), a row under
-// it, and a frame on its own far away.
+// A row of three, a row under it, and a frame on its own far away.
 const frames = [
-  { id: "a", x: 0, y: 0, w: 400, h: 300 },
-  { id: "b", x: 424, y: 6, w: 600, h: 300 },
-  { id: "c", x: 1048, y: 0, w: 400, h: 300 },
-  { id: "d", x: 0, y: 324, w: 400, h: 300 },
-  { id: "e", x: 5000, y: 5000, w: 400, h: 300 },
+  { id: "a", row: "r1", x: 0, y: 0, w: 400, h: 300 },
+  { id: "b", row: "r1", x: 424, y: 0, w: 600, h: 300 },
+  { id: "c", row: "r1", x: 1048, y: 0, w: 400, h: 300 },
+  { id: "d", row: "r2", x: 0, y: 324, w: 400, h: 300 },
+  { id: "e", row: "r3", x: 5000, y: 5000, w: 400, h: 300 },
 ];
 
 describe("full screen", () => {

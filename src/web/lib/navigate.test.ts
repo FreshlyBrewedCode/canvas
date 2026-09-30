@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import * as Y from "yjs";
 
-import { addFrame, allFrames, type NewFrame } from "./board";
+import { allFrames, type NewFrame } from "./board";
 import { addComment } from "./comments";
 import { navigate, type NavigateContext } from "./navigate";
 import { pendingReveal } from "./reveal";
+import { placeFrames, type Placed } from "./test-board";
 
 function board(canEdit = true) {
   const doc = new Y.Doc();
@@ -15,23 +16,29 @@ function board(canEdit = true) {
     canEdit,
     focus: (id) => focused.push(id),
     fit: (box) => fitted.push(`${box.x},${box.y}`),
-    centre: () => ({ x: 0, y: 0 }),
   };
-  const add = (frame: Partial<NewFrame> & { type: NewFrame["type"] }) =>
-    addFrame(doc, { title: "t", x: 0, y: 0, w: 400, h: 300, ...frame } as NewFrame);
+  /** Frames by position, each a cluster of its own unless placed together. */
+  const place = (...frames: Array<Partial<Placed> & { type: NewFrame["type"] }>) =>
+    placeFrames(
+      doc,
+      frames.map((frame) => ({ title: "t", x: 0, y: 0, w: 400, h: 300, ...frame }) as Placed),
+    );
+  const add = (frame: Partial<Placed> & { type: NewFrame["type"] }) => place(frame)[0]!;
   const frame = (id: string) =>
     allFrames(doc).find((f) => f.id === id) as unknown as Record<string, unknown>;
-  return { doc, ctx, focused, fitted, add, frame };
+  return { doc, ctx, focused, fitted, add, place, frame };
 }
 
 describe("navigate", () => {
   test("to a frame: our view and focus move, the board doesn't", () => {
     const { ctx, focused, fitted, add, frame } = board();
-    const id = add({ type: "file", path: "src/a.ts", x: 900 });
+    add({ type: "file", path: "src/z.ts" });
+    const id = add({ type: "file", path: "src/a.ts" });
     const before = JSON.stringify(frame(id));
     expect(navigate(ctx, { frame: id })).toEqual({ frame: id });
     expect(focused).toEqual([id]);
-    expect(fitted).toEqual(["900,0"]);
+    expect(fitted).toEqual([`${frame(id).x},0`]);
+    expect(frame(id).x).toBeGreaterThan(400);
     expect({ ...frame(id), z: 0 }).toEqual({ ...JSON.parse(before), z: 0 });
   });
 
@@ -51,10 +58,12 @@ describe("navigate", () => {
   });
 
   test("the nearest frame that shows the file", () => {
-    const { ctx, add } = board();
-    const from = add({ type: "agent", agent: "claude", x: 0 });
-    add({ type: "file", path: "src/a.ts", x: 5000 });
-    const near = add({ type: "file", path: "src/a.ts", x: 500 });
+    const { ctx, place } = board();
+    const [from, , near] = place(
+      { type: "agent", agent: "claude", x: 0 },
+      { type: "file", path: "src/a.ts", x: 5000, y: 3000 },
+      { type: "file", path: "src/a.ts", x: 500 },
+    );
     expect(navigate(ctx, { path: "src/a.ts" }, { from })?.frame).toBe(near);
   });
 

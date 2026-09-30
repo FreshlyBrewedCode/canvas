@@ -18,15 +18,7 @@ const claude = { kind: "agent", frame: "f1", name: "claude-1" } as const;
 
 function board() {
   const doc = new Y.Doc();
-  const frame = addFrame(doc, {
-    type: "file",
-    path: "a.ts",
-    title: "a.ts",
-    x: 0,
-    y: 0,
-    w: 1,
-    h: 1,
-  });
+  const frame = addFrame(doc, { type: "file", path: "a.ts", title: "a.ts" });
   const add = (comment: Partial<Comment> = {}) =>
     addComment(doc, frame, {
       path: "a.ts",

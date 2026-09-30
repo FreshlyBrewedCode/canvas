@@ -538,31 +538,39 @@ if (step === "files") {
   await shot(guest, "27-view-guest");
   await host.getByLabel("Guest access").selectOption("edit");
 }
-/** The board's frames as the host's doc has them. */
-const framesOf = (page: Page) =>
-  page.evaluate(() => {
-    const frames: Array<Record<string, any>> = [];
-    (window as any).room.doc
-      .getMap("frames")
-      .forEach((map: any, id: string) => frames.push({ id, ...map.toJSON() }));
-    return frames;
-  });
+/** The board's frames as the host's doc has them, with their rects (derived: ADR 0010). */
+const framesOf = (page: Page): Promise<Array<Record<string, any>>> =>
+  page.evaluate(() => (window as any).frames());
 const brief = (f: Record<string, any>) =>
   `${f.id} ${f.type} "${f.title}" ${f.path ?? f.url ?? f.agent ?? ""}` +
   `${f.lines ? ` L${f.lines.start}-${f.lines.end}` : ""} @${f.x},${f.y} ${f.w}x${f.h}` +
   `${f.origin ? ` origin=${f.origin}` : ""}`;
 
-/** Put a frame somewhere in board coordinates, as its own change. */
+/**
+ * Change a frame's fields, as its own change. With x and y it leaves its place
+ * in the tree and the host reads it back in by position, as it migrates boards
+ * from before the tree (ADR 0010): `arrange` does that for several at once, so
+ * they are read as one board.
+ */
 const place = (page: Page, id: string, patch: Record<string, unknown>) =>
-  page.evaluate(
-    ([frameId, p]) => {
-      const map = (window as any).room.doc.getMap("frames").get(frameId);
-      (window as any).room.doc.transact(() => {
-        for (const [k, v] of Object.entries(p as object)) map.set(k, v);
-      });
-    },
-    [id, patch] as const,
-  );
+  arrange(page, { [id]: patch });
+const arrange = async (page: Page, patches: Record<string, Record<string, unknown>>) => {
+  await page.evaluate((all) => {
+    const { doc } = (window as any).room;
+    const now = new Map((window as any).frames().map((f: any) => [f.id, f]));
+    doc.transact(() => {
+      for (const [frameId, p] of Object.entries(all)) {
+        const map = doc.getMap("frames").get(frameId);
+        const { w, h } = now.get(frameId) as any;
+        const fields = "x" in p ? { w, h, ...p } : p;
+        if ("x" in p) for (const key of ["parent", "pos", "cluster"]) map.delete(key);
+        for (const [k, v] of Object.entries(fields)) map.set(k, v);
+      }
+    });
+  }, patches);
+  // The host's tidy runs a moment after a change.
+  await new Promise((r) => setTimeout(r, 500));
+};
 
 /** Send a prompt from the host and wait for the agent to finish. */
 async function ask(frame: ReturnType<Page["locator"]>, text: string) {
@@ -606,7 +614,11 @@ if (step === "tools") {
   let frames = await framesOf(host);
   console.log("board after 1st prompt:\n  " + frames.map(brief).join("\n  "));
   const opened = frames.filter((f) => f.origin === self);
-  console.log(`opened by the agent: ${opened.length}; README untouched:`, frames.find((f) => f.id === otherId)?.x === 3000);
+  const readme = frames.find((f) => f.id === otherId);
+  console.log(
+    `opened by the agent: ${opened.length}; README alone in its cluster:`,
+    frames.filter((f) => f.cluster === readme?.cluster).length === 1,
+  );
   await guest.locator(`[data-frame="${opened[0]?.id}"]`).waitFor({ timeout: 10000 });
   console.log("guest sees the agent's frames:", await guest.locator("[data-frame-type=file]").count());
   await host.locator("[data-hud]").getByTitle("Fit board to view").click();
@@ -666,15 +678,20 @@ if (step === "lines") {
   }
 }
 
-// Dragging and resizing follow the layout rules; Alt opts out.
+// Dragging and resizing follow the layout rules.
 if (step === "layout") {
   const ids: string[] = [];
   for (const [i, path] of ["README.md", "src/db.ts", "src/routes/products.ts"].entries()) {
     const frame = await addFrame(host, "Files");
     const id = (await frame.getAttribute("data-frame"))!;
     ids.push(id);
-    await place(host, id, { path, title: path, x: i * 1400, y: i === 1 ? 900 : 0, w: 600, h: 400 + i * 60 });
+    await place(host, id, { path, title: path });
   }
+  // Three clusters, of one frame each.
+  await arrange(
+    host,
+    Object.fromEntries(ids.map((id, i) => [id, { x: i * 1400, y: i === 1 ? 900 : 0, w: 600, h: 400 + i * 60 }])),
+  );
   const [a, b, c] = ids as [string, string, string];
   await host.locator("[data-hud]").getByTitle("Fit board to view").click();
   await new Promise((r) => setTimeout(r, 500));
@@ -732,11 +749,11 @@ if (step === "layout") {
     .map((f) => `${f.path}@${f.x},${f.y} ${f.w}x${f.h}`);
   console.log("after dropping C left of A:", order.join(" | "));
 
-  // With Alt: dropped where it is, no snap.
+  // Dropped away from everything: a cluster of its own (nothing is placed freely: ADR 0010).
   B = await frame(b);
-  ghost = await drag(b, B.x + 60, B.y + 90, true);
+  ghost = await drag(b, B.x, B.y + 3000);
   const B3 = await frame(b);
-  console.log(`alt drag: ghost=${ghost} moved to ${B3.x},${B3.y} (expect ${B.x + 60},${B.y + 90}, give or take rounding)`);
+  console.log(`away: ghost=${ghost} cluster ${B3.cluster} (was ${B.cluster}), at ${B3.x},${B3.y}`);
   await host.locator("[data-hud]").getByTitle("Fit board to view").click();
   await new Promise((r) => setTimeout(r, 400));
   await shot(host, "43-final");
@@ -757,12 +774,10 @@ if (step === "arrange") {
     const frames = (window as any).room.doc.getMap("frames");
     for (const id of [...frames.keys()]) frames.delete(id);
   });
-  const add = async (x: number, y: number) => {
-    const id = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
-    await place(host, id, { x, y, w: 600, h: 400 });
-    return id;
-  };
-  const [a, b, c, d] = [await add(0, 0), await add(624, 0), await add(1248, 0), await add(0, 424)];
+  const add = async () => (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  const [a, b, c, d] = [await add(), await add(), await add(), await add()];
+  const box = (x: number, y: number) => ({ x, y, w: 600, h: 400 });
+  await arrange(host, { [a]: box(0, 0), [b]: box(624, 0), [c]: box(1248, 0), [d]: box(0, 424) });
   await host.locator("[data-hud]").getByTitle("Fit board to view").click();
   await settle(500);
   const frame = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
@@ -813,7 +828,16 @@ if (step === "arrange") {
   );
 
   // A new row under A, then D between the rows: a horizontal line.
-  const e = await add(0, 424);
+  const e = await add();
+  await arrange(host, {
+    [a]: box(0, 0),
+    [b]: box(624, 0),
+    [c]: box(1248, 0),
+    [d]: box(1872, 0),
+    [e]: box(0, 424),
+  });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(500);
   seen = await drag(d, 20, 250, "insert-between-rows");
   check(
     seen.preview === "insert" && seen.line!.width > seen.line!.height,
@@ -832,20 +856,18 @@ if (step === "arrange") {
   await settle();
   check((await at(e)).join() === "0,424", `D removed, E's row moved up: ${await at(e)}`);
 
-  // A snapped next to a frame far away: C closes the gap it leaves.
-  const far = await add(4000, 0);
-  await drag(a, 4000 + 600 + 30, 10, "move-to-other-cluster");
+  // A snapped next to a frame in another cluster: C closes the gap it leaves.
+  const far = await add();
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(500);
+  const farAt = await frame(far);
+  check(farAt.cluster !== (await frame(c)).cluster, "a new frame from the toolbar: its own cluster");
+  await drag(a, farAt.x + 600 + 30, farAt.y + 10, "move-to-other-cluster");
+  const farNow = await frame(far);
   check(
-    (await at(a, c)).join(" ") === "4624,0 0,0",
-    `A next to the far frame, C at the row's start: ${await at(a, c)}`,
-  );
-
-  // Shift: C drags E along, keeping their offsets, no snap preview.
-  seen = await drag(c, 200, 1500, "shift-cluster", "Shift");
-  check(seen.preview === null, `no preview with Shift: ${seen.preview}`);
-  check(
-    (await at(c, e, far)).join(" ") === "200,1500 200,1924 4000,0",
-    `the cluster moved as one, the far one stayed: ${await at(c, e, far)}`,
+    (await at(a, c)).join(" ") === `${farNow.x + farNow.w + 24},${farNow.y} 0,0` &&
+      (await frame(a)).cluster === farNow.cluster,
+    `A next to the other cluster's frame, C at the row's start: ${await at(a, c, far)}`,
   );
 
   // The title field is as wide as the title; the header beside it drags.
@@ -855,16 +877,18 @@ if (step === "arrange") {
   const input = host.locator(`[data-frame="${c}"]`).getByLabel("Frame title");
   const [hb, ib] = [(await header.boundingBox())!, (await input.boundingBox())!];
   check(ib.width < hb.width / 3, `title ${Math.round(ib.width)}px of a ${Math.round(hb.width)}px header`);
-  const before = await frame(c);
+  const before = (await host.locator(`[data-frame="${c}"]`).boundingBox())!;
   const grab = { x: ib.x + ib.width + (hb.width - ib.width) / 3, y: hb.y + hb.height / 2 };
   await host.mouse.move(grab.x, grab.y);
   await host.mouse.down();
   await host.mouse.move(grab.x, grab.y - 60, { steps: 5 });
+  await settle(200);
+  const during = (await host.locator(`[data-frame="${c}"]`).boundingBox())!;
   await host.mouse.up();
   await settle();
   check(
-    (await frame(c)).y !== before.y,
-    `dragged by the header's empty part: y ${before.y} → ${(await frame(c)).y}`,
+    during.y < before.y - 40,
+    `dragged by the header's empty part: y ${before.y} → ${during.y}`,
   );
   await input.click();
   check(await input.evaluate((el) => el === document.activeElement), "clicking the title edits it");
@@ -2678,10 +2702,12 @@ if (step === "fullscreen") {
   const draw = (await (await addFrame(host, "Drawing")).getAttribute("data-frame"))!;
   const term = (await (await addFrame(host, "Terminal")).getAttribute("data-frame"))!;
   const web = (await (await addFrame(host, "Browser")).getAttribute("data-frame"))!;
-  await place(host, files, { x: 0, y: 0, w: 600, h: 400 });
-  await place(host, draw, { x: 624, y: 0, w: 600, h: 400 });
-  await place(host, term, { x: 1248, y: 0, w: 560, h: 380 });
-  await place(host, web, { x: 0, y: 424, w: 600, h: 400 });
+  await arrange(host, {
+    [files]: { x: 0, y: 0, w: 600, h: 400 },
+    [draw]: { x: 624, y: 0, w: 600, h: 400 },
+    [term]: { x: 1248, y: 0, w: 560, h: 400 },
+    [web]: { x: 0, y: 424, w: 600, h: 400 },
+  });
   await host.locator("[data-hud]").getByTitle("Fit board to view").click();
   await settle(800);
 
@@ -2689,8 +2715,7 @@ if (step === "fullscreen") {
   const mode = (id: string, page = host) => frame(id, page).getAttribute("data-fullscreen");
   const current = () =>
     host.locator("[data-fullscreen-dot][aria-current]").getAttribute("data-fullscreen-dot");
-  const docH = (id: string) =>
-    host.evaluate((f) => (window as any).room.doc.getMap("frames").get(f).get("h"), id);
+  const docH = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!.h;
   const transform = () =>
     host.evaluate(
       () => (document.querySelector("[data-board] > div") as HTMLElement).style.transform,
@@ -2711,7 +2736,7 @@ if (step === "fullscreen") {
   check((await mode(draw)) === "in" && (await mode(term)) === "in", "…with its row");
   check((await mode(web)) === "hidden", "…and the row under it hidden");
   const termBox = (await frame(term).boundingBox())!;
-  check(Math.abs(termBox.height - 380) < 1, `a terminal keeps its height (${termBox.height})`);
+  check(Math.abs(termBox.height - 400) < 1, `a terminal keeps its height (${termBox.height})`);
   check((await docH(files)) === 400, "the doc keeps the frame's height");
   check(
     (await host.locator("[data-hud]").getByTitle("Zoom in").count()) === 0 ||
@@ -2762,8 +2787,7 @@ if (step === "fullscreen") {
   await host.mouse.click(board.x + board.width / 2, 20);
 
   // Dragging a header only reorders the row: past the drawing's middle, it swaps with it.
-  const at = (id: string) =>
-    host.evaluate((f) => (window as any).room.doc.getMap("frames").get(f).toJSON(), id);
+  const at = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
   const header = (await frame(files).locator("input[aria-label='Frame title']").boundingBox())!;
   await host.mouse.move(header.x + header.width + 60, header.y + 5);
   await host.mouse.down();
@@ -2834,10 +2858,7 @@ if (step === "fullscreen") {
   await settle();
   check((await host.locator("[data-fullscreen-dot]").count()) === 4, "+ adds a frame to the row");
   const added = (await current())!;
-  const addedAt = await host.evaluate(
-    (f) => (window as any).room.doc.getMap("frames").get(f).toJSON(),
-    added,
-  );
+  const addedAt = await at(added);
   check(
     addedAt.type === "drawing" && addedAt.x === 1248 + 560 + 24 && addedAt.y === 0,
     `…after the terminal, and goes there (${JSON.stringify(addedAt)})`,

@@ -9,7 +9,7 @@ import { addFrame, allFrames, DEFAULT_SIZE, newFrame, type FrameType } from "@/l
 import { currentIn } from "@/lib/fullscreen";
 import { useRoom } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
-import { GAP, placeNew } from "../../shared/layout";
+import { GAP } from "../../shared/layout";
 
 /**
  * Full screen's own bar, in the top bar: a dot for each frame of the row, the
@@ -87,7 +87,7 @@ export function FullscreenBar({
 
 /**
  * In the gaps beside the frame under the mouse, a "+" that adds a frame of
- * the row there (`placeNew`: those after it make room) and goes to it.
+ * the row there (those after it make room) and goes to it.
  * Board space: full screen is at 100%.
  */
 export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
@@ -114,8 +114,7 @@ export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
     setMenu(null);
     const frames = allFrames(room.doc);
     const size = { w: DEFAULT_SIZE[type].w, h: frame.h };
-    const { rect, patches } = placeNew(frames, { anchor: frame.id, side }, size);
-    fullscreen.show(addFrame(room.doc, newFrame(type, rect, frames), patches));
+    fullscreen.show(addFrame(room.doc, newFrame(type, frames), { anchor: frame.id, side }, size));
   };
 
   return (

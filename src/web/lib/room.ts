@@ -44,7 +44,7 @@ import type {
   ToolImage,
   WelcomeRelay,
 } from "../../shared/protocol";
-import { allFrames, type Frame } from "./board";
+import { allFrames, tidy, type Frame } from "./board";
 import {
   CLOSED_TREE,
   resolveOccupants,
@@ -184,6 +184,7 @@ export class Room {
   /** Terminals opened and agent sessions ensured since the server link came up. */
   private readonly opened = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private tidyTimer: ReturnType<typeof setTimeout> | null = null;
   private occupants = new Map<string, Occupant>();
   /** Frames we scrolled away from, with whom we stopped following there. */
   private readonly detached = new Map<string, string>();
@@ -330,6 +331,11 @@ export class Room {
     const taken = occupant?.kind === "person" && occupant.clientId !== this.doc.clientID;
     const focus = frameId && !taken ? { frameId, since: Date.now(), scroll: null } : null;
     if (focus || mine) this.setPresence({ focus });
+  }
+
+  /** The frame we last pressed on, if it is still ours to be in. */
+  ownFrame(): string | null {
+    return this.localFocus()?.frameId ?? null;
   }
 
   /** We occupy the frame: tell followers where we scrolled it. */
@@ -665,6 +671,7 @@ export class Room {
       const targets = this.peerIds().filter((id) => id !== from);
       if (targets.length) void this.actions?.update.send(update, { target: targets });
       if (origin !== "server") this.scheduleSave();
+      this.scheduleTidy();
       this.syncResources();
     } else if (origin !== "host" && this.hostOnline && this.roomState) {
       void this.actions?.update.send(update, { target: this.roomState.hostPeerId });
@@ -784,6 +791,8 @@ export class Room {
             Uint8Array.from(atob(message.board), (c) => c.charCodeAt(0)),
             "server",
           );
+        // Boards from before the tree are migrated before anyone joins.
+        tidy(this.doc);
         this.sessions.clear();
         for (const snapshot of message.sessions) this.putSession(snapshot, snapshot.events);
         this.emit("sessions");
@@ -833,6 +842,17 @@ export class Room {
       case "error":
         return this.record({ level: "error", source: "serve", text: message.message });
     }
+  }
+
+  /**
+   * Host: keep the board's tree tidy (`tidy`) a moment after it changes —
+   * only the tab `canvas serve` talks to, so two tabs never both do.
+   */
+  private scheduleTidy() {
+    if (this.tidyTimer) clearTimeout(this.tidyTimer);
+    this.tidyTimer = setTimeout(() => {
+      if (this.serverStatus === "open") tidy(this.doc);
+    }, 200);
   }
 
   private scheduleSave() {

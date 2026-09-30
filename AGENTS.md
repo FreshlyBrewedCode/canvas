@@ -17,8 +17,11 @@ canvas
   render in a sandboxed `srcdoc` — `web/lib/browser-url.ts`)
 - agents act on the board (ADR 0003): `canvas serve` gives each session an MCP server
   (`board-mcp.ts`) whose calls the host's browser runs (`web/lib/board-tools.ts`); priming is
-  MCP server instructions, never a replaced system prompt (finding 06). Layout rules — clusters
-  and rows read off positions — are pure geometry in `src/shared/layout.ts`
+  MCP server instructions, never a replaced system prompt (finding 06). The layout (ADR 0010):
+  the board is a tree — clusters, rows, columns, frames — in the doc's `layout` map and frames'
+  `parent`/`pos`; `resolve` in `src/shared/layout.ts` derives every rect, operations change it by
+  structural targets, and the host tidies it (`tidy` in `web/lib/board.ts`: migrates boards from
+  before, repairs, prunes)
 - comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with

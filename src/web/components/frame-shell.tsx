@@ -9,16 +9,19 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LinkScope } from "@/components/board-link";
 import { useFullscreenFrame } from "@/hooks/use-fullscreen";
-import { edgeScroll, fullscreenRow, rowTarget, scrollsFurther } from "@/lib/fullscreen";
+import { edgeScroll, rowTarget, scrollsFurther } from "@/lib/fullscreen";
 import {
   allFrames,
-  applyPatches,
+  boardLayout,
+  moveFrame,
   raiseFrame,
+  readTree,
   removeFrame,
+  resizeLayout,
   updateFrame,
   type Frame,
   type FrameType,
@@ -27,15 +30,14 @@ import { useFrameFocus, useRoom } from "@/lib/room-context";
 import { setSnapPreview, type SnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import {
+  applyChanges,
   insertion,
-  lift,
-  locate,
-  moveFrame,
-  resizeInRow,
+  move,
+  resolve,
   snapTarget,
-  type Box,
-  type Patch,
+  type Layout,
   type Rect,
+  type Target,
 } from "../../shared/layout";
 
 /** The kinds of frame, as the toolbar offers them. */
@@ -54,11 +56,10 @@ const ICONS = Object.fromEntries(FRAME_KINDS.map((k) => [k.type, k.Icon])) as Re
 
 /**
  * The chrome every frame shares: drag by the header, resize from the corner.
- * Geometry lives in the board doc, so every move is seen by everyone.
- * Near other frames, the layout rules apply (`shared/layout.ts`): a drop
- * snaps into a row or a new row, resizing keeps a row's height. Holding Alt
- * places and sizes a frame freely; holding Shift drags its whole cluster
- * along, as it is.
+ * Where frames are is the board's tree (ADR 0010), so every move is seen by
+ * everyone. A drag is ours until the drop: near another frame it goes into
+ * its row or a new row, elsewhere into a cluster of its own, as one change.
+ * Resizing sets its column's width and its row's height.
  * Frames hold user data, so they are square (design.md › Shapes).
  *
  * Pressing on a frame claims it (`focus.ts`): its occupant shows in the
@@ -96,6 +97,8 @@ export function FrameShell({
   // Links in the frame open new frames beside it (ADR 0007).
   const scope = useMemo(() => ({ frame: frame.id }), [frame.id]);
   const fullscreen = useFullscreenFrame(frame);
+  /** Where a drag has the frame, from where it is: ours until the drop. */
+  const [dragged, setDragged] = useState<{ x: number; y: number } | null>(null);
   const arranging = !readOnly && fullscreen.mode === "off";
   const movable = !readOnly && fullscreen.mode !== "hidden";
   const along =
@@ -110,12 +113,13 @@ export function FrameShell({
       data-occupant={focus.occupant?.name}
       data-following={focus.following || undefined}
       data-attention={attention || undefined}
+      data-dragging={dragged ? "" : undefined}
       data-fullscreen={fullscreen.mode === "off" ? undefined : fullscreen.mode}
       aria-hidden={fullscreen.mode === "hidden" || undefined}
       className="bg-card absolute flex flex-col border shadow-sm data-[fullscreen=hidden]:pointer-events-none data-[fullscreen=hidden]:invisible"
       style={{
-        left: frame.x,
-        top: fullscreen.box.y,
+        left: frame.x + (dragged?.x ?? 0),
+        top: fullscreen.box.y + (dragged?.y ?? 0),
         width: frame.w,
         height: fullscreen.box.h,
         zIndex: frame.z,
@@ -130,6 +134,7 @@ export function FrameShell({
         frame={frame}
         disabled={!movable}
         along={along}
+        onDrag={setDragged}
         className={cn(
           "bg-muted/40 flex h-9 shrink-0 items-center gap-2 border-b px-2.5",
           movable && "cursor-grab active:cursor-grabbing",
@@ -175,7 +180,7 @@ export function FrameShell({
             title="Remove frame"
             className="text-muted-foreground hover:text-foreground -mr-1 rounded-md p-1"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => removeFrame(room.doc, frame.id, lift(allFrames(room.doc), frame.id))}
+            onClick={() => removeFrame(room.doc, frame.id)}
           >
             <X className="size-3.5" />
           </button>
@@ -190,6 +195,7 @@ export function FrameShell({
           mode="resize"
           className="absolute -right-1 -bottom-1 size-4 cursor-nwse-resize"
           disabled={false}
+          onDrag={setDragged}
         >
           <span className="border-muted-foreground/60 absolute right-1.5 bottom-1.5 size-2 border-r-2 border-b-2" />
         </Drag>
@@ -203,6 +209,7 @@ function Drag({
   mode,
   disabled,
   along = null,
+  onDrag,
   className,
   children,
 }: {
@@ -214,6 +221,8 @@ function Drag({
    * `h` tall; `scroll` moves the view along it.
    */
   along?: { y: number; h: number; show: () => void; scroll: (dx: number) => void } | null;
+  /** Where the frame is dragged to, from where it is; null when it is let go. */
+  onDrag: (offset: { x: number; y: number } | null) => void;
   className: string;
   children: React.ReactNode;
 }) {
@@ -226,12 +235,6 @@ function Drag({
     w: number;
     h: number;
     scale: number;
-    /** The board when the drag began: where row mates were, for resizing. */
-    rects: Rect[];
-    /** Its cluster mates where they were when the drag began, for Shift. */
-    mates: Array<Pick<Rect, "id" | "x" | "y">>;
-    /** Whether the mates were last moved along. */
-    carrying: boolean;
     moved: boolean;
     /** Along a full-screen row: the pointer's last x, and how far the view scrolled since. */
     cx: number;
@@ -242,49 +245,44 @@ function Drag({
   const scrollRequest = useRef(0);
   useEffect(() => () => cancelAnimationFrame(scrollRequest.current), []);
 
-  /**
-   * The patches a drop at `here` would apply: into a row, or out of the old
-   * one. Either way it leaves from where the drag began, so that gap closes.
-   */
-  const drop = (here: Rect, s: Box): { patches: Patch[]; preview: SnapPreview | null } => {
+  /** Where a drop at `here` goes: beside the frame within reach, else a cluster of its own there. */
+  const target = (here: Rect): Target => {
     const others = allFrames(room.doc).filter((f) => f.id !== frame.id);
-    const origin = [...others, { ...here, x: s.x, y: s.y }];
-    const rects = [...others, here];
-    const target = snapTarget(rects, frame.id);
-    if (!target) return { patches: lift(origin, frame.id), preview: null };
-    const patches = moveFrame(origin, frame.id, target);
-    const line = insertion(rects, target, frame.id);
-    const box = { ...here, ...patches.find((p) => p.id === frame.id) };
-    return { patches, preview: line ? { kind: "insert", line } : { kind: "place", box } };
+    return snapTarget([...others, here], frame.id) ?? clusterSlot(boardLayout(room.doc), here);
   };
 
-  /** Along a full-screen row: in between two of its frames or at an end, else back. */
-  const dropAlong = (
+  /** Along a full-screen row: in between two of its frames or at an end; null to stay. */
+  const targetAlong = (here: Rect): Target | null => {
+    const row = allFrames(room.doc).filter((f) => f.row === frame.row);
+    return rowTarget(row, here);
+  };
+
+  /** What the preview shows for a drop at `target`: a line in between, or where it lands. */
+  const preview = (
     here: Rect,
-    s: Box,
-    shown: { y: number; h: number },
-  ): { patches: Patch[]; preview: SnapPreview | null } => {
+    to: Target | null,
+    shown?: { y: number; h: number },
+  ): SnapPreview | null => {
+    if (!to) return null;
     const others = allFrames(room.doc).filter((f) => f.id !== frame.id);
-    const origin = [...others, { ...here, x: s.x, y: s.y }];
-    const rects = [...others, here];
-    const target = rowTarget(fullscreenRow(rects, frame.id)?.frames ?? [], here);
-    if (!target) return { patches: [{ id: frame.id, x: s.x }], preview: null };
-    const patches = moveFrame(origin, frame.id, target);
-    const line = insertion(rects, target, frame.id);
-    const box = { ...here, ...patches.find((p) => p.id === frame.id), ...shown };
-    return {
-      patches,
-      preview: line
-        ? { kind: "insert", line: { ...line, ...shown }, along: true }
-        : { kind: "place", box, along: true },
-    };
+    const line = "anchor" in to ? insertion([...others, here], to, frame.id) : null;
+    if (line) return { kind: "insert", line: shown ? { ...line, ...shown } : line, along: !!shown };
+    const tree = readTree(room.doc);
+    const lands = resolve(applyChanges(tree, move(tree, frame.id, to))).frames.get(frame.id);
+    if (!lands) return null;
+    const { x, y, w, h } = lands.frame;
+    return { kind: "place", box: { x, y, w, h, ...shown }, along: !!shown };
   };
 
-  /** Where a drag along the row has the frame: the pointer's way, plus the view's. */
-  const hereAlong = (s: NonNullable<typeof start.current>): Rect => ({
+  /** Where the drag has the frame: the pointer's way, plus the view's along a row. */
+  const hereOf = (
+    s: NonNullable<typeof start.current>,
+    clientX: number,
+    clientY: number,
+  ): Rect => ({
     id: frame.id,
-    x: Math.round(s.x + (s.cx - s.px) / s.scale + s.scrolled),
-    y: s.y,
+    x: Math.round(s.x + (clientX - s.px) / s.scale + s.scrolled),
+    y: along ? s.y : Math.round(s.y + (clientY - s.py) / s.scale),
     w: s.w,
     h: s.h,
   });
@@ -295,47 +293,34 @@ function Drag({
     if (!s || !along || !s.board) return;
     const { left, right } = s.board.getBoundingClientRect();
     const v = edgeScroll(s.cx, left, right);
-    const here = hereAlong(s);
-    const row = fullscreenRow(allFrames(room.doc), frame.id)?.frames ?? [];
+    const here = hereOf(s, s.cx, s.py);
+    const row = allFrames(room.doc).filter((f) => f.row === frame.row);
     if (s.moved && scrollsFurther(row, here, v)) {
       along.scroll(v);
       s.scrolled += v;
-      const next = hereAlong(s);
-      updateFrame(room.doc, frame.id, { x: next.x });
-      setSnapPreview(dropAlong(next, s, along).preview);
+      const next = hereOf(s, s.cx, s.py);
+      onDrag({ x: next.x - s.x, y: 0 });
+      setSnapPreview(preview(next, targetAlong(next), along));
     }
     scrollRequest.current = requestAnimationFrame(edgeScrolling);
   };
 
-  /** With Shift the mates keep their offsets; let go of it and they go back. */
-  const carry = (s: NonNullable<typeof start.current>, dx: number, dy: number, shift: boolean) => {
-    if (!shift && !s.carrying) return [];
-    s.carrying = shift;
-    return shift
-      ? s.mates.map((m) => ({ id: m.id, x: Math.round(m.x + dx), y: Math.round(m.y + dy) }))
-      : s.mates;
+  const stop = () => {
+    start.current = null;
+    setSnapPreview(null);
+    cancelAnimationFrame(scrollRequest.current);
+    cancelAnimationFrame(frameRequest.current);
+    onDrag(null);
   };
 
   const end = (event: React.PointerEvent) => {
     const s = start.current;
-    start.current = null;
-    setSnapPreview(null);
-    cancelAnimationFrame(scrollRequest.current);
+    stop();
     if (!s || mode !== "move" || !s.moved) return;
-    cancelAnimationFrame(frameRequest.current);
-    const dx = (event.clientX - s.px) / s.scale;
-    if (along) {
-      s.cx = event.clientX;
-      const here = hereAlong(s);
-      applyPatches(room.doc, [here, ...dropAlong(here, s, along).patches]);
-      along.show();
-      return;
-    }
-    const dy = (event.clientY - s.py) / s.scale;
-    const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy), w: s.w, h: s.h };
-    const mates = carry(s, dx, dy, event.shiftKey);
-    const snap = event.shiftKey || event.altKey ? [] : drop(here, s).patches;
-    applyPatches(room.doc, [here, ...mates, ...snap]);
+    const here = hereOf(s, event.clientX, event.clientY);
+    const to = along ? targetAlong(here) : target(here);
+    if (to) moveFrame(room.doc, frame.id, to);
+    along?.show();
   };
 
   return (
@@ -353,11 +338,6 @@ function Drag({
           w: frame.w,
           h: frame.h,
           scale,
-          rects: allFrames(room.doc),
-          mates: locate(allFrames(room.doc), frame.id)
-            .cluster.frames.filter((f) => f.id !== frame.id)
-            .map(({ id, x, y }) => ({ id, x, y })),
-          carrying: false,
           moved: false,
           cx: event.clientX,
           scrolled: 0,
@@ -373,40 +353,45 @@ function Drag({
         const dx = (event.clientX - s.px) / s.scale;
         const dy = along ? 0 : (event.clientY - s.py) / s.scale;
         if (Math.hypot(dx, dy) > 3) s.moved = true;
-        const free = event.altKey;
-        const shift = event.shiftKey;
+        const { clientX, clientY } = event;
         cancelAnimationFrame(frameRequest.current);
         frameRequest.current = requestAnimationFrame(() => {
-          if (mode === "move" && along) {
-            const here = hereAlong(s);
-            updateFrame(room.doc, frame.id, { x: here.x });
-            setSnapPreview(s.moved ? dropAlong(here, s, along).preview : null);
-          } else if (mode === "move") {
-            const here = { id: frame.id, x: Math.round(s.x + dx), y: Math.round(s.y + dy) };
-            applyPatches(room.doc, [here, ...carry(s, dx, dy, shift)]);
-            if (free || shift || !s.moved) return setSnapPreview(null);
-            setSnapPreview(drop({ ...here, w: s.w, h: s.h }, s).preview);
+          if (mode === "move") {
+            const here = hereOf(s, clientX, clientY);
+            onDrag({ x: here.x - s.x, y: here.y - s.y });
+            if (!s.moved) return setSnapPreview(null);
+            setSnapPreview(
+              along ? preview(here, targetAlong(here), along) : preview(here, target(here)),
+            );
           } else {
-            const size = {
-              w: Math.max(280, Math.round(s.w + dx)),
-              h: Math.max(180, Math.round(s.h + dy)),
-            };
-            // Row mates follow from where they were when the resize began.
-            if (free) updateFrame(room.doc, frame.id, size);
-            else applyPatches(room.doc, resizeInRow(s.rects, frame.id, size));
+            // Its column's width and its row's height: the rest of the row follows.
+            room.doc.transact(() => {
+              resizeLayout(room.doc, { column: frame.column, w: s.w + dx });
+              resizeLayout(room.doc, { row: frame.row, h: s.h + dy });
+            });
           }
         });
       }}
       onPointerUp={end}
-      onPointerCancel={() => {
-        cancelAnimationFrame(scrollRequest.current);
-        start.current = null;
-        setSnapPreview(null);
-      }}
+      onPointerCancel={stop}
     >
       {children}
     </div>
   );
+}
+
+/**
+ * A cluster of its own where `here` was dropped: before the first cluster
+ * the drop's middle comes before, reading the board left to right, top to
+ * bottom.
+ */
+function clusterSlot(layout: Layout, here: Rect): Target {
+  const x = here.x + here.w / 2;
+  const y = here.y + here.h / 2;
+  const next = layout.clusters.find(
+    ({ box }) => y < box.y || (y < box.y + box.h && x < box.x + box.w / 2),
+  );
+  return { before: next?.id ?? null };
 }
 
 /**
