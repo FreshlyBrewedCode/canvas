@@ -40,7 +40,7 @@ mouse. The **current frame** is the one you are in (full screen's, or the one yo
 | Shift + **W A S D**           | Move the current frame that way: along its row, or into the row above or below |
 | **Q** / **E**                 | The cluster before / after                                        |
 | **F**                         | Full screen on the current frame, or back                         |
-| Shift + **F**                 | The whole board; again, back                                      |
+| Shift + **F**                 | The whole board; again, back, to the frame you are on by then     |
 | **1** – **5**                 | A new Agent, Files, Browser, Terminal or Drawing frame beside the current one |
 | **Esc**                       | Out of a field (a prompt, a title) to the board: the keys work again |
 | Hold **Space**                | Pan                                                               |
@@ -51,6 +51,8 @@ mouse. The **current frame** is the one you are in (full screen's, or the one yo
   cluster too. **Up and down** go to the frame under the current one's middle in the row beside.
 - **Keys are the field's while you type**: a prompt, a title, a terminal, a drawing being edited.
   A terminal keeps Esc too, for the programs in it.
+- **In the whole board**, the keys go from frame to frame without leaving it; the one you are on
+  is where Shift + **F** takes you back to, at the zoom you had.
 - Letters go by their place on the keyboard, whatever its layout.
 
 ## Full screen
