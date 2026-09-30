@@ -37,7 +37,7 @@ describe("navigate", () => {
     const before = JSON.stringify(frame(id));
     expect(navigate(ctx, { frame: id })).toEqual({ frame: id });
     expect(focused).toEqual([id]);
-    expect(fitted).toEqual([`${frame(id).x},0`]);
+    expect(fitted).toEqual([`${frame(id).x},${frame(id).y}`]);
     expect(frame(id).x).toBeGreaterThan(400);
     expect({ ...frame(id), z: 0 }).toEqual({ ...JSON.parse(before), z: 0 });
   });

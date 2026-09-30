@@ -41,21 +41,32 @@ const counter = () => {
 
 type Spec = ReadonlyArray<{
   name?: string;
+  /** Its line, from 1; 1 if unset. */
+  line?: number;
   rows: ReadonlyArray<{ h: number; frames: ReadonlyArray<readonly [string, number]> }>;
 }>;
 
-/** A tree from clusters of rows of frames (id, width), each frame its own column: k1, k1r1, k1r1c1… */
-function build(spec: Spec): Tree {
+/**
+ * A tree from lines (l1, l2…) of clusters of rows of frames (id, width), each
+ * frame its own column: k1, k1r1, k1r1c1… `unlined`: clusters on the board
+ * itself, as before lines.
+ */
+function build(spec: Spec, { unlined = false } = {}): Tree {
   const containers: Container[] = [];
   const frames: Leaf[] = [];
   const keys = (n: number) => generateNKeysBetween(null, null, n);
   const clusterKeys = keys(spec.length);
+  const lines = Math.max(1, ...spec.map((k) => k.line ?? 1));
+  const lineKeys = keys(lines);
+  if (!unlined)
+    for (let i = 0; i < lines; i++)
+      containers.push({ id: `l${i + 1}`, kind: "line", parent: BOARD, pos: lineKeys[i]! });
   spec.forEach((k, i) => {
     const cluster = `k${i + 1}`;
     containers.push({
       id: cluster,
       kind: "cluster",
-      parent: BOARD,
+      parent: unlined ? BOARD : `l${k.line ?? 1}`,
       pos: clusterKeys[i]!,
       ...(k.name && { name: k.name }),
     });
@@ -111,15 +122,55 @@ describe("resolve", () => {
     expect(resolve(tree).clusters[0]!.box).toEqual({ x: 0, y: 0, w: 500 + GAP, h: 150 + GAP });
   });
 
-  test("clusters go left to right, top-aligned, and wrap into another row of clusters", () => {
+  test("lines go top to bottom; a line's clusters left to right, top-aligned, however wide", () => {
     const tree = build([
-      { rows: [{ h: 300, frames: [["a", 2000]] }] },
-      { rows: [{ h: 500, frames: [["b", 2000]] }] },
-      { rows: [{ h: 100, frames: [["c", 2000]] }] },
+      { rows: [{ h: 300, frames: [["a", 3000]] }] },
+      { rows: [{ h: 500, frames: [["b", 3000]] }] },
+      { line: 2, rows: [{ h: 100, frames: [["c", 2000]] }] },
     ]);
     expect(at(tree, "a")).toMatchObject({ x: 0, y: 0 });
+    expect(at(tree, "b")).toMatchObject({ x: 3000 + CLUSTER_GAP, y: 0 });
+    expect(at(tree, "c")).toMatchObject({ x: 0, y: 500 + CLUSTER_GAP });
+    expect(resolve(tree).lines.map((l) => l.box)).toEqual([
+      { x: 0, y: 0, w: 6000 + CLUSTER_GAP, h: 500 },
+      { x: 0, y: 500 + CLUSTER_GAP, w: 2000, h: 100 },
+    ]);
+  });
+
+  test("clusters from before lines: in lines as they wrapped, which repair makes real", () => {
+    const tree = build(
+      [
+        { rows: [{ h: 300, frames: [["a", 2000]] }] },
+        { rows: [{ h: 500, frames: [["b", 2000]] }] },
+        { rows: [{ h: 100, frames: [["c", 2000]] }] },
+      ],
+      { unlined: true },
+    );
     expect(at(tree, "b")).toMatchObject({ x: 2000 + CLUSTER_GAP, y: 0 });
     expect(at(tree, "c")).toMatchObject({ x: 0, y: 500 + CLUSTER_GAP });
+    expect([...resolve(tree).orphans].sort()).toEqual(["a", "b", "c"]);
+    const fixed = applyChanges(tree, repair(tree, counter()));
+    expect(resolve(fixed).orphans).toEqual([]);
+    expect(fixed.containers.filter((c) => c.kind === "line")).toHaveLength(2);
+    for (const id of ["a", "b", "c"]) expect(at(fixed, id)).toEqual(at(tree, id));
+  });
+
+  test("a cluster from before lines, on a board with lines: at the end of the last", () => {
+    const lined = build([
+      { rows: [{ h: 100, frames: [["a", 100]] }] },
+      { rows: [{ h: 100, frames: [["b", 100]] }] },
+    ]);
+    // k2 on the board itself, keyed before k1.
+    const tree: Tree = {
+      ...lined,
+      containers: lined.containers.map((c) =>
+        c.id === "k2" ? { ...c, parent: BOARD, pos: "Zz" } : c,
+      ),
+    };
+    expect(shape(tree)).toEqual([[["a"]], [["b"]]]);
+    const fixed = applyChanges(tree, repair(tree, counter()));
+    expect(fixed.containers.find((c) => c.id === "k2")?.parent).toBe("l1");
+    expect(shape(fixed)).toEqual([[["a"]], [["b"]]]);
   });
 
   test("siblings go by pos, then by id when two have the same", () => {
@@ -205,7 +256,7 @@ describe("resolve", () => {
     expect([...layout.empty].sort()).toEqual(["k1r2", "k1r2c1", "k2", "k2r1", "k2r1c1"]);
     expect(at(tree, "a")).toEqual({ x: 0, y: 0, w: 100, h: 100 });
     const pruned = applyChanges(tree, prune(tree));
-    expect(pruned.containers.map((c) => c.id).sort()).toEqual(["k1", "k1r1", "k1r1c1"]);
+    expect(pruned.containers.map((c) => c.id).sort()).toEqual(["k1", "k1r1", "k1r1c1", "l1"]);
   });
 });
 
@@ -387,9 +438,29 @@ describe("moveCluster", () => {
     resolve(applyChanges(tree, changes)).clusters.map((k) => k.id);
 
   test("before another, or to the end", () => {
-    expect(order(moveCluster(tree, "k3", "k1"))).toEqual(["k3", "k1", "k2"]);
-    expect(order(moveCluster(tree, "k1", null))).toEqual(["k2", "k3", "k1"]);
-    expect(moveCluster(tree, "k2", "k2")).toEqual([]);
+    expect(order(moveCluster(tree, "k3", { before: "k1" }))).toEqual(["k3", "k1", "k2"]);
+    expect(order(moveCluster(tree, "k1", { before: null }))).toEqual(["k2", "k3", "k1"]);
+    expect(moveCluster(tree, "k2", { before: "k2" })).toEqual([]);
+  });
+
+  test("into a line of its own, above or below; the line it leaves goes if empty", () => {
+    const lines = (changes: Change[]) =>
+      resolve(applyChanges(tree, changes)).lines.map((l) => l.clusters.map((k) => k.id));
+    expect(lines(moveCluster(tree, "k2", { lineBefore: null }, counter()))).toEqual([
+      ["k1", "k3"],
+      ["k2"],
+    ]);
+    expect(lines(moveCluster(tree, "k3", { lineBefore: "l1" }, counter()))).toEqual([
+      ["k3"],
+      ["k1", "k2"],
+    ]);
+    // Back beside the others: its own line left empty, for the host to prune.
+    const below = applyChanges(tree, moveCluster(tree, "k2", { lineBefore: null }, counter()));
+    const back = applyChanges(below, moveCluster(below, "k2", { line: "l1", before: null }));
+    expect(resolve(back).lines.map((l) => l.clusters.map((k) => k.id))).toEqual([
+      ["k1", "k3", "k2"],
+    ]);
+    expect(prune(back)).toEqual([{ kind: "remove", id: "n1" }]);
   });
 });
 
@@ -554,6 +625,31 @@ describe("concurrency", () => {
     expect(resolve(guest.tree).orphans).toEqual([]);
     expect(shape(guest.tree)).toEqual([[["a", "b", "g"], ["f"]], [["h"]]]);
   });
+
+  test("a line removed while a cluster moves into it: the cluster gets a line of its own", () => {
+    // k2 alone in a line under k1's.
+    const lined = applyChanges(
+      tree,
+      moveCluster(tree, "k2", { lineBefore: null }, () => "l2"),
+    );
+    const [host, guest] = [new Peer(lined), new Peer()];
+    sync(host, guest);
+    // The host moves k2 back up beside k1, and prunes the empty line.
+    host.write(moveCluster(host.tree, "k2", { line: "l1", before: null }));
+    host.write(prune(host.tree));
+    // Meanwhile the guest moves k1 into k2's line.
+    guest.write(moveCluster(guest.tree, "k1", { line: "l2", before: null }));
+    sync(host, guest);
+    agree(host, guest);
+    const lines = () => resolve(host.tree).lines.map((l) => l.clusters.map((k) => k.id));
+    expect(lines()).toEqual([["k2"], ["k1"]]);
+    host.write(repair(host.tree));
+    host.write(prune(host.tree));
+    sync(host, guest);
+    agree(host, guest);
+    expect(resolve(guest.tree).orphans).toEqual([]);
+    expect(lines()).toEqual([["k2"], ["k1"]]);
+  });
 });
 
 describe("migrate", () => {
@@ -570,7 +666,10 @@ describe("migrate", () => {
 
   test("clusters and rows read off positions; each frame a column as wide as it was", () => {
     const peer = new Peer({ containers: [], frames: rects.map(({ id }) => ({ id })) });
-    peer.write(migrate(peer.tree, rects, counter()));
+    // As the host tidies: migrated, then repaired into lines.
+    const ids = counter();
+    peer.write(migrate(peer.tree, rects, ids));
+    peer.write(repair(peer.tree, ids));
     const tree = peer.tree;
     expect(shape(tree)).toEqual([[["far"]], [["a", "b", "c"], ["d"]], [["term"]]]);
     expect(at(tree, "b")).toMatchObject({ w: 500, h: 400 });
@@ -604,7 +703,7 @@ describe("drop zones", () => {
       ],
     },
     { rows: [{ h: 200, frames: [["d", 400]] }] },
-    { rows: [{ h: 200, frames: [["e", 4000]] }] },
+    { line: 2, rows: [{ h: 200, frames: [["e", 4000]] }] },
   ]);
   const layout = resolve(tree);
   const box = (id: string) => layout.frames.get(id)!.frame;
@@ -638,18 +737,31 @@ describe("drop zones", () => {
     });
   });
 
-  test("between clusters or on empty board: a cluster of its own there", () => {
+  test("between clusters or on empty board: a cluster of its own there, in that line", () => {
     const k1 = layout.clusters[0]!.box;
     const k2 = layout.clusters[1]!.box;
-    expect(dropAt(layout, { x: (k1.x + k1.w + k2.x) / 2, y: 50 })).toEqual({ before: "k2" });
-    expect(dropAt(layout, { x: k2.x + k2.w + 500, y: 50 })).toEqual({ before: "k3" });
-    expect(dropAt(layout, { x: -500, y: 50 })).toEqual({ before: "k1" });
-    expect(dropAt(layout, { x: 0, y: 99999 })).toEqual({ before: null });
+    expect(dropAt(layout, { x: (k1.x + k1.w + k2.x) / 2, y: 50 })).toEqual({
+      line: "l1",
+      before: "k2",
+    });
+    expect(dropAt(layout, { x: k2.x + k2.w + 500, y: 50 })).toEqual({ line: "l1", before: null });
+    expect(dropAt(layout, { x: -500, y: 50 })).toEqual({ line: "l1", before: "k1" });
+  });
+
+  test("between lines, over the first or under the last: a line of its own there", () => {
+    const [l1, l2] = [layout.lines[0]!, layout.lines[1]!];
+    const gap = (l1.box.y + l1.box.h + l2.box.y) / 2;
+    expect(dropAt(layout, { x: 2000, y: gap })).toEqual({ lineBefore: "l2" });
+    expect(dropAt(layout, { x: 200, y: -500 })).toEqual({ lineBefore: "l1" });
+    expect(dropAt(layout, { x: 0, y: 99999 })).toEqual({ lineBefore: null });
   });
 
   test("a new cluster, even over frames, when asked", () => {
-    expect(dropAt(layout, inside("b", 0.2, 0.5), { newCluster: true })).toEqual({ before: "k2" });
-    expect(slotAt(layout, inside("b", 0.8, 0.5))).toEqual({ before: "k2" });
+    expect(dropAt(layout, inside("b", 0.2, 0.5), { newCluster: true })).toEqual({
+      line: "l1",
+      before: "k2",
+    });
+    expect(slotAt(layout, inside("b", 0.8, 0.5))).toEqual({ line: "l1", before: "k2" });
   });
 
   test("a row above or below only in a frame's top or bottom band", () => {

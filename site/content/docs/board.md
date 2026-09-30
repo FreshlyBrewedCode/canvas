@@ -139,9 +139,9 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
 The board is **clusters** of frames. A cluster is **rows**, top to bottom, and a row is
 **columns**, left to right, each holding one frame. Frames in a cluster share their borders, with
 no space between them; the frames of a row share its height, and a column's width is its
-frame's. Clusters arrange themselves: left to right in rows of clusters,
-tops aligned, with space between them. Nothing is placed freely, and nothing overlaps: a frame on
-its own is a cluster of one.
+frame's. Clusters go in **lines**, top to bottom: a line's clusters go left to right, tops aligned,
+with space between them, however wide the line gets. Nothing is placed freely, and nothing overlaps:
+a frame on its own is a cluster of one. A new cluster goes at the end of the last line.
 
 Where a dragged frame goes is decided by the **pointer** from side to side, and by the **dragged
 frame's middle** up and down: you hold it by its header, at its top, so moving it sideways keeps it
@@ -151,7 +151,8 @@ in its row.
 | ----------------------------------------------- | ------------------------------------- |
 | Over a frame's left or right half               | Before or after it, in its row        |
 | Its middle in a frame's top or bottom fifth     | Into a new row above or below its row |
-| Between clusters, or on the empty board         | Into a new cluster there              |
+| Between clusters, or beside a line              | Into a new cluster there, in that line |
+| Between lines, or above or below them all       | Into a new cluster, a line of its own |
 
 Just outside a cluster still counts as its nearest frame's.
 
@@ -162,7 +163,9 @@ Just outside a cluster still counts as its nearest frame's.
   your colour. **Esc** calls the drag off.
 - **Hold Alt** to drop it into a new cluster where the pointer is, even over other frames.
 - **Moving a cluster:** drag the grip left of its name, above the cluster, or hold **Shift** and
-  drag any of its frames. It goes before the cluster the pointer is at.
+  drag any of its frames. With its top about level with a line's, it goes into that line, before
+  the cluster the pointer is at, or at the line's end; between lines, above or below them, into a
+  line of its own. A line left empty goes.
 - **Naming a cluster:** click the name field above it (it reads _cluster_ until named).
 - **Moving or removing** a frame closes the gap it leaves.
 - **The frame you are in stays put** on your screen when someone else changes the layout around

@@ -108,14 +108,20 @@ function cluster<R extends Rect>(members: R[]): Cluster<R> {
 // ===========================================================================
 // The tree (ADR 0010)
 //
-//   board → cluster (name) → row (h) → column (w) → frame (weight)
+//   board → line → cluster (name) → row (h) → column (w) → frame (weight)
 //
 // Containers are `{ kind, parent, pos, …size }`; frames carry `parent` (their
 // column), `pos` and `cluster` (where they go if their column or row is gone).
 // `pos` is a fractional index among siblings, ties broken by id: a move is a
 // few field writes on one node, so concurrent moves resolve last-writer-wins
 // and nothing is duplicated. Only frames and clusters move: a frame moving
-// gets a new column, so rows and columns keep their parents for good.
+// gets a new column, a cluster another line or place in its line, so rows and
+// columns keep their parents for good.
+//
+// Lines of clusters go top to bottom, a cluster's left to right. Boards from
+// before lines have their clusters on the board itself, wrapping into another
+// line once one got wider than `BOARD_WIDTH`: they show in virtual lines as
+// they wrapped, which `repair` makes real.
 //
 // What concurrency leaves is repaired where it is read: a node whose parent is
 // gone goes, in containers of its own, to the end of the nearest ancestor that
@@ -129,7 +135,7 @@ function cluster<R extends Rect>(members: R[]): Cluster<R> {
 export const BOARD = "board";
 /** Space between clusters. */
 export const CLUSTER_GAP = 120;
-/** Clusters are arranged in rows, left to right; a row wraps once it gets wider than this. */
+/** Boards from before lines: their clusters wrapped into another line once one got wider than this. */
 export const BOARD_WIDTH = 4800;
 /** The smallest a column is wide, and a row tall. */
 export const MIN_W = 280;
@@ -138,12 +144,12 @@ export const MIN_H = 180;
 export const DEFAULT_W = 640;
 export const DEFAULT_H = 480;
 
-export type ContainerKind = "cluster" | "row" | "column";
+export type ContainerKind = "line" | "cluster" | "row" | "column";
 
 export interface Container {
   readonly id: string;
   readonly kind: ContainerKind;
-  /** A cluster's is the board, a row's its cluster, a column's its row. */
+  /** A line's is the board, a cluster's its line, a row's its cluster, a column's its row. */
   readonly parent: string;
   readonly pos: string;
   /** A column's width. */
@@ -192,13 +198,18 @@ export type Change =
 
 /**
  * Where a frame goes: beside a frame — left or right of it in its row, or a
- * new row above or below its row — or a new cluster before another (null: at
- * the end).
+ * new row above or below its row — or a new cluster (`NewCluster`).
  */
 export type Target = Beside | NewCluster;
-export interface NewCluster {
-  readonly before: string | null;
-}
+/** A place for a cluster: a new one, or one moving (`moveCluster`). */
+export type NewCluster =
+  /**
+   * In a line, before one of its clusters (null: at its end). Without the
+   * line: `before`'s, or, with neither, the end of the last line.
+   */
+  | { readonly line?: string; readonly before: string | null }
+  /** In a line of its own, before a line (null: under the last). */
+  | { readonly lineBefore: string | null };
 
 /** New container ids. */
 export type Ids = () => string;
@@ -223,16 +234,27 @@ interface ERow extends Node {
   readonly columns: EColumn[];
 }
 interface ECluster extends Node {
+  readonly line: string;
   readonly name?: string;
   readonly rows: ERow[];
 }
+interface ELine extends Node {
+  readonly clusters: ECluster[];
+}
 interface Effective {
-  /** In order, empty ones left out; each's rows and columns too. */
+  /** In order, empty ones left out; each's clusters, rows and columns too. */
+  readonly lines: ELine[];
+  /** Every line's clusters, in order. */
   readonly clusters: ECluster[];
   /** Real containers with nothing in them. */
   readonly empty: string[];
   /** Real nodes that lost their place, and the virtual container that holds each. */
-  readonly rehomed: ReadonlyArray<{ readonly id: string; readonly parent: string }>;
+  readonly rehomed: ReadonlyArray<{
+    readonly id: string;
+    readonly parent: string;
+    /** A key of its own there, after the rest: joining a real line. */
+    readonly pos?: string;
+  }>;
   /** Virtual containers, parents first. */
   readonly virtual: ReadonlyArray<Container>;
 }
@@ -269,29 +291,41 @@ function effective(tree: Tree): Effective {
     children.set(parent, [...(children.get(parent) ?? []), child]);
 
   const virtual: Container[] = [];
-  const rehomed: Array<{ id: string; parent: string }> = [];
+  const rehomed: Array<{ id: string; parent: string; pos?: string }> = [];
   /** Virtual containers per parent, to key after the real ones. */
   const pending = new Map<string, Array<Omit<Container, "pos">>>();
   const make = (c: Omit<Container, "pos">) => {
     if (!pending.has(c.parent)) pending.set(c.parent, []);
     if (!pending.get(c.parent)!.some((p) => p.id === c.id)) pending.get(c.parent)!.push(c);
   };
+  /** A virtual line at the end, holding `id`. */
+  const newLine = (id: string) => {
+    make({ id: `~l${id}`, kind: "line", parent: BOARD });
+    return `~l${id}`;
+  };
+  /** A virtual cluster, in a line of its own at the end. */
+  const newCluster = (id: string) => {
+    make({ id, kind: "cluster", parent: newLine(id) });
+    return id;
+  };
   /** A virtual row (and cluster, if `cluster` is gone too) at the end, holding `id`. */
   const newRow = (id: string, cluster: string | undefined) => {
-    const home = is(cluster, "cluster") ? cluster! : `~k${id}`;
-    if (home !== cluster) make({ id: home, kind: "cluster", parent: BOARD });
+    const home = is(cluster, "cluster") ? cluster! : newCluster(`~k${id}`);
     make({ id: `~r${id}`, kind: "row", parent: home, h: DEFAULT_H });
     return `~r${id}`;
   };
 
+  /** Clusters from before lines, on the board itself. */
+  const unlined: Container[] = [];
   for (const c of tree.containers) {
-    if (c.kind === "cluster") add(BOARD, c);
-    else if (c.kind === "row") {
+    if (c.kind === "line") add(BOARD, c);
+    else if (c.kind === "cluster") {
+      if (is(c.parent, "line")) add(c.parent, c);
+      else if (c.parent === BOARD) unlined.push(c);
+      else rehomed.push({ id: c.id, parent: newLine(c.id) });
+    } else if (c.kind === "row") {
       if (is(c.parent, "cluster")) add(c.parent, c);
-      else {
-        make({ id: `~k${c.id}`, kind: "cluster", parent: BOARD });
-        rehomed.push({ id: c.id, parent: `~k${c.id}` });
-      }
+      else rehomed.push({ id: c.id, parent: newCluster(`~k${c.id}`) });
     } else if (c.kind === "column") {
       if (is(c.parent, "row")) add(c.parent, c);
       else {
@@ -311,8 +345,31 @@ function effective(tree: Tree): Effective {
       rehomed.push({ id: f.id, parent: `~c${f.id}` });
     }
   }
+  // Clusters from before lines: at the end of the last line, wrapping into
+  // lines of their own as they wrapped then (`BOARD_WIDTH`).
+  const last = (children.get(BOARD) ?? []).sort(byPos).at(-1);
+  const inLast = last ? (children.get(last.id) ?? []) : [];
+  let x = inLast.reduce((sum, k) => {
+    const w = widthOf(tree, k.id);
+    return w ? sum + w + CLUSTER_GAP : sum;
+  }, 0);
+  let line = last?.id ?? "";
+  const joining: string[] = [];
+  for (const k of unlined.sort(byPos)) {
+    const w = widthOf(tree, k.id);
+    if (!w) continue;
+    if (!line || (x > 0 && x + w > BOARD_WIDTH)) {
+      line = newLine(k.id);
+      x = 0;
+    }
+    if (line === last?.id) joining.push(k.id);
+    else rehomed.push({ id: k.id, parent: line });
+    x += w + CLUSTER_GAP;
+  }
+  const joined = keysAfter(inLast, joining.length);
+  joining.forEach((id, i) => rehomed.push({ id, parent: last!.id, pos: joined[i]! }));
   // Keys after the real siblings, parents before children.
-  for (const kind of ["cluster", "row", "column"] as const)
+  for (const kind of ["line", "cluster", "row", "column"] as const)
     for (const [parent, made] of pending) {
       const ofKind = made.filter((c) => c.kind === kind).sort((a, b) => (a.id < b.id ? -1 : 1));
       if (!ofKind.length) continue;
@@ -323,9 +380,9 @@ function effective(tree: Tree): Effective {
         add(parent, container);
       });
     }
-  for (const { id, parent } of rehomed) {
+  for (const { id, parent, pos } of rehomed) {
     const node = byId.get(id) ?? tree.frames.find((f) => f.id === id)!;
-    add(parent, node);
+    add(parent, pos ? { ...node, pos } : node);
   }
 
   const empty: string[] = [];
@@ -336,52 +393,75 @@ function effective(tree: Tree): Effective {
     if (!node.virtual) empty.push(node.id);
     return null;
   };
-  const clusters: ECluster[] = [];
-  for (const k of sorted(BOARD) as Container[]) {
-    const rows: ERow[] = [];
-    for (const r of sorted(k.id) as Container[]) {
-      const columns: EColumn[] = [];
-      for (const c of sorted(r.id) as Container[]) {
-        const frames = sorted(c.id) as Leaf[];
-        const column = keep(
+  const lines: ELine[] = [];
+  for (const l of sorted(BOARD) as Container[]) {
+    const clusters: ECluster[] = [];
+    for (const k of sorted(l.id) as Container[]) {
+      const rows: ERow[] = [];
+      for (const r of sorted(k.id) as Container[]) {
+        const columns: EColumn[] = [];
+        for (const c of sorted(r.id) as Container[]) {
+          const frames = sorted(c.id) as Leaf[];
+          const column = keep(
+            {
+              id: c.id,
+              pos: c.pos,
+              virtual: isVirtual.has(c.id),
+              row: r.id,
+              w: c.w ?? DEFAULT_W,
+              frames,
+            },
+            frames.length > 0,
+          );
+          if (column) columns.push(column);
+        }
+        const row = keep(
           {
-            id: c.id,
-            pos: c.pos,
-            virtual: isVirtual.has(c.id),
-            row: r.id,
-            w: c.w ?? DEFAULT_W,
-            frames,
+            id: r.id,
+            pos: r.pos,
+            virtual: isVirtual.has(r.id),
+            cluster: k.id,
+            h: r.h ?? DEFAULT_H,
+            columns,
           },
-          frames.length > 0,
+          columns.length > 0,
         );
-        if (column) columns.push(column);
+        if (row) rows.push(row);
       }
-      const row = keep(
+      const cluster = keep(
         {
-          id: r.id,
-          pos: r.pos,
-          virtual: isVirtual.has(r.id),
-          cluster: k.id,
-          h: r.h ?? DEFAULT_H,
-          columns,
+          id: k.id,
+          pos: k.pos,
+          virtual: isVirtual.has(k.id),
+          line: l.id,
+          rows,
+          ...(k.name !== undefined && { name: k.name }),
         },
-        columns.length > 0,
+        rows.length > 0,
       );
-      if (row) rows.push(row);
+      if (cluster) clusters.push(cluster);
     }
-    const cluster = keep(
-      {
-        id: k.id,
-        pos: k.pos,
-        virtual: isVirtual.has(k.id),
-        rows,
-        ...(k.name !== undefined && { name: k.name }),
-      },
-      rows.length > 0,
+    const kept = keep(
+      { id: l.id, pos: l.pos, virtual: isVirtual.has(l.id), clusters },
+      clusters.length > 0,
     );
-    if (cluster) clusters.push(cluster);
+    if (kept) lines.push(kept);
   }
-  return { clusters, empty, rehomed, virtual };
+  return { lines, clusters: lines.flatMap((l) => l.clusters), empty, rehomed, virtual };
+}
+
+/** How wide a cluster is, by its rows' columns that hold frames: 0 if none. */
+function widthOf(tree: Tree, cluster: string): number {
+  const held = new Set(tree.frames.map((f) => f.parent));
+  const rows = tree.containers.filter((c) => c.kind === "row" && c.parent === cluster);
+  return Math.max(
+    0,
+    ...rows.map((r) =>
+      tree.containers
+        .filter((c) => c.kind === "column" && c.parent === r.id && held.has(c.id))
+        .reduce((w, c) => w + (c.w ?? DEFAULT_W) + GAP, -GAP),
+    ),
+  );
 }
 
 // --- Positions ------------------------------------------------------------------
@@ -405,6 +485,13 @@ export interface ResolvedCluster {
   /** Top to bottom. */
   readonly rows: ReadonlyArray<ResolvedRow>;
 }
+export interface ResolvedLine {
+  readonly id: string;
+  /** From the board's left edge to its last cluster's right, as tall as its tallest. */
+  readonly box: Box;
+  /** Left to right. */
+  readonly clusters: ReadonlyArray<ResolvedCluster>;
+}
 export interface Placement {
   readonly cluster: ResolvedCluster;
   readonly row: ResolvedRow;
@@ -412,7 +499,9 @@ export interface Placement {
   readonly frame: Rect;
 }
 export interface Layout {
-  /** In order: left to right, then the next row of clusters. */
+  /** Top to bottom. */
+  readonly lines: ReadonlyArray<ResolvedLine>;
+  /** Every line's clusters, in order: left to right, then the next line's. */
   readonly clusters: ReadonlyArray<ResolvedCluster>;
   readonly frames: ReadonlyMap<string, Placement>;
   /** Containers with nothing in them: the host removes them (`prune`). */
@@ -433,30 +522,30 @@ export function resolve(tree: Tree, context: ResolveContext = {}): Layout {
   const frames = new Map<string, Placement>();
   const inVirtual = new Set(e.virtual.map((c) => c.id));
   const orphans: string[] = [];
-  const clusters: ResolvedCluster[] = [];
-  let x = 0;
+  const lines: ResolvedLine[] = [];
   let y = 0;
-  let lineH = 0;
-  for (const k of e.clusters) {
-    const shaped = shape(k, context);
-    if (x > 0 && x + shaped.w > BOARD_WIDTH) {
-      x = 0;
-      y += lineH + CLUSTER_GAP;
-      lineH = 0;
+  for (const l of e.lines) {
+    const clusters: ResolvedCluster[] = [];
+    let x = 0;
+    let h = 0;
+    for (const k of l.clusters) {
+      const shaped = shape(k, context);
+      const cluster = place(shaped.cluster, x, y);
+      clusters.push(cluster);
+      for (const row of cluster.rows)
+        for (const column of row.columns)
+          for (const frame of column.frames) {
+            frames.set(frame.id, { cluster, row, column, frame });
+            if ([l.id, k.id, row.id, column.id].some((id) => inVirtual.has(id)))
+              orphans.push(frame.id);
+          }
+      x += shaped.w + CLUSTER_GAP;
+      h = Math.max(h, shaped.h);
     }
-    const cluster = place(shaped.cluster, x, y);
-    clusters.push(cluster);
-    for (const row of cluster.rows)
-      for (const column of row.columns)
-        for (const frame of column.frames) {
-          frames.set(frame.id, { cluster, row, column, frame });
-          if (inVirtual.has(k.id) || inVirtual.has(row.id) || inVirtual.has(column.id))
-            orphans.push(frame.id);
-        }
-    x += shaped.w + CLUSTER_GAP;
-    lineH = Math.max(lineH, shaped.h);
+    lines.push({ id: l.id, box: { x: 0, y, w: x - CLUSTER_GAP, h }, clusters });
+    y += h + CLUSTER_GAP;
   }
-  return { clusters, frames, empty: e.empty, orphans };
+  return { lines, clusters: lines.flatMap((l) => l.clusters), frames, empty: e.empty, orphans };
 }
 
 /** A cluster laid out from (0, 0), and its size. */
@@ -522,7 +611,7 @@ function place(k: ResolvedCluster, x: number, y: number): ResolvedCluster {
 /** The changes that put what lost its place where `resolve` shows it, in real containers. */
 export function repair(tree: Tree, ids: Ids = newId): Change[] {
   const e = effective(tree);
-  if (!e.virtual.length) return [];
+  if (!e.virtual.length && !e.rehomed.length) return [];
   const real = new Map(e.virtual.map((c) => [c.id, ids()]));
   const as = (id: string) => real.get(id) ?? id;
   const changes: Change[] = e.virtual.map(({ id, ...c }) => ({
@@ -531,11 +620,11 @@ export function repair(tree: Tree, ids: Ids = newId): Change[] {
     set: { ...c, parent: as(c.parent) },
   }));
   const frames = new Set(tree.frames.map((f) => f.id));
-  for (const { id, parent } of e.rehomed)
+  for (const { id, parent, pos } of e.rehomed)
     changes.push(
       frames.has(id)
         ? { kind: "frame", id, set: { parent: as(parent), pos: FIRST } }
-        : { kind: "container", id, set: { parent: as(parent) } },
+        : { kind: "container", id, set: { parent: as(parent), ...(pos && { pos }) } },
     );
   // Frames that moved with their column or row take their cluster along.
   for (const k of e.clusters)
@@ -581,14 +670,67 @@ export function move(tree: Tree, frame: string, target: Target, ids: Ids = newId
   return [...fixed.changes, ...put(e, frame, target, { w: at.column.w, h: at.row.h }, ids)];
 }
 
-/** Move a cluster before another (null: to the end). */
-export function moveCluster(tree: Tree, cluster: string, before: string | null): Change[] {
-  if (before === cluster) return [];
-  const others = effective(tree).clusters.filter((k) => k.id !== cluster);
-  const index = before === null ? others.length : others.findIndex((k) => k.id === before);
-  if (index < 0) throw new Error(`no cluster ${before}`);
-  const { pos, rekey } = slot(others, index, "container");
-  return [...rekey, { kind: "container", id: cluster, set: { pos } }];
+/** Move a cluster to another place: in a line, or a line of its own. */
+export function moveCluster(
+  tree: Tree,
+  cluster: string,
+  to: NewCluster,
+  ids: Ids = newId,
+): Change[] {
+  if ("before" in to && to.before === cluster) return [];
+  const fixed = repaired(tree, ids);
+  const e = effective(fixed.tree);
+  if (!e.clusters.some((k) => k.id === cluster)) throw new Error(`no cluster ${cluster}`);
+  const { changes, line, pos } = lineUp(e, to, ids, cluster);
+  return [
+    ...fixed.changes,
+    ...changes,
+    { kind: "container", id: cluster, set: { parent: line, pos } },
+  ];
+}
+
+/**
+ * Where a cluster goes (`NewCluster`): its line and its key in it, and the
+ * changes that make room — a new line, or new keys. `moving` is left out of
+ * its line's siblings.
+ */
+function lineUp(
+  e: Effective,
+  to: NewCluster,
+  ids: Ids,
+  moving?: string,
+): { changes: Change[]; line: string; pos: string } {
+  const newLine = (index: number) => {
+    const { pos, rekey } = slot(e.lines, index, "container");
+    const line = ids();
+    const set = { kind: "line", parent: BOARD, pos } as const;
+    return {
+      changes: [...rekey, { kind: "container", id: line, set } as Change],
+      line,
+      pos: FIRST,
+    };
+  };
+  if ("lineBefore" in to) {
+    const index =
+      to.lineBefore === null ? e.lines.length : e.lines.findIndex((l) => l.id === to.lineBefore);
+    if (index < 0) throw new Error(`no line ${to.lineBefore}`);
+    return newLine(index);
+  }
+  const line = to.line
+    ? e.lines.find((l) => l.id === to.line)
+    : to.before
+      ? e.lines.find((l) => l.clusters.some((k) => k.id === to.before))
+      : e.lines.at(-1);
+  if (!line) {
+    if (to.line || to.before) throw new Error(`no line ${to.line ?? `of ${to.before}`}`);
+    return newLine(0);
+  }
+  const clusters = line.clusters.filter((k) => k.id !== moving);
+  const index =
+    to.before === null ? clusters.length : clusters.findIndex((k) => k.id === to.before);
+  if (index < 0) throw new Error(`no cluster ${to.before} in line ${line.id}`);
+  const { pos, rekey } = slot(clusters, index, "container");
+  return { changes: rekey, line: line.id, pos };
 }
 
 /** A column's width, a row's height, or a frame's own height — no smaller than the least. */
@@ -729,14 +871,9 @@ function put(e: Effective, frame: string, target: Target, size: Size, ids: Ids):
     changes.push(...rekey);
     row = container({ kind: "row", parent: cluster, pos, h: size.h });
   } else {
-    const index =
-      target.before === null
-        ? e.clusters.length
-        : e.clusters.findIndex((k) => k.id === target.before);
-    if (index < 0) throw new Error(`no cluster ${target.before}`);
-    const { pos, rekey } = slot(e.clusters, index, "container");
-    changes.push(...rekey);
-    cluster = container({ kind: "cluster", parent: BOARD, pos });
+    const at = lineUp(e, target, ids);
+    changes.push(...at.changes);
+    cluster = container({ kind: "cluster", parent: at.line, pos: at.pos });
     row = container({ kind: "row", parent: cluster, pos: FIRST, h: size.h });
   }
   const column = container({ kind: "column", parent: row, pos: FIRST, w: size.w });
@@ -826,34 +963,46 @@ export const dropPoint = (pointer: Point, grab: Point, h: number): Point => ({
  */
 export function pin(layout: Layout, at: Layout): Layout {
   const origins = new Map(at.clusters.map((k) => [k.id, k.box]));
+  const boxes = new Map(at.lines.map((l) => [l.id, l.box]));
   const frames = new Map<string, Placement>();
-  const clusters = layout.clusters.map((k) => {
-    const to = origins.get(k.id);
-    const cluster = to ? place(k, to.x - k.box.x, to.y - k.box.y) : k;
-    for (const row of cluster.rows)
-      for (const column of row.columns)
-        for (const frame of column.frames) frames.set(frame.id, { cluster, row, column, frame });
-    return cluster;
-  });
-  return { ...layout, clusters, frames };
+  const lines = layout.lines.map((l) => ({
+    ...l,
+    box: boxes.get(l.id) ?? l.box,
+    clusters: l.clusters.map((k) => {
+      const to = origins.get(k.id);
+      const cluster = to ? place(k, to.x - k.box.x, to.y - k.box.y) : k;
+      for (const row of cluster.rows)
+        for (const column of row.columns)
+          for (const frame of column.frames) frames.set(frame.id, { cluster, row, column, frame });
+      return cluster;
+    }),
+  }));
+  return { ...layout, lines, clusters: lines.flatMap((l) => l.clusters), frames };
 }
 
 /**
- * A new cluster where `point` is, reading the board as clusters do: in the
- * row of clusters the point is at or below, before the first whose middle
- * it is left of; past a row's last, before the next row's first; under
- * the last row, at the end.
+ * A cluster's place where `point` is: in the line it is over, before the
+ * first cluster whose middle it is left of (or at the line's end); above a
+ * line, in the gap or over the board's top, a line of its own before it;
+ * under the last, a line of its own there.
  */
 export function slotAt(layout: Layout, point: Point): NewCluster {
-  const tops = [...new Set(layout.clusters.map((k) => k.box.y))];
-  const line = tops.filter((y) => y <= point.y).at(-1) ?? tops[0];
-  const last = layout.clusters.filter((k) => k.box.y === tops.at(-1));
-  if (point.y > Math.max(...last.map((k) => k.box.y + k.box.h))) return { before: null };
-  const index = layout.clusters.findIndex(
-    ({ box }) => box.y > line! || (box.y === line && point.x < box.x + box.w / 2),
-  );
-  return { before: index < 0 ? null : layout.clusters[index]!.id };
+  if (!layout.lines.length) return { before: null };
+  const line = layout.lines.find(({ box }) => point.y < box.y + box.h);
+  if (!line) return { lineBefore: null };
+  if (point.y < line.box.y) return { lineBefore: line.id };
+  const next = line.clusters.find(({ box }) => point.x < box.x + box.w / 2);
+  return { line: line.id, before: next?.id ?? null };
 }
+
+/**
+ * Where a dragged cluster hits: the pointer's x, and, up and down, a little
+ * under its top — in a line when its top is about level with the line's.
+ */
+export const clusterPoint = (pointer: Point, grab: Point): Point => ({
+  x: pointer.x,
+  y: pointer.y - grab.y + CLUSTER_GAP / 2,
+});
 
 /**
  * Along a row, as full screen moves frames: before or after the frame the

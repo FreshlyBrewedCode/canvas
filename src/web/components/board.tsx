@@ -54,7 +54,7 @@ import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
-import { MIN_W, type Box, type ResolvedCluster } from "../../shared/layout";
+import { MIN_H, MIN_W, type Box, type ResolvedCluster } from "../../shared/layout";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
@@ -381,17 +381,29 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
  */
 function Landing({ box, along }: { box: Box | null; along: boolean }) {
   if (!box || along) return null;
-  if (box.w < MIN_W)
+  const thick = "calc(4px / var(--board-scale, 1))";
+  if (box.w < MIN_W || box.h < MIN_H)
     return (
       <div
         data-drop-landing=""
-        className="bg-primary pointer-events-none absolute z-[99999] -translate-x-1/2 rounded-full"
-        style={{
-          left: box.x + box.w / 2,
-          top: box.y,
-          width: "calc(4px / var(--board-scale, 1))",
-          height: box.h,
-        }}
+        className="bg-primary pointer-events-none absolute z-[99999] rounded-full"
+        style={
+          box.w < MIN_W
+            ? {
+                left: box.x + box.w / 2,
+                top: box.y,
+                width: thick,
+                height: box.h,
+                translate: "-50% 0",
+              }
+            : {
+                left: box.x,
+                top: box.y + box.h / 2,
+                width: box.w,
+                height: thick,
+                translate: "0 -50%",
+              }
+        }
       />
     );
   return (

@@ -17,6 +17,7 @@ import { currentDrag, setDrag, type Drag } from "@/lib/drag";
 import { edgeScroll, scrollsFurther } from "@/lib/fullscreen";
 import {
   alongAt,
+  clusterPoint,
   dropAt,
   dropPoint,
   moveCluster,
@@ -87,7 +88,7 @@ export function startDrag(event: React.PointerEvent, start: DragStart) {
         cluster: what.id,
         pointer: at,
         grab,
-        before: slotAt(rest, at).before,
+        to: slotAt(rest, clusterPoint(at, grab)),
       };
     const target = along
       ? alongAt(rest, along.row, at.x)
@@ -145,7 +146,7 @@ export function startDrag(event: React.PointerEvent, start: DragStart) {
     own(doc, () => {
       if (last.kind === "frame" && last.target) moveFrame(doc, last.frame, last.target);
       if (last.kind === "cluster")
-        applyLayout(doc, moveCluster(readTree(doc), last.cluster, last.before));
+        applyLayout(doc, moveCluster(readTree(doc), last.cluster, last.to));
     });
     along?.show();
   };

@@ -19,6 +19,7 @@ import {
   type Box,
   type Change,
   type Layout,
+  type NewCluster,
   type Point,
   type Target,
   type Tree,
@@ -42,8 +43,8 @@ export interface FrameDrag extends Base {
 export interface ClusterDrag extends Base {
   readonly kind: "cluster";
   readonly cluster: string;
-  /** Before which cluster it goes if dropped now (null: last). */
-  readonly before: string | null;
+  /** Where it goes if dropped now: in a line, or a line of its own. */
+  readonly to: NewCluster;
 }
 export type Drag = FrameDrag | ClusterDrag;
 
@@ -94,7 +95,7 @@ const previewIds = () => {
 
 /** The changes a drop now would make. */
 export function dropChanges(tree: Tree, drag: Drag): Change[] {
-  if (drag.kind === "cluster") return moveCluster(tree, drag.cluster, drag.before);
+  if (drag.kind === "cluster") return moveCluster(tree, drag.cluster, drag.to, previewIds());
   return drag.target ? move(tree, drag.frame, drag.target, previewIds()) : [];
 }
 
@@ -119,7 +120,7 @@ export function preview(
     const at = layout.frames.get(drag.frame)?.frame;
     if (frame) from = frame;
     if (frame && drag.target && !("anchor" in drag.target))
-      landing = gapBar(resolve(tree), drag.target.before, frame.h);
+      landing = gapBar(resolve(tree), drag.target, frame.h);
     else if (at && drag.target) landing = { x: at.x, y: at.y, w: at.w, h: at.h };
   } else {
     const was = frames.filter((f) => f.cluster === drag.cluster);
@@ -143,16 +144,36 @@ export function preview(
   };
 }
 
-/** How wide the bar marking a new cluster's gap is. */
-const BAR_W = 6;
+/** How thick the bar marking a new cluster's gap is. */
+const BAR = 6;
 
 /**
  * Where a new cluster goes, as a frame's drag shows it with the clusters
- * pinned: a bar in the gap before `before`, or after the last cluster.
+ * pinned: a bar in the gap it goes to, upright in a line, across between
+ * lines for a line of its own.
  */
-function gapBar(layout: Layout, before: string | null, h: number): Box {
-  const next = layout.clusters.find((k) => k.id === before)?.box;
-  const last = layout.clusters.at(-1)?.box;
-  const x = next ? next.x - CLUSTER_GAP / 2 : last ? last.x + last.w + CLUSTER_GAP / 2 : 0;
-  return { x: x - BAR_W / 2, y: next?.y ?? last?.y ?? 0, w: BAR_W, h };
+function gapBar(layout: Layout, to: NewCluster, h: number): Box {
+  const across = (y: number): Box => ({
+    x: 0,
+    y: y - BAR / 2,
+    w: Math.max(...layout.lines.map((l) => l.box.w), 0),
+    h: BAR,
+  });
+  const upright = (x: number, y: number): Box => ({ x: x - BAR / 2, y, w: BAR, h });
+  const last = layout.lines.at(-1);
+  if ("lineBefore" in to) {
+    const next = layout.lines.find((l) => l.id === to.lineBefore);
+    if (next) return across(next.box.y - CLUSTER_GAP / 2);
+    return across(last ? last.box.y + last.box.h + CLUSTER_GAP / 2 : 0);
+  }
+  const line =
+    layout.lines.find((l) => l.id === to.line) ??
+    layout.lines.find((l) => l.clusters.some((k) => k.id === to.before)) ??
+    last;
+  if (!line) return upright(0, 0);
+  const next = line.clusters.find((k) => k.id === to.before)?.box;
+  const end = line.clusters.at(-1)?.box;
+  return next
+    ? upright(next.x - CLUSTER_GAP / 2, next.y)
+    : upright(end ? end.x + end.w + CLUSTER_GAP / 2 : 0, line.box.y);
 }

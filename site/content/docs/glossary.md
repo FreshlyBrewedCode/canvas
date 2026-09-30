@@ -15,7 +15,7 @@ order: 7
 | **canvas relay**  | A server you run that carries a board's traffic where browsers can't connect directly. [Relay](/docs/relay) |
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
-| **cluster**       | A group of rows of frames, arranged on the board with the others; it can have a name. [Board](/docs/board#layout) |
+| **cluster**       | A group of rows of frames, in a line with others; it can have a name. [Board](/docs/board#layout) |
 | **column**        | One place in a row, as wide as its frame. [Board](/docs/board#layout)       |
 | **code tour**     | A files frame an agent makes to walk through code: a guide, then the files at their lines. [Skills](/docs/skills#code-tour) |
 | **comment**       | A markdown note on lines of a file, kept by the files frame it was written in. [Files](/docs/files#comments) |
@@ -30,6 +30,7 @@ order: 7
 | **guest access**  | What guests may do, set by the host per board: view, edit or trusted        |
 | **guest link**    | The link that joins a board as a guest. Safe to share with the people you invite |
 | **issuer key**    | A name and secret a relay's operator gives a host or team; `canvas serve` signs relay tokens with it. [Relay](/docs/relay) |
+| **line**          | Clusters side by side, left to right, tops aligned; lines go top to bottom. [Board](/docs/board#layout) |
 | **link**          | A markdown or HTML link to a place on the board: a frame, a file, lines, a heading, a comment. [Board](/docs/board#links) |
 | **host**          | The person who runs `canvas serve` and opens the host link                  |
 | **host link**     | The link `canvas serve` prints. Controls the machine: never share it        |

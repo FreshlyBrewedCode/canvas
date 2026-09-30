@@ -34,7 +34,7 @@ another rebuild.
 1. **Structure is stored, positions are derived.** The board is a tree:
 
    ```
-   board → cluster (name) → row (h) → column (w) → frame (weight)
+   board → line → cluster (name) → row (h) → column (w) → frame (weight)
    ```
 
    Containers are entries of a `layout` map `{ kind, parent, pos, …size }`; frames carry
@@ -49,17 +49,27 @@ another rebuild.
    ignored, and the host's browser removes them. Operations (`insert`, `move`, `remove`, `resize`)
    take structural targets. The drag UI, full screen, the keyboard and agents speak targets; none of
    them compute positions.
-3. **Clusters are arranged, not placed.** The board is rows of clusters, top-aligned, with a gap
-   between clusters. Clusters don't overlap and don't merge; one that grows moves the others. A
-   cluster moves like a frame, to a slot. A lone frame is a cluster of one.
+3. **Clusters are arranged, not placed.** The board is lines of clusters, top to bottom; a line's
+   clusters go left to right, top-aligned, with a gap between clusters, however wide the line gets.
+   Clusters don't overlap and don't merge; one that grows moves the rest of its line. A cluster
+   moves like a frame, to a slot: in a line, before a cluster or at its end, or in a line of its
+   own. A new cluster goes at the end of the last line. A lone frame is a cluster of one.
+
+   Amended after use: first, clusters wrapped into the next line once one got wider than a fixed
+   width (4800 px). The breakpoint was invisible, and two wide clusters could never sit side by
+   side: moving one only changed their order. Lines are now in the tree; boards from before get
+   them where their clusters wrapped.
 4. **No gap inside a cluster.** Frames share their borders; a shared edge is one handle. Every
    edge resizes: a vertical one the column's width (it grows, the rest of the row moves along), a
    horizontal one the row's height. In full screen, widths only.
-5. **Drops go by the pointer, not by the frame's geometry.** Over a frame: its left or right edge
-   puts the dragged frame before or after it in its row; its top or bottom edge makes a new row
-   above or below; its centre is for columns (later: above or below the middle stacks it on top or
-   under). Between clusters or on empty board: a new cluster there. A drag is its own until the
-   drop, one transaction; peers see a ghost of it through presence.
+5. **Drops go by the pointer, not by the frame's geometry.** Over a frame: its left or right half
+   puts the dragged frame before or after it in its row; its top or bottom fifth makes a new row
+   above or below (later: its centre stacks it in the column). Up and down go by the dragged
+   frame's middle, not the pointer: held by its header, the pointer is at its top. Between clusters
+   or on empty board: a new cluster there, in that line, or between lines a line of its own. A drag
+   is its own until the drop, one transaction; peers see a ghost of it through presence. While a
+   frame is dragged the clusters stay where they were: a drop's result that moved them moved them
+   away from the pointer.
 6. **Columns are in the model from the start,** one frame each until stacking comes. In a column
    frames share its height by weight, on the board and in full screen alike.
 7. **Terminals are sized by the host's screen.** The host's terminal sizes the PTY for everyone

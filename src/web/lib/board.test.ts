@@ -82,8 +82,8 @@ describe("the board on the tree", () => {
     expect(boardLayout(doc).empty.length).toBeGreaterThan(0);
     expect(tidy(doc)).toBe(true);
     expect(boardLayout(doc).empty).toEqual([]);
-    // One cluster, one row, two columns.
-    expect(layoutOf(doc).size).toBe(4);
+    // One line, one cluster, one row, two columns.
+    expect(layoutOf(doc).size).toBe(5);
   });
 
   test("a new frame is a cluster of its own at the end by default", () => {
