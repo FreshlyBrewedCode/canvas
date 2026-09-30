@@ -1,7 +1,7 @@
 // Full screen (finding 20): one person's own view of a row at 100%, its
 // frames as tall as their screen. The geometry, free of the DOM.
 
-import type { Beside, Rect } from "../../shared/layout";
+import type { Rect } from "../../shared/layout";
 import type { Transform } from "./viewport";
 
 export interface FullscreenRow<R extends Rect = Rect> {
@@ -87,16 +87,4 @@ export function scrollsFurther(row: ReadonlyArray<Rect>, moving: Rect, v: number
   if (!v || !others.length) return false;
   if (v > 0) return moving.x < Math.max(...others.map((f) => f.x + f.w));
   return moving.x + moving.w > Math.min(...others.map((f) => f.x));
-}
-
-/**
- * Where a frame dragged along its row goes: after the last of the others whose
- * middle it is past, or before the first. Null when the row has no others.
- */
-export function rowTarget(row: ReadonlyArray<Rect>, moving: Rect): Beside | null {
-  const others = row.filter((f) => f.id !== moving.id).sort((a, b) => a.x - b.x);
-  const middle = moving.x + moving.w / 2;
-  const before = others.filter((f) => f.x + f.w / 2 < middle).at(-1);
-  if (before) return { anchor: before.id, side: "right" };
-  return others[0] ? { anchor: others[0].id, side: "left" } : null;
 }

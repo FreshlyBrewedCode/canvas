@@ -15,7 +15,8 @@ order: 7
 | **canvas relay**  | A server you run that carries a board's traffic where browsers can't connect directly. [Relay](/docs/relay) |
 | **browser frame** | A frame showing a URL, loaded by each viewer's browser. [Browser](/docs/browser) |
 | **`canvas serve`**| The local server on the host's machine. [CLI](/docs/cli)                   |
-| **cluster**       | Frames within 48 px of each other. [Board](/docs/board#layout)              |
+| **cluster**       | A group of rows of frames, arranged on the board with the others; it can have a name. [Board](/docs/board#layout) |
+| **column**        | One place in a row, as wide as its frame. [Board](/docs/board#layout)       |
 | **code tour**     | A files frame an agent makes to walk through code: a guide, then the files at their lines. [Skills](/docs/skills#code-tour) |
 | **comment**       | A markdown note on lines of a file, kept by the files frame it was written in. [Files](/docs/files#comments) |
 | **drawing frame** | An Excalidraw whiteboard everyone draws on, agents included. [Drawing](/docs/drawing) |
@@ -37,7 +38,7 @@ order: 7
 | **permission**    | An agent asking before a tool call. Only the host answers                   |
 | **prompt draft**  | The shared composer of an agent frame, written by several people at once    |
 | **relay token**   | Admits one board to a canvas relay for 30 days; the host's tab and guest links carry one. [Relay](/docs/relay) |
-| **row**           | Frames in a cluster whose top edges line up; they share a height            |
+| **row**           | Frames side by side in a cluster, left to right; they share a height. [Board](/docs/board#layout) |
 | **scratch file**  | A file an agent wrote for the board only, kept in `.canvas/scratch/`, shown as `canvas:scratch/<name>`. [Board tools](/docs/board-tools#scratch-files) |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |
 | **signalling relay** | A server through which browsers find each other before they connect directly: public Nostr relays, or a canvas relay. [Connection](/docs/connection) |

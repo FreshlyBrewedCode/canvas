@@ -1,5 +1,6 @@
 import {
   Check,
+  GripVertical,
   Link2,
   Maximize2,
   Minus,
@@ -25,7 +26,17 @@ import { useBoardNavigation } from "@/hooks/use-board-navigation";
 import { useFollowView } from "@/hooks/use-follow-view";
 import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
 import { FullscreenProvider, useFullscreen, type Fullscreen } from "@/hooks/use-fullscreen";
-import { addFrame, newFrame, useFrames, type Frame, type FrameType } from "@/lib/board";
+import { startDrag } from "@/hooks/start-drag";
+import {
+  addFrame,
+  applyLayout,
+  newFrame,
+  useBoard,
+  useFrames,
+  type Frame,
+  type FrameType,
+} from "@/lib/board";
+import { preview, useDrag, type DragGhost } from "@/lib/drag";
 import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Presence } from "@/lib/room";
 import {
@@ -36,15 +47,22 @@ import {
   useWaitingAgents,
 } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
-import { useSnapPreview } from "@/lib/snap-preview";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
+import type { Box, ResolvedCluster } from "../../shared/layout";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
   const room = useRoomState();
-  const frames = useFrames(room.doc);
+  const board = useBoard(room.doc);
+  const { frames } = board;
+  // A drag of ours shows its drop's result: the others make room (`drag.ts`).
+  const drag = useDrag();
+  const shown = useMemo(
+    () => (drag ? preview(board.tree, frames, drag) : { frames, landing: null }),
+    [board.tree, frames, drag],
+  );
   const { wrapRef, canvasRef, scale, ...viewport } = useBoardViewport(
     `canvas.viewport.${room.link.roomId}`,
   );
@@ -139,6 +157,30 @@ export function Board() {
     };
   }, [room, screen, subscribe]);
 
+  // Our drag, as a ghost for everyone else.
+  const ghost = useMemo((): DragGhost | null => {
+    if (!drag) return null;
+    const moving = shown.frames.filter((f) =>
+      drag.kind === "frame" ? f.id === drag.frame : f.cluster === drag.cluster,
+    );
+    if (!moving.length) return null;
+    const x = Math.min(...moving.map((f) => f.x));
+    const y = Math.min(...moving.map((f) => f.y));
+    const box = {
+      x,
+      y,
+      w: Math.max(...moving.map((f) => f.x + f.w)) - x,
+      h: Math.max(...moving.map((f) => f.y + f.h)) - y,
+    };
+    const name = board.layout.clusters.find((k) => k.id === moving[0]!.cluster)?.name;
+    const title = drag.kind === "frame" ? moving[0]!.title : name || "cluster";
+    return { title, box, landing: shown.landing };
+  }, [drag, shown, board.layout]);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => room.setPresence({ drag: ghost }));
+    return () => cancelAnimationFrame(raf);
+  }, [room, ghost]);
+
   // Beside the frame we are in; else a cluster of its own. Then we go there.
   const create = (type: FrameType, extra: Record<string, string> = {}) => {
     const own = room.ownFrame();
@@ -167,13 +209,15 @@ export function Board() {
           <div ref={canvasRef} className="absolute top-0 left-0 origin-top-left">
             <BoardScale value={scale}>
               <FullscreenProvider value={fullscreenFrames}>
-                {frames.map((frame) => (
+                {shown.frames.map((frame) => (
                   <FrameView key={frame.id} frame={frame} readOnly={readOnly} />
                 ))}
               </FullscreenProvider>
             </BoardScale>
+            {!row && !drag && <ClusterGrips clusters={board.layout.clusters} readOnly={readOnly} />}
             {!readOnly && <FullscreenInserts fullscreen={fullscreen} />}
-            <SnapGhost />
+            <Landing box={shown.landing} along={drag?.kind === "frame" && drag.along} />
+            <DragGhosts />
             <Pointers />
           </div>
 
@@ -304,54 +348,130 @@ function EmptyBoard({ readOnly }: { readOnly: boolean }) {
   );
 }
 
-/**
- * Where the frame being dragged lands if dropped now: its outline, or, going
- * in between two frames or rows, a dotted line along the gap.
- */
-function SnapGhost() {
-  const preview = useSnapPreview();
-  if (!preview) return null;
-  const hint = !(preview.along && preview.kind === "place") && (
-    <span
-      className="bg-card text-muted-foreground absolute -top-6 left-0 origin-bottom-left rounded-sm border px-1.5 py-0.5 text-[11px] whitespace-nowrap shadow-sm"
-      style={{ transform: "scale(calc(1 / var(--board-scale, 1)))" }}
-    >
-      {preview.along
-        ? "Insert here"
-        : `${preview.kind === "insert" ? "Insert here · " : ""}Alt: place freely · Shift: move the cluster`}
-    </span>
-  );
-  if (preview.kind === "place") {
-    const { box } = preview;
-    return (
-      <div
-        data-snap-preview="place"
-        className="border-primary/70 bg-primary/5 pointer-events-none absolute z-[99999] border-2 border-dashed"
-        style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
-      >
-        {hint}
-      </div>
-    );
-  }
-  const { line } = preview;
-  const width = "calc(4px / var(--board-scale, 1))";
-  const vertical = line.w === 0;
+/** Where our drag lands if dropped now: its place, the others making room around it. */
+function Landing({ box, along }: { box: Box | null; along: boolean }) {
+  if (!box || along) return null;
   return (
     <div
-      data-snap-preview="insert"
-      className="border-primary pointer-events-none absolute z-[99999] border-0 border-dotted"
-      style={{
-        left: line.x,
-        top: line.y,
-        width: line.w,
-        height: line.h,
-        ...(vertical
-          ? { borderLeftWidth: width, transform: "translateX(-50%)" }
-          : { borderTopWidth: width, transform: "translateY(-50%)" }),
-      }}
-    >
-      {hint}
-    </div>
+      data-drop-landing=""
+      className="border-primary/70 bg-primary/5 pointer-events-none absolute z-[99980] border-2 border-dashed"
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+    />
+  );
+}
+
+/**
+ * Above each cluster, its grip: its name, which anyone may edit, and a handle
+ * to move it to another place among the clusters (as Shift-dragging a frame
+ * does). The label keeps its size at any zoom.
+ */
+function ClusterGrips({
+  clusters,
+  readOnly,
+}: {
+  clusters: ReadonlyArray<ResolvedCluster>;
+  readOnly: boolean;
+}) {
+  const room = useRoom();
+  return (
+    <>
+      {clusters.map((cluster) => {
+        const { box } = cluster;
+        if (readOnly && !cluster.name) return null;
+        return (
+          <div
+            key={cluster.id}
+            data-hud=""
+            data-cluster-grip={cluster.id}
+            className="absolute flex origin-bottom-left items-center gap-0.5 pb-1.5 select-none"
+            style={{
+              left: box.x,
+              top: box.y,
+              transform: "translateY(-100%) scale(calc(1 / var(--board-scale, 1)))",
+            }}
+          >
+            {!readOnly && (
+              <button
+                type="button"
+                title="Move the cluster"
+                className="text-muted-foreground hover:text-foreground cursor-grab rounded-sm p-0.5 active:cursor-grabbing"
+                onPointerDown={(event) =>
+                  startDrag(event, {
+                    doc: room.doc,
+                    what: { kind: "cluster", id: cluster.id },
+                    origin: box,
+                  })
+                }
+              >
+                <GripVertical className="size-3.5" />
+              </button>
+            )}
+            <input
+              aria-label="Cluster name"
+              placeholder="cluster"
+              readOnly={readOnly}
+              value={cluster.name ?? ""}
+              size={Math.max(7, (cluster.name ?? "").length + 1)}
+              className="text-muted-foreground focus:text-foreground placeholder:text-muted-foreground/50 bg-transparent font-mono text-[11px] font-medium outline-none"
+              onChange={(event) =>
+                applyLayout(room.doc, [
+                  { kind: "container", id: cluster.id, set: { name: event.target.value } },
+                ])
+              }
+            />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** Everyone else's drag, in their colour: the frame where their pointer has it, and where it lands. */
+function DragGhosts() {
+  const peers = usePeers();
+  return (
+    <>
+      {peers.map(({ user, drag }) =>
+        drag ? (
+          <div key={user.peerId} data-drag-ghost={user.name} className="pointer-events-none">
+            {drag.landing && (
+              <div
+                className="absolute z-[99970] border-2 border-dashed"
+                style={{
+                  left: drag.landing.x,
+                  top: drag.landing.y,
+                  width: drag.landing.w,
+                  height: drag.landing.h,
+                  borderColor: user.color,
+                }}
+              />
+            )}
+            <div
+              className="absolute z-[99975] border-2 transition-[left,top] duration-75 ease-linear"
+              style={{
+                left: drag.box.x,
+                top: drag.box.y,
+                width: drag.box.w,
+                height: drag.box.h,
+                borderColor: user.color,
+                backgroundColor: `color-mix(in oklab, ${user.color} 12%, transparent)`,
+              }}
+            >
+              <span
+                className="absolute top-0 left-0 origin-top-left px-1.5 py-0.5 font-mono text-[11px] font-semibold whitespace-nowrap"
+                style={{
+                  backgroundColor: user.color,
+                  color: "oklch(0.2 0 0)",
+                  transform: "scale(calc(1 / var(--board-scale, 1)))",
+                }}
+              >
+                {user.name} · {drag.title}
+              </span>
+            </div>
+          </div>
+        ) : null,
+      )}
+    </>
   );
 }
 

@@ -5,7 +5,6 @@ import {
   fullscreenRow,
   fullscreenTransform,
   edgeScroll,
-  rowTarget,
   scrollsFurther,
   standIn,
   stillFullscreen,
@@ -65,15 +64,6 @@ describe("full screen", () => {
     expect(standIn(order, "c", new Set(["a", "b"]))).toBe("b");
     expect(standIn(order, "a", new Set(["c"]))).toBe("c");
     expect(standIn(order, "a", new Set(["d"]))).toBeNull();
-  });
-
-  test("a frame dragged along its row goes after the frames whose middle it passed", () => {
-    const row = fullscreenRow(frames, "a")!.frames;
-    const a = frames[0]!;
-    expect(rowTarget(row, { ...a, x: 200 })).toEqual({ anchor: "b", side: "left" });
-    expect(rowTarget(row, { ...a, x: 600 })).toEqual({ anchor: "b", side: "right" });
-    expect(rowTarget(row, { ...a, x: 1100 })).toEqual({ anchor: "c", side: "right" });
-    expect(rowTarget([a], a)).toBeNull();
   });
 
   test("a drag near the board's side scrolls, faster the deeper, most at and past it", () => {

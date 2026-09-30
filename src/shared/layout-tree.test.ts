@@ -3,10 +3,13 @@ import { generateNKeysBetween } from "fractional-indexing";
 import * as Y from "yjs";
 
 import {
+  alongAt,
   applyChanges,
   BOARD,
   CLUSTER_GAP,
+  CLUSTER_REACH,
   DEFAULT_W,
+  dropAt,
   GAP,
   insert,
   migrate,
@@ -18,6 +21,8 @@ import {
   repair,
   resize,
   resolve,
+  slotAt,
+  without as lifted,
   type Change,
   type Container,
   type Leaf,
@@ -576,5 +581,85 @@ describe("migrate", () => {
     const tree = build([{ rows: [{ h: 100, frames: [["old", 100]] }] }]);
     const after = applyChanges(tree, migrate(tree, [r("x", 0, 0)], counter()));
     expect(shape(after)).toEqual([[["old"]], [["x"]]]);
+  });
+});
+
+describe("drop zones", () => {
+  // Two clusters side by side: a row a b over c; d. A third, wrapped under them.
+  const tree = build([
+    {
+      rows: [
+        {
+          h: 200,
+          frames: [
+            ["a", 400],
+            ["b", 400],
+          ],
+        },
+        { h: 200, frames: [["c", 400]] },
+      ],
+    },
+    { rows: [{ h: 200, frames: [["d", 400]] }] },
+    { rows: [{ h: 200, frames: [["e", 4000]] }] },
+  ]);
+  const layout = resolve(tree);
+  const box = (id: string) => layout.frames.get(id)!.frame;
+  const inside = (id: string, u: number, v: number) => {
+    const f = box(id);
+    return { x: f.x + f.w * u, y: f.y + f.h * v };
+  };
+
+  test("over a frame, the edge the pointer is nearest", () => {
+    expect(dropAt(layout, inside("a", 0.1, 0.5))).toEqual({ anchor: "a", side: "left" });
+    expect(dropAt(layout, inside("a", 0.9, 0.4))).toEqual({ anchor: "a", side: "right" });
+    expect(dropAt(layout, inside("a", 0.5, 0.1))).toEqual({ anchor: "a", side: "above" });
+    expect(dropAt(layout, inside("c", 0.4, 0.95))).toEqual({ anchor: "c", side: "below" });
+  });
+
+  test("in a gap of the cluster, or just outside it: beside the nearest frame", () => {
+    const a = box("a");
+    expect(dropAt(layout, { x: a.x + a.w + GAP / 2 - 1, y: a.y + 100 })).toEqual({
+      anchor: "a",
+      side: "right",
+    });
+    // Just right of c, under b: the end of c's row.
+    expect(dropAt(layout, { x: box("c").x + 430, y: box("c").y + 100 })).toEqual({
+      anchor: "c",
+      side: "right",
+    });
+    const d = box("d");
+    expect(dropAt(layout, { x: d.x + d.w + CLUSTER_REACH - 1, y: d.y + 100 })).toEqual({
+      anchor: "d",
+      side: "right",
+    });
+  });
+
+  test("between clusters or on empty board: a cluster of its own there", () => {
+    const k1 = layout.clusters[0]!.box;
+    const k2 = layout.clusters[1]!.box;
+    expect(dropAt(layout, { x: (k1.x + k1.w + k2.x) / 2, y: 50 })).toEqual({ before: "k2" });
+    expect(dropAt(layout, { x: k2.x + k2.w + 500, y: 50 })).toEqual({ before: "k3" });
+    expect(dropAt(layout, { x: -500, y: 50 })).toEqual({ before: "k1" });
+    expect(dropAt(layout, { x: 0, y: 99999 })).toEqual({ before: null });
+  });
+
+  test("a new cluster, even over frames, when asked", () => {
+    expect(dropAt(layout, inside("b", 0.2, 0.5), { newCluster: true })).toEqual({ before: "k2" });
+    expect(slotAt(layout, inside("b", 0.8, 0.5))).toEqual({ before: "k2" });
+  });
+
+  test("hit against the board without the dragged frame: what is under the pointer holds still", () => {
+    const rest = resolve(lifted(tree, new Set(["a"])));
+    // b takes a's place once a is lifted: the pointer at a's left edge is b's.
+    expect(dropAt(rest, inside("a", 0.1, 0.5))).toEqual({ anchor: "b", side: "left" });
+  });
+
+  test("along a row: before or after the frame the pointer is over, by its half", () => {
+    const a = box("a");
+    const b = box("b");
+    expect(alongAt(layout, "k1r1", a.x + 100)).toEqual({ anchor: "a", side: "left" });
+    expect(alongAt(layout, "k1r1", b.x + 300)).toEqual({ anchor: "b", side: "right" });
+    expect(alongAt(layout, "k1r1", b.x + 9000)).toEqual({ anchor: "b", side: "right" });
+    expect(alongAt(resolve(lifted(tree, new Set(["c"]))), "k1r2", 0)).toBeNull();
   });
 });

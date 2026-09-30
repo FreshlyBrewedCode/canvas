@@ -153,6 +153,7 @@ export interface Board {
   /** In a stable order, not by `z` (see `readBoard`). */
   readonly frames: Frame[];
   readonly layout: Layout;
+  readonly tree: Tree;
 }
 
 /**
@@ -162,7 +163,8 @@ export interface Board {
  * browser frame.
  */
 function readBoard(doc: Y.Doc): Board {
-  const layout = resolve(readTree(doc));
+  const tree = readTree(doc);
+  const layout = resolve(tree);
   const frames: Frame[] = [];
   framesOf(doc).forEach((map, id) => {
     const at = layout.frames.get(id);
@@ -172,7 +174,7 @@ function readBoard(doc: Y.Doc): Board {
     frames.push({ ...frame, cluster: at.cluster.id, row: at.row.id, column: at.column.id });
   });
   frames.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return { frames, layout };
+  return { frames, layout, tree };
 }
 
 /** Every frame, as the doc has it now. */

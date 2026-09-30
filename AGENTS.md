@@ -60,7 +60,10 @@ canvas
   presence (`hooks/use-fullscreen.ts`, geometry in `web/lib/fullscreen.ts`). It lasts while the
   transform is one (`stillFullscreen`), so any zoom or move off the row ends it; Esc and ✕
   glide back to the view before. A closed frame hands over to the next of the row (`standIn`);
-  frames move along the row only (`rowTarget`), scrolling it at the board's sides (`edgeScroll`)
+  frames move along the row only (`alongAt`), scrolling it at the board's sides (`edgeScroll`)
+- dragging (ADR 0010): by the pointer, hit against the board without what is dragged (`dropAt`,
+  `slotAt` in `shared/layout.ts`); ours until the drop (`web/hooks/start-drag.ts`), the board
+  showing the result meanwhile (`web/lib/drag.ts`); peers see a ghost (presence `drag`)
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied
