@@ -67,7 +67,7 @@ time.
 | **W** / **S**, **K** / **J**                 | Full screen on the row above / below |
 | **‹** / **›**, or a dot, in the top bar      | The frame before / after, or that one |
 | Wheel, drag or swipe                         | Along the row                    |
-| **+** beside a frame                         | Add a frame there                |
+| **+** on a frame's edge                      | Add a frame there                |
 | Drag a frame's header                        | Move it along the row            |
 | **F**, the **×** in the top bar, or zoom     | Leave full screen                |
 
@@ -76,9 +76,8 @@ time.
   screen until someone drags their bottom edge: the host's terminal sizes it for everyone, so
   everyone's full screen shows that height, taller or shorter than their screen.
 - **Going to a frame occupies it**, as pressing on it does ([Focus](/docs/focus)).
-- **The rest of the board is hidden**, and so are the toolbar and zoom controls: **+** beside the
-  frame under your mouse, on the edges it shares with its neighbours, adds one, and the frames
-  after it make room.
+- **The rest of the board is hidden**, and so are the toolbar and zoom controls: the **+** on a
+  frame's edge adds one ([Frames](#frames)), and full screen goes to it.
 - **Frames only move along the row**: over the left or right half of another, a dragged frame
   goes before or after it, and the others make room. Hold a frame near the left or right side of
   the screen to scroll the row that way. The edges between frames set their widths.
@@ -130,6 +129,10 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
 - **Add** a frame from the toolbar: **Agent**, **Files**, **Browser**, **Terminal**, **Drawing**.
   It goes beside the frame you are in, or, if you are in none, in a cluster of its own, and the
   board takes you there.
+- **Add** one exactly where you want it with the **+** on the left or right edge of a frame: it
+  shows when your mouse is near the edge, one for the edge two frames share, and is the same size
+  at any zoom. Pick a kind: the new frame goes there, the rest of the row makes room, and the board
+  takes you to it.
 - **Move** it by its header, **resize** it by its edges.
 - **Rename** it by clicking its title in the header.
 - **Remove** it with the **×** in its header.

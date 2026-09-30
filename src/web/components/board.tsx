@@ -20,7 +20,8 @@ import { DrawingFrame } from "@/components/drawing-frame";
 import { FileFrame } from "@/components/file-frame";
 import { FRAME_KINDS } from "@/components/frame-shell";
 import { Edges } from "@/components/edges";
-import { FullscreenBar, FullscreenInserts } from "@/components/fullscreen";
+import { FullscreenBar } from "@/components/fullscreen";
+import { Inserts } from "@/components/inserts";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
@@ -54,7 +55,7 @@ import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
-import { MIN_H, MIN_W, type Box, type ResolvedCluster } from "../../shared/layout";
+import { MIN_H, MIN_W, type Beside, type Box, type ResolvedCluster } from "../../shared/layout";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
 export function Board() {
@@ -209,6 +210,24 @@ export function Board() {
   };
   useBoardKeys({ room, board, fullscreen, viewport, readOnly, create });
 
+  // "+" on the edges of rows: in full screen, its row's, as tall as they show.
+  const insertable = useMemo(
+    () =>
+      row
+        ? row.frames.map((f) => ({
+            ...f,
+            y: row.top,
+            h: f.type === "terminal" ? (f.height ?? f.h) : height,
+          }))
+        : shown.frames,
+    [row, height, shown.frames],
+  );
+  const insert = (type: FrameType, target: Beside) => {
+    const id = own(room.doc, () => addFrame(room.doc, newFrame(type, frames), target));
+    if (row) show(id);
+    else go({ kind: "board", target: { frame: id } });
+  };
+
   return (
     <GoProvider value={go}>
       <div className="flex h-full flex-col">
@@ -235,7 +254,9 @@ export function Board() {
             {!readOnly && !drag && (
               <Edges layout={board.layout} fullscreen={row ? { row, height } : null} />
             )}
-            {!readOnly && <FullscreenInserts fullscreen={fullscreen} />}
+            {!readOnly && !drag && (
+              <Inserts frames={insertable} wrapRef={wrapRef} viewport={viewport} onAdd={insert} />
+            )}
             <Landing box={shown.landing} along={drag?.kind === "frame" && drag.along} />
             <DragGhosts />
             <Pointers />

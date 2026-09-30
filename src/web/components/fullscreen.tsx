@@ -1,11 +1,7 @@
-import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
-import { FRAME_KINDS } from "@/components/frame-shell";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Fullscreen } from "@/hooks/use-fullscreen";
-import { addFrame, allFrames, DEFAULT_SIZE, newFrame, own, type FrameType } from "@/lib/board";
-import { usePeers, useRoom } from "@/lib/room-context";
+import { usePeers } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
 
 /**
@@ -81,89 +77,5 @@ export function FullscreenBar({ fullscreen }: { fullscreen: Fullscreen }) {
         <X className="size-3.5" />
       </button>
     </div>
-  );
-}
-
-/**
- * On the edges of the frame under the mouse, shared with its neighbours, a
- * "+" that adds a frame of the row there (those after it make room) and goes to it.
- * Board space: full screen is at 100%.
- */
-export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
-  const room = useRoom();
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [menu, setMenu] = useState<"left" | "right" | null>(null);
-  const { row, height } = fullscreen;
-
-  // The last frame of the row the mouse was over: moving on to a "+" keeps it.
-  useEffect(() => {
-    const onOver = (event: PointerEvent) => {
-      const id = (event.target as Element).closest<HTMLElement>("[data-frame]")?.dataset.frame;
-      if (id) setHovered(id);
-    };
-    document.addEventListener("pointerover", onOver);
-    return () => document.removeEventListener("pointerover", onOver);
-  }, []);
-
-  const frame = row?.frames.find((f) => f.id === hovered);
-  if (!row || !frame) return null;
-  const middle = row.top + (frame.type === "terminal" ? (frame.height ?? frame.h) : height) / 2;
-
-  const insert = (side: "left" | "right", type: FrameType) => {
-    setMenu(null);
-    const frames = allFrames(room.doc);
-    const size = { w: DEFAULT_SIZE[type].w, h: frame.h };
-    const id = own(room.doc, () =>
-      addFrame(room.doc, newFrame(type, frames), { anchor: frame.id, side }, size),
-    );
-    fullscreen.show(id);
-  };
-
-  return (
-    <>
-      {(["left", "right"] as const).map((side) => (
-        <Popover
-          key={side}
-          open={menu === side}
-          onOpenChange={(open) => setMenu(open ? side : null)}
-        >
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              data-hud=""
-              data-fullscreen-insert={side}
-              title={`Add a frame ${side === "left" ? "before" : "after"} this one`}
-              className={cn(
-                "bg-card text-muted-foreground hover:text-foreground absolute z-[99998] grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border shadow-sm",
-                menu === side && "text-foreground",
-              )}
-              style={{
-                left: side === "left" ? frame.x : frame.x + frame.w,
-                top: middle,
-              }}
-            >
-              <Plus className="size-3.5" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            side={side}
-            align="center"
-            className="flex w-36 flex-col p-1"
-            data-fullscreen-menu=""
-          >
-            {FRAME_KINDS.map(({ type, label, Icon }) => (
-              <button
-                key={type}
-                type="button"
-                className="hover:bg-muted flex items-center gap-2 rounded-md px-2 py-1.5 text-xs"
-                onClick={() => insert(side, type)}
-              >
-                <Icon className="text-muted-foreground size-3.5" /> {label}
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
-      ))}
-    </>
   );
 }

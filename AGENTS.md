@@ -74,6 +74,9 @@ canvas
   (`dropPoint`), hit against the board without what is dragged, its clusters pinned where they
   were (`pin`, `dropAt`, `slotAt` in `shared/layout.ts`); ours until the drop (`web/hooks/start-drag.ts`), the board
   showing the result meanwhile (`web/lib/drag.ts`); peers see a ghost (presence `drag`)
+- adding beside (`components/inserts.tsx`): a "+" on the vertical edge of a row the mouse is near,
+  one per column boundary (`insertEdges`, `edgeNear` in `web/lib/inserts.ts`), its size and reach
+  in screen px; it stays put while its menu is open. Full screen gives it its row as shown
 
 - stack (siblings: `../factory`, `../wayful`)
   - bun, TypeScript, React 19, Vite, tailwind v4, shadcn-style primitives; design system copied
@@ -99,7 +102,7 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|fullscreen-presence|keys|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
