@@ -3057,9 +3057,9 @@ if (step === "fullscreen") {
   await host.locator("[data-fullscreen-dot]").nth(2).click();
   await settle();
   const t = (await frame(term).boundingBox())!;
-  await host.mouse.move(t.x + t.width / 2, t.y + 100);
-  await host.locator("[data-fullscreen-insert=right]").click();
-  await host.locator("[data-fullscreen-menu]").getByRole("button", { name: "Drawing" }).click();
+  await host.mouse.move(t.x + t.width - 10, t.y + 100);
+  await host.locator(`[data-insert=right][data-insert-anchor="${term}"]`).click();
+  await host.locator("[data-insert-menu]").getByRole("button", { name: "Drawing" }).click();
   await settle();
   check((await host.locator("[data-fullscreen-dot]").count()) === 4, "+ adds a frame to the row");
   const added = (await current())!;
@@ -3534,7 +3534,8 @@ if (step === "edges") {
 
   // The edge A and B share: A wider, B along.
   let box = await dom(a);
-  await pull(box.x + box.width, box.y + box.height / 2, 100, 0);
+  // Off its middle: that is where the "+" is.
+  await pull(box.x + box.width, box.y + box.height / 3, 100, 0);
   [A, B] = [await frame(a), await frame(b)];
   check(A.w === 700 && B.x === 700 && B.w === 600, `the shared vertical edge: A ${A.w} wide, B at ${B.x}`);
 
@@ -3592,10 +3593,114 @@ if (step === "edges") {
   await guest.keyboard.press("f");
   // "+" sits on the edge the frame shares with the next.
   tb = await dom(t);
-  await host.mouse.move(tb.x + tb.width / 2, tb.y + 60);
-  const plus = (await host.locator("[data-fullscreen-insert=left]").boundingBox())!;
-  check(Math.abs(plus.x + plus.width / 2 - tb.x) < 2, "the + sits on the shared edge");
+  await host.mouse.move(tb.x + 10, tb.y + 60);
+  check((await host.locator("[data-insert]").count()) === 1, "one + near the edge");
+  const plus = (await host.locator(`[data-insert=right][data-insert-anchor="${b}"]`).boundingBox())!;
+  check(Math.abs(plus.x + plus.width / 2 - tb.x) < 2, "…on the edge the frame shares with the one before");
   await shot(host, "61-edges-fullscreen");
+}
+if (step === "inserts") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const add = async (name: string) => (await (await addFrame(host, name)).getAttribute("data-frame"))!;
+  // A row of two, and a cluster of its own right of it.
+  const [a, b, c] = [await add("Files"), await add("Files"), await add("Files")];
+  await arrange(host, {
+    [a]: { x: 0, y: 0, w: 600, h: 400 },
+    [b]: { x: 624, y: 0, w: 600, h: 400 },
+    [c]: { x: 2000, y: 0, w: 600, h: 400 },
+  });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(600);
+  const dom = async (id: string) => (await host.locator(`[data-frame="${id}"]`).boundingBox())!;
+  const plus = host.locator("[data-insert]");
+  const which = async () =>
+    (await plus.count()) === 1
+      ? `${await plus.getAttribute("data-insert-anchor")}:${await plus.getAttribute("data-insert")}`
+      : null;
+  const centre = async () => {
+    const p = (await plus.boundingBox())!;
+    return { x: p.x + p.width / 2, y: p.y + p.height / 2, size: p.width };
+  };
+
+  // Not in full screen: near an edge, not in a frame's middle.
+  let A = await dom(a);
+  await host.mouse.move(A.x + A.width / 2, A.y + A.height / 2);
+  await settle(100);
+  check((await plus.count()) === 0, "no + in the middle of a frame");
+  await host.mouse.move(A.x + A.width - 12, A.y + A.height / 2);
+  await settle(100);
+  check((await which()) === `${a}:right`, `near A's right edge: a + after A (${await which()})`);
+  let at = await centre();
+  check(Math.abs(at.x - (A.x + A.width)) < 2, "…on the edge");
+  check(Math.abs(at.y - (A.y + A.height / 2)) < 2, "…in its middle");
+  let B = await dom(b);
+  await host.mouse.move(B.x + 12, B.y + 30);
+  await settle(100);
+  check((await which()) === `${a}:right`, "just inside B: the same +, on the edge they share");
+  await host.mouse.move(A.x + 6, A.y + 30);
+  await settle(100);
+  check((await which()) === `${a}:left`, "near A's left edge: a + before it");
+  const C = await dom(c);
+  await host.mouse.move(C.x - 10, C.y + 30);
+  await settle(100);
+  check((await which()) === `${c}:left`, "just outside a cluster: its edge's +");
+  await host.mouse.move(C.x + C.width / 2, C.y - 40);
+  await settle(100);
+  check((await plus.count()) === 0, "none above a frame");
+
+  // The menu keeps its +, wherever the mouse goes on the way to it: over the frame next to it too.
+  A = await dom(a);
+  await host.mouse.move(A.x + A.width - 12, A.y + A.height / 2);
+  await plus.click();
+  const menu = host.locator("[data-insert-menu]");
+  await menu.waitFor();
+  B = await dom(b);
+  await host.mouse.move(B.x + 20, B.y + B.height / 2, { steps: 4 });
+  await host.mouse.move(B.x + B.width - 12, B.y + B.height / 2, { steps: 4 });
+  await settle(100);
+  check((await which()) === `${a}:right`, `over B and near its far edge: the + stays (${await which()})`);
+  check(await menu.isVisible(), "…and its menu");
+  await shot(host, "62-insert-menu");
+  await menu.getByRole("button", { name: "Drawing" }).click();
+  await settle(800);
+  const row = (await framesOf(host)).filter((f) => f.y === 0 && f.x < 2000).sort((p, q) => p.x - q.x);
+  check(
+    row.length === 3 && row[0]!.id === a && row[1]!.type === "drawing" && row[2]!.id === b,
+    `…Drawing goes between A and B (${row.map((f) => f.type).join(", ")})`,
+  );
+  await host.mouse.move(0, 0);
+  await settle(100);
+  check((await menu.count()) === 0, "the menu is gone");
+
+  // The same size on screen, at any zoom.
+  A = await dom(a);
+  await host.mouse.move(A.x + A.width - 12, A.y + 100);
+  await settle(100);
+  const fitted = (await centre()).size;
+  for (let i = 0; i < 12; i++) await host.locator("[data-hud]").getByTitle("Zoom out").click();
+  await settle(600);
+  const scale = (await dom(a)).width / 600;
+  A = await dom(a);
+  await host.mouse.move(A.x + A.width - 2, A.y + A.height / 2);
+  await settle(100);
+  at = await centre();
+  check(
+    Math.abs(at.size - 24) < 1 && Math.abs(fitted - 24) < 1,
+    `at ${Math.round(scale * 100)}%, the + is 24 px, as when fitted (${at.size}, ${fitted})`,
+  );
+  // Its reach is on screen too: well outside the tiny frame, it is still there.
+  await host.mouse.move(A.x + A.width + 20, A.y + A.height / 2);
+  await settle(100);
+  check((await which()) !== null, `…and it is reached from as far (${await which()})`);
+  await shot(host, "63-insert-zoomed-out");
 }
 if (step === "needs-you") {
   const check = (ok: boolean, what: string) => {
