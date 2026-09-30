@@ -13,6 +13,7 @@ bun install
 bun run dev      # http://localhost:4419 — no search, see below
 bun run build    # astro build, then pagefind indexes dist/
 bun run preview  # build + serve dist/ — the only way to test search locally
+bun run build:channels  # what CI deploys: stable at /, main under /next — see Channels
 bun run check    # astro check (types across .astro files)
 ```
 
@@ -34,6 +35,10 @@ Astro's image pipeline, sharp, needs `libstdc++`.
 | `src/pages/docs/index.md.ts`     | Unlisted markdown index of every doc                        |
 | `src/lib/docs.ts`                | `sortedDocs()` — sidebar order, shared by the above         |
 | `src/lib/sections.ts`            | The sidebar sections, in order                              |
+| `src/lib/channel.ts`             | Which channel a build is: base path, versions, `href()`     |
+| `src/lib/markdown-channel.ts`    | Points markdown's code and `/docs` links at the channel     |
+| `src/components/VersionPicker.astro` | Stable/next badge and menu, above the page outline      |
+| `scripts/build-channels.sh`      | Builds both channels into one `dist/`                       |
 | `src/components/NavDrawer.astro` | Mobile nav: trigger bar + drawer, below `lg`                |
 | `src/styles/global.css`          | Tailwind entry + design tokens + prose and Pagefind theming |
 | `ec.config.mjs`                  | Expressive Code themes and style overrides                  |
@@ -78,15 +83,45 @@ collection entry, so the sidebar never shows it, and Pagefind only indexes HTML,
 it. Its links are absolute, built from `site` in `astro.config.mjs` (`https://canvas.frebreco.de`),
 so change that and `public/CNAME` together if the site ever moves.
 
+## Channels
+
+The docs come in the package's two channels. The root (`/docs`) documents the stable release,
+`@frebreco/canvas`; `/next/docs` documents `main`, the pre-release `@frebreco/canvas@next`. A
+badge above the page outline says which, and its menu goes to the same page in the other channel
+(or that channel's `/docs`, when the page does not exist there).
+
+One build is one channel, set by environment variables that `src/lib/channel.ts` reads:
+
+| Variable                                     | What it does                                              |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `DOCS_CHANNEL`                               | `latest` (default, at `/`) or `next` (under `/next`)      |
+| `DOCS_CONTENT`                               | Where the markdown is, instead of `content/docs`          |
+| `DOCS_LATEST_VERSION`, `DOCS_NEXT_VERSION`   | The versions the badge shows; left out when unset         |
+
+`scripts/build-channels.sh` builds both into one `dist/`. Only `content/` comes from the last
+stable tag, extracted to `.stable/`; the site around it is the checkout's, so a fix to a layout or
+a style reaches both channels at once. On `next`, `markdown-channel.ts` turns
+`@frebreco/canvas` in code into `@frebreco/canvas@next` and the host link's web app into
+`ui.canvas.frebreco.de/next/`, and points `/docs/…` links under `/next`; the raw `.md` pages get
+the same. A root-relative link in a component goes through `href()`.
+
+So a docs change merged to `main` shows under `/next` straight away and at the root with the next
+stable release — including a fix to a page stable already has. Pages under `/next` are `noindex`.
+
 ## Deploying
 
-`.github/workflows/site.yml` builds this package and deploys `dist/` to the canvas repo's GitHub
-Pages on every push to `main` that touches `site/**`, or by hand from the Actions tab. The custom
-domain comes from `public/CNAME`. The web app is not part of this site: it is served from
+`.github/workflows/site.yml` builds both channels and deploys `dist/` to the canvas repo's GitHub
+Pages after every run of the release workflow — which every push to `main` starts, and which moves
+the stable content when it publishes `latest` — or by hand from the Actions tab. The custom domain
+comes from `public/CNAME`. The web app is not part of this site: it is served from
 `ui.canvas.frebreco.de` by the release workflow.
 
 ## Things that will bite you
 
+- **Rendered markdown is cached across channels.** The content layer cache (below) keys a page on
+  its source, and the two channels render the same source differently, so `build-channels.sh`
+  builds with `--force`. The next channel's Pagefind is its own index under `/next/pagefind/`;
+  `Search.astro` names that bundle, as the component UI otherwise finds the root's.
 - **Search is build-only.** Pagefind indexes rendered HTML in `dist/`, so `astro dev` has no index.
   The header shows a "build only" chip there instead of a dead search box. Use `bun run preview`.
 - **Expressive Code options live in `ec.config.mjs`,** not `astro.config.mjs`. The `<Code>` component

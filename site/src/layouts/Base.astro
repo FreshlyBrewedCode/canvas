@@ -1,5 +1,6 @@
 ---
 import Header from "../components/Header.astro";
+import { CHANNEL, href } from "../lib/channel";
 import "../styles/global.css";
 
 interface Props {
@@ -21,12 +22,14 @@ const {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href={href("/favicon.svg")} type="image/svg+xml" />
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <link rel="canonical" href={new URL(canonical ?? Astro.url.pathname, Astro.site)} />
+    {/* Pre-release docs change under their readers; send search engines to the stable ones. */}
+    {CHANNEL === "next" && <meta name="robots" content="noindex" />}
     {/* Resolve the scheme before first paint, or dark mode flashes white. */}
     <script is:inline>
       const stored = localStorage.getItem("theme");

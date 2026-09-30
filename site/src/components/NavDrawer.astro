@@ -4,6 +4,7 @@ import X from "@lucide/astro/icons/x";
 import type { MarkdownHeading } from "astro";
 import Sidebar from "./Sidebar.astro";
 import Toc from "./Toc.astro";
+import VersionPicker from "./VersionPicker.astro";
 
 interface Props {
   slug: string;
@@ -52,6 +53,10 @@ const { slug, headings } = Astro.props;
       >
         <X class="size-4" />
       </button>
+    </div>
+
+    <div class="mb-6">
+      <VersionPicker slug={slug} />
     </div>
 
     <Sidebar current={slug} />

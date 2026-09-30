@@ -1,4 +1,5 @@
 import type { APIRoute, GetStaticPaths } from "astro";
+import { forChannel, linkForChannel } from "../../lib/channel";
 import { sortedDocs } from "../../lib/docs";
 
 /*
@@ -24,7 +25,12 @@ export const GET: APIRoute = ({ props }) => {
   // untitled; reinstate the title and lead as markdown. (To serve the file
   // byte-for-byte instead, read `entry.filePath` off disk.)
   const lead = entry.data.description ? `\n${entry.data.description}\n` : "";
-  const markdown = `# ${entry.data.title}\n${lead}\n${entry.body ?? ""}`;
+  // The rendered page's channel rewrites (`markdown-channel.ts`), on the source.
+  const body = forChannel(entry.body ?? "").replace(
+    /\]\((\/docs[^)]*)\)/g,
+    (_, url: string) => `](${linkForChannel(url)})`,
+  );
+  const markdown = `# ${entry.data.title}\n${lead}\n${body}`;
 
   return new Response(markdown, {
     headers: {

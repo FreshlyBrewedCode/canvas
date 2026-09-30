@@ -1,6 +1,7 @@
 ---
 import { render } from "astro:content";
 import DocsLayout from "../../layouts/DocsLayout.astro";
+import { href } from "../../lib/channel";
 import { sortedDocs } from "../../lib/docs";
 
 /*
@@ -26,7 +27,7 @@ const { Content, headings } = await render(entry);
 // slugged URL so search engines pick it — it's the one the sidebar links. The
 // trailing slash matches what that page canonicalizes itself to under the
 // `directory` build format, so both tags name the same URL.
-const canonical = Astro.params.slug ? undefined : `/docs/${entry.id}/`;
+const canonical = Astro.params.slug ? undefined : href(`/docs/${entry.id}/`);
 ---
 
 <DocsLayout

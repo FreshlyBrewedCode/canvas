@@ -1,5 +1,6 @@
 ---
 import Search from "@lucide/astro/icons/search";
+import { href } from "../lib/channel";
 
 /*
  * Pagefind indexes the *built* HTML, so `/pagefind/*` only exists after
@@ -31,8 +32,13 @@ const dev = import.meta.env.DEV;
     </span>
   ) : (
     <>
-      <link rel="stylesheet" href="/pagefind/pagefind-component-ui.css" />
-      <script is:inline src="/pagefind/pagefind-component-ui.js" />
+      <link rel="stylesheet" href={href("/pagefind/pagefind-component-ui.css")} />
+      <script is:inline src={href("/pagefind/pagefind-component-ui.js")} />
+      {/*
+        The component UI guesses its bundle from its own script's URL, but lands
+        on `/pagefind/` — the root's, the stable channel's — under `/next`.
+      */}
+      <pagefind-config bundle-path={href("/pagefind/")} />
 
       {/*
         The responsive classes go on wrapper divs, not on the custom elements.

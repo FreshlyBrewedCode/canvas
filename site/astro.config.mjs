@@ -1,9 +1,12 @@
 // @ts-check
+import { satteri } from "@astrojs/markdown-satteri";
 import tailwind from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import expressiveCode from "astro-expressive-code";
 import { existsSync, readFileSync } from "node:fs";
 import { loadEnv } from "vite";
+import { BASE } from "./src/lib/channel.ts";
+import { markdownChannel } from "./src/lib/markdown-channel.ts";
 
 // Same arrangement as the app's `vite.config.ts` one level up, sharing its
 // `.env`: `CANVAS_DEV_HOST` names the host other devices reach the dev server
@@ -20,6 +23,14 @@ const httpsOptions =
 
 export default defineConfig({
   site: "https://canvas.frebreco.de",
+
+  // `/next` for the `next` channel's docs, the root otherwise — see
+  // `src/lib/channel.ts`. Astro wants a trailing-slash-free base or `/`.
+  base: BASE || "/",
+
+  // Docs markdown names the package, the web app and other pages; point them
+  // at this build's channel.
+  markdown: { processor: satteri({ mdastPlugins: [markdownChannel] }) },
 
   // No `redirects` entry for `/docs`. On static hosting Astro can only compile
   // one into a meta-refresh stub, and an unstyled stub paints white before it
