@@ -183,7 +183,7 @@ export function FrameShell({
         {!readOnly && (
           <button
             type="button"
-            title="Remove frame"
+            title="Remove frame (Shift + X)"
             className="text-muted-foreground hover:text-foreground -mr-1 rounded-md p-1"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={() => own(room.doc, () => removeFrame(room.doc, frame.id))}

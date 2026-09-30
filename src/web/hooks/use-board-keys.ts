@@ -10,6 +10,7 @@ import {
   moveFrame,
   newFrame,
   own,
+  removeFrame,
   type Board,
   type Frame,
   type FrameType,
@@ -53,6 +54,8 @@ export interface BoardKeys {
  *   where W A S D go on without leaving it, and again, back (to the frame
  *   we are on by then)
  * - 1 – 5: a new frame of a kind beside the current one
+ * - Shift + X: close the current frame, on to its neighbour (in full screen,
+ *   the next of its row, as full screen hands over)
  * - Esc: out of a field, to the board, so the keys work again (a terminal
  *   keeps its Esc)
  *
@@ -176,6 +179,18 @@ export function useBoardKeys(keys: BoardKeys) {
       fullscreen.leave();
       viewport.glide(fitted);
     };
+    const close = () => {
+      const { board, fullscreen, room, readOnly } = latest.current;
+      const id = current();
+      if (!id || readOnly) return;
+      const next = fullscreen.row
+        ? null
+        : (["left", "right", "up", "down"] as const)
+            .map((d) => neighbour(board.layout, id, d))
+            .find((n) => n && n !== id);
+      own(room.doc, () => removeFrame(room.doc, id));
+      if (next) go(next);
+    };
     const add = (type: FrameType) => {
       const { fullscreen, room, create, readOnly } = latest.current;
       if (readOnly) return;
@@ -215,6 +230,8 @@ export function useBoardKeys(keys: BoardKeys) {
       } else if (code === "KeyF") {
         if (shift) toggleOverview();
         else toggleFullscreen();
+      } else if (code === "KeyX" && shift) {
+        close();
       } else if (kind && !shift) {
         add(FRAME_KINDS[Number(kind) - 1]!.type);
       } else return;

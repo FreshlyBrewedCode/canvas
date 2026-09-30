@@ -3407,8 +3407,10 @@ if (step === "keys") {
     "…right beside the current frame",
   );
   check((await mine()) === added?.id, "…and it is the current frame");
-  await host.evaluate((id) => (window as any).room.doc.getMap("frames").delete(id), added!.id);
-  await settle();
+  // Shift + X closes the current frame, on to the one beside it.
+  await press("Shift+X");
+  check(!(await framesOf(host)).some((f) => f.id === added?.id), "Shift + X closes the current frame");
+  check((await mine()) === a, "…and goes on to the one beside it");
   await host.mouse.click((await header(a)).x, (await header(a)).y);
   await settle();
 
