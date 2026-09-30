@@ -55,6 +55,10 @@ time.
   goes before or after it, and the others make room. Hold a frame near the left or right side of
   the screen to scroll the row that way. The edges between frames set their widths.
 - **Leaving with Esc, F or ×** takes you back to where you were before full screen.
+- **Someone else changing the row** doesn't move you: the frame you are on stays where it is on
+  your screen, and the others move around it, whether they resize, reorder, add or take frames
+  away. Full screen stays on the row even if your frame is moved out of it: you go on to the one
+  before or after it.
 - **Closing a frame** goes on to the next one in the row; closing the last leaves full screen.
 - **Keys are the frame's while you type** in it: a prompt, a terminal, a title. Press the board
   first.
@@ -124,6 +128,8 @@ The nearest edge wins, and just outside a cluster still counts as its nearest fr
   drag any of its frames. It goes before the cluster the pointer is at.
 - **Naming a cluster:** click the name field above it (it reads _cluster_ until named).
 - **Moving or removing** a frame closes the gap it leaves.
+- **The frame you are in stays put** on your screen when someone else changes the layout around
+  it; the rest of the board moves instead.
 - **Resizing:** every edge is a handle, one where two frames or two rows meet. Drag a vertical
   edge to set the width of the frame left of it: the rest of the row moves along. Drag a
   horizontal edge to set the height of the row above it: the rows below move. A corner does both.

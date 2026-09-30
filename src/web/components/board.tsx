@@ -27,11 +27,13 @@ import { useBoardNavigation } from "@/hooks/use-board-navigation";
 import { useFollowView } from "@/hooks/use-follow-view";
 import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
 import { FullscreenProvider, useFullscreen, type Fullscreen } from "@/hooks/use-fullscreen";
+import { useAnchor } from "@/hooks/use-anchor";
 import { startDrag } from "@/hooks/start-drag";
 import {
   addFrame,
   applyLayout,
   newFrame,
+  own,
   useBoard,
   useFrames,
   type Frame,
@@ -85,6 +87,15 @@ export function Board() {
   useEffect(() => {
     if (following) leave();
   }, [following, leave]);
+  // The frame we are on stays put on our screen as others change the layout.
+  const current = fullscreen.current;
+  useAnchor(
+    room.doc,
+    frames,
+    () => (row ? current : room.ownFrame()),
+    viewport,
+    following || drag !== null,
+  );
 
   // Publish our pointer (board coordinates), text selections and frame focus as presence.
   const pointerAt = useRef<{ x: number; y: number } | null>(null);
@@ -184,11 +195,11 @@ export function Board() {
 
   // Beside the frame we are in; else a cluster of its own. Then we go there.
   const create = (type: FrameType, extra: Record<string, string> = {}) => {
-    const own = room.ownFrame();
-    const target = frames.some((f) => f.id === own)
-      ? { anchor: own!, side: "right" as const }
+    const mine = room.ownFrame();
+    const target = frames.some((f) => f.id === mine)
+      ? { anchor: mine!, side: "right" as const }
       : { before: null };
-    const id = addFrame(room.doc, newFrame(type, frames, extra), target);
+    const id = own(room.doc, () => addFrame(room.doc, newFrame(type, frames, extra), target));
     go({ kind: "board", target: { frame: id } });
   };
 
@@ -199,7 +210,6 @@ export function Board() {
           following={followed?.user.peerId ?? null}
           onFollow={toggleFollow}
           fullscreen={fullscreen}
-          viewport={viewport}
         />
         <VersionNotice />
         <div
@@ -808,13 +818,11 @@ function TopBar({
   following,
   onFollow,
   fullscreen,
-  viewport,
 }: {
   /** Whose view we follow. */
   following: string | null;
   onFollow: (peerId: string) => void;
   fullscreen: Fullscreen;
-  viewport: Pick<BoardViewport, "screen" | "subscribe">;
 }) {
   const room = useRoomState();
   const peers = usePeers();
@@ -831,7 +839,7 @@ function TopBar({
         {room.roomState?.cwd}
       </span>
       <ConnectionIndicator />
-      <FullscreenBar fullscreen={fullscreen} viewport={viewport} />
+      <FullscreenBar fullscreen={fullscreen} />
       <WaitingCount />
 
       <div className="ml-auto flex items-center gap-2">

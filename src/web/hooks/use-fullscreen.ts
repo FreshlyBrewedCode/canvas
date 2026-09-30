@@ -35,13 +35,15 @@ import type { Transform } from "@/lib/viewport";
  * as a press on it does (`focus.ts`).
  */
 export interface Fullscreen {
-  /** The row while on; it follows the frame we went to as the board changes. */
+  /** The row while on: the tree's, by its id, whoever changes it. */
   row: FullscreenRow<Frame> | null;
+  /** The frame we are on while on: the one we went to, or panned to the middle. */
+  current: string | null;
   /** The screen's height while on: the row's frames are as tall. */
   height: number;
   /** Go full screen on a frame, or to another frame of the row. */
   show: (frameId: string) => void;
-  /** The frame before (-1) or after (1) the one nearest the middle of the screen. */
+  /** The frame before (-1) or after (1) the one we are on. */
   step: (direction: 1 | -1) => void;
   /** End it, gliding back to where we went full screen from. */
   exit: () => void;
@@ -57,9 +59,9 @@ export function useFullscreen(
     "glide" | "lockVertical" | "onOwnMove" | "transform" | "screen" | "subscribe" | "wrapRef"
   >,
 ): Fullscreen {
-  const [frameId, setFrameId] = useState<string | null>(null);
-  // Null once the frame is gone, until a stand-in takes over.
-  const row = useMemo(() => (frameId ? fullscreenRow(frames, frameId) : null), [frames, frameId]);
+  const [at, setAt] = useState<{ row: string; frame: string } | null>(null);
+  // Null once the row has no frames left.
+  const row = useMemo(() => (at ? fullscreenRow(frames, at.row) : null), [frames, at]);
   const on = row !== null;
   const { glide, lockVertical, onOwnMove, transform, screen, subscribe, wrapRef } = viewport;
   /** The row's top, as last shown. */
@@ -71,13 +73,14 @@ export function useFullscreen(
   /** Go to a frame of the board, from the doc: a frame added a moment ago is there already. */
   const goTo = useCallback(
     (id: string) => {
-      const target = fullscreenRow(allFrames(room.doc), id);
-      const frame = target?.frames.find((f) => f.id === id);
-      if (!target || !frame) return false;
+      const board = allFrames(room.doc);
+      const frame = board.find((f) => f.id === id);
+      const target = frame && fullscreenRow(board, frame.row);
+      if (!frame || !target) return false;
       before.current ??= transform();
       top.current = target.top;
       setHeight(screen().height);
-      setFrameId(id);
+      setAt({ row: frame.row, frame: id });
       glide(fullscreenTransform(frame, target.top, screen().width));
       return true;
     },
@@ -94,7 +97,7 @@ export function useFullscreen(
   );
   const leave = useCallback(() => {
     before.current = null;
-    setFrameId(null);
+    setAt(null);
   }, []);
   const exit = useCallback(() => {
     const back = before.current;
@@ -106,49 +109,58 @@ export function useFullscreen(
   useEffect(() => {
     latest.current = row;
   });
-  // The frame we went to is gone (closed, by us or anyone): on to the next of
-  // the row, before a paint without full screen.
+  // The frame we are on left the row (closed, or moved elsewhere, by us or
+  // anyone): on to the next of the row as it was, before a paint without it.
+  // The row's last gone ends it.
   const order = useRef<string[]>([]);
   useLayoutEffect(() => {
-    if (row) order.current = row.frames.map((f) => f.id);
-    else if (frameId) {
-      const next = standIn(order.current, frameId, new Set(frames.map((f) => f.id)));
-      if (!next || !goTo(next)) exit();
+    if (!at) return;
+    if (row?.frames.some((f) => f.id === at.frame)) {
+      order.current = row.frames.map((f) => f.id);
+      return;
     }
-  }, [row, frameId, frames, goTo, exit]);
+    const next = standIn(order.current, at.frame, new Set(row?.frames.map((f) => f.id)));
+    if (!next || !goTo(next)) exit();
+  }, [row, at, goTo, exit]);
 
   const step = useCallback(
     (direction: 1 | -1) => {
       const frames = latest.current?.frames;
-      if (!frames) return;
-      const current = currentIn(frames, transform(), screen().width);
-      const next = frames[frames.findIndex((f) => f.id === current) + direction];
+      if (!frames || !at) return;
+      const next = frames[frames.findIndex((f) => f.id === at.frame) + direction];
       if (next) show(next.id);
     },
-    [show, transform, screen],
+    [show, at],
   );
 
-  // Someone moved the row up or down: stay with it.
+  // Someone moved the row up or down: stay with it (the view is anchored to
+  // our frame already, unless it was ours).
   const rowTop = row?.top;
   useEffect(() => {
     if (rowTop === undefined || rowTop === top.current) return;
     top.current = rowTop;
-    const frame = latest.current?.frames.find((f) => f.id === frameId);
-    if (frame) glide(fullscreenTransform(frame, rowTop, screen().width));
-  }, [rowTop, frameId, glide, screen]);
+    const frame = latest.current?.frames.find((f) => f.id === at?.frame);
+    if (frame && !stillFullscreen(transform(), rowTop))
+      glide(fullscreenTransform(frame, rowTop, screen().width));
+  }, [rowTop, at, glide, screen, transform]);
 
   // Along the row only; zooming, or going anywhere else, ends it.
   useEffect(() => {
     if (!on) return;
     lockVertical(true);
-    const off = onOwnMove(() => {
-      if (!stillFullscreen(transform(), top.current)) leave();
+    const off = onOwnMove((glide) => {
+      if (!stillFullscreen(transform(), top.current)) return leave();
+      // A glide goes to a frame: that one is ours already.
+      if (glide) return;
+      const frames = latest.current?.frames;
+      const middle = frames && currentIn(frames, transform(), screen().width);
+      if (middle) setAt((was) => (was && was.frame !== middle ? { ...was, frame: middle } : was));
     });
     return () => {
       off();
       lockVertical(false);
     };
-  }, [on, lockVertical, onOwnMove, transform, leave]);
+  }, [on, lockVertical, onOwnMove, transform, screen, leave]);
 
   useEffect(() => {
     if (!on) return;
@@ -200,7 +212,7 @@ export function useFullscreen(
     };
   }, [on, step, exit, show, wrapRef]);
 
-  return { row, height, show, step, exit, leave };
+  return { row, current: on ? (at?.frame ?? null) : null, height, show, step, exit, leave };
 }
 
 /** For frames: whether full screen shows them, and how. */

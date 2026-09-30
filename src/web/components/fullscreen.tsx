@@ -1,30 +1,21 @@
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 
 import { FRAME_KINDS } from "@/components/frame-shell";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { BoardViewport } from "@/hooks/use-board-viewport";
 import type { Fullscreen } from "@/hooks/use-fullscreen";
-import { addFrame, allFrames, DEFAULT_SIZE, newFrame, type FrameType } from "@/lib/board";
-import { currentIn } from "@/lib/fullscreen";
+import { addFrame, allFrames, DEFAULT_SIZE, newFrame, own, type FrameType } from "@/lib/board";
 import { useRoom } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
 
 /**
  * Full screen's own bar, in the top bar: a dot for each frame of the row, the
- * one nearest the middle filled, and the way out.
+ * one we are on filled, and the way out.
  */
-export function FullscreenBar({
-  fullscreen,
-  viewport,
-}: {
-  fullscreen: Fullscreen;
-  viewport: Pick<BoardViewport, "screen" | "subscribe">;
-}) {
-  const { transform, width } = useSyncExternalStore(viewport.subscribe, viewport.screen);
+export function FullscreenBar({ fullscreen }: { fullscreen: Fullscreen }) {
   const frames = fullscreen.row?.frames;
   if (!frames) return null;
-  const current = currentIn(frames, transform, width);
+  const { current } = fullscreen;
   const at = frames.findIndex((f) => f.id === current);
   const arrow = "text-muted-foreground hover:text-foreground rounded-md p-1 disabled:opacity-30";
   return (
@@ -113,7 +104,10 @@ export function FullscreenInserts({ fullscreen }: { fullscreen: Fullscreen }) {
     setMenu(null);
     const frames = allFrames(room.doc);
     const size = { w: DEFAULT_SIZE[type].w, h: frame.h };
-    fullscreen.show(addFrame(room.doc, newFrame(type, frames), { anchor: frame.id, side }, size));
+    const id = own(room.doc, () =>
+      addFrame(room.doc, newFrame(type, frames), { anchor: frame.id, side }, size),
+    );
+    fullscreen.show(id);
   };
 
   return (

@@ -2931,6 +2931,52 @@ if (step === "fullscreen") {
   );
   await shot(host, "141-fullscreen-added");
 
+  // Ada changes the row under us (ADR 0010, decision 8): the frame we are on
+  // stays where it is on our screen, the rest moving around it, and full
+  // screen stays on the row, whatever leaves it.
+  const still = async (what: string, change: () => Promise<unknown>) => {
+    const was = (await frame(added).boundingBox())!;
+    await change();
+    await settle(800);
+    const now = (await frame(added).boundingBox())!;
+    check(
+      Math.abs(now.x - was.x) < 1 && Math.abs(now.y - was.y) < 1,
+      `${what}: the frame we are on stays put (${was.x} → ${now.x})`,
+    );
+  };
+  const ada = (fn: string, ...args: unknown[]) =>
+    guest.evaluate(([fn, args]) => (window as any)[fn as string](...(args as unknown[])), [
+      fn,
+      args,
+    ] as const);
+  const columnOf = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!.column;
+  await still("Ada widens the row's first frame", async () =>
+    ada("resize", { column: await columnOf(files), w: 800 }),
+  );
+  check((await at(added)).x === 800 + 600 + 560, "…which moved it on the board");
+  await still("Ada moves a frame of the row into the row under it", () =>
+    ada("moveFrame", draw, { anchor: web, side: "right" }),
+  );
+  check(
+    (await on()) && (await host.locator("[data-fullscreen-dot]").count()) === 3,
+    "…full screen stays on the row, without it",
+  );
+  await still("Ada moves a frame into the row, before ours", () =>
+    ada("moveFrame", web, { anchor: added, side: "left" }),
+  );
+  check((await at(added)).x === 800 + 560 + 600, "…which moved it on the board");
+  await shot(host, "142-fullscreen-anchored");
+  await ada("moveFrame", added, { before: null });
+  await settle(800);
+  check(
+    (await on()) && (await current()) === web,
+    `Ada moves the frame we are on elsewhere: we stay on the row, on the one before (${await current()})`,
+  );
+  check(
+    JSON.stringify(await order()) === JSON.stringify([files, term, web]),
+    "…which is the row without it",
+  );
+
   // The wheel pans along the row only.
   const before = await transform();
   await host.mouse.move(board.x + 4, board.y + board.height - 4);
@@ -2944,7 +2990,9 @@ if (step === "fullscreen") {
   );
   check(await on(), "…still full screen");
 
-  // Zooming ends it; so do Esc, ✕ and following someone.
+  // Zooming ends it; so do Esc, ✕ and following someone. Over a header: a
+  // browser frame's page keeps its wheel.
+  await host.mouse.move(board.x + board.width / 2, board.y + 10);
   await host.keyboard.down("Control");
   await host.mouse.wheel(0, 100);
   await host.keyboard.up("Control");
@@ -2981,11 +3029,28 @@ if (step === "fullscreen") {
   await frame(files).getByTitle("Remove frame").click();
   await settle();
   check(await on(), "closing the frame stays full screen");
-  check((await current()) === draw, "…on the next frame of the row");
-  for (const id of [draw, term, added])
+  check((await current()) === term, "…on the next frame of the row");
+  for (const id of [term, web])
     await host.evaluate((f) => (window as any).room.doc.getMap("frames").delete(f), id);
   await settle();
   check(!(await on()), "removing the row's last frame ends it");
+
+  // On the board too: the frame we occupy stays put as Ada adds one before it.
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle();
+  const d = (await frame(draw).boundingBox())!;
+  await host.mouse.click(d.x + d.width * 0.6, d.y + 10);
+  await settle(300);
+  const was = (await frame(draw).boundingBox())!;
+  const drawX = (await at(draw)).x;
+  await ada("moveFrame", added, { anchor: draw, side: "left" });
+  await settle(800);
+  const now = (await frame(draw).boundingBox())!;
+  check((await at(draw)).x > drawX, `Ada adds a frame before the one we occupy (${drawX} → ${(await at(draw)).x})`);
+  check(
+    Math.abs(now.x - was.x) < 1 && Math.abs(now.y - was.y) < 1,
+    `…it stays put on our screen (${was.x} → ${now.x})`,
+  );
 }
 // Edges (ADR 0010): frames of a cluster share their borders, and every edge
 // resizes — a vertical one its column's width, a horizontal one its row's

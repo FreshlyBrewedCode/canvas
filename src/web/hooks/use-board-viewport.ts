@@ -39,12 +39,17 @@ export interface BoardViewport {
   screen: () => Screen;
   /** Called on every change of `screen()`. */
   subscribe: (listener: () => void) => () => void;
-  /** Called when we pan or zoom ourselves: anything but `follow`. */
-  onOwnMove: (listener: () => void) => () => void;
+  /** Called when we pan or zoom ourselves: anything but `follow` and `shift`; `glide` says so. */
+  onOwnMove: (listener: (glide: boolean) => void) => () => void;
   /** Show someone else's view, easing over from where we are. */
   follow: (view: Rect) => void;
   /** Go to a transform, easing over from where we are: our own move. */
   glide: (to: Transform) => void;
+  /**
+   * Move the view by board px along with the board: what we look at moved
+   * under us (`use-anchor.ts`). Not our own move.
+   */
+  shift: (dx: number, dy: number) => void;
   /** Pan by screen px, as a drag of the background does: our own move. */
   panBy: (dx: number, dy: number) => void;
   /** Whether panning (dragging, wheel, trackpad) only goes left and right. */
@@ -103,14 +108,14 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     return () => listeners.current.delete(listener);
   }, []);
   const screen = useCallback(() => screenRef.current, []);
-  const ownMoveListeners = useRef(new Set<() => void>());
-  const onOwnMove = useCallback((listener: () => void) => {
+  const ownMoveListeners = useRef(new Set<(glide: boolean) => void>());
+  const onOwnMove = useCallback((listener: (glide: boolean) => void) => {
     ownMoveListeners.current.add(listener);
     return () => ownMoveListeners.current.delete(listener);
   }, []);
 
   const apply = useCallback(
-    (next: Transform, how: "own" | "glide" | "followed" = "own") => {
+    (next: Transform, how: "own" | "glide" | "followed" | "shift" = "own") => {
       transformRef.current = next;
       const followed = how === "followed";
       // Someone else's view comes a few times a second: ease between them. Our own moves are
@@ -134,7 +139,8 @@ export function useBoardViewport(storageKey: string): BoardViewport {
       setScale(next.scale);
       localStorage.setItem(storageKey, JSON.stringify(next));
       changed();
-      if (!followed) for (const listener of ownMoveListeners.current) listener();
+      if (how === "own" || how === "glide")
+        for (const listener of ownMoveListeners.current) listener(how === "glide");
     },
     [storageKey, changed],
   );
@@ -177,6 +183,13 @@ export function useBoardViewport(storageKey: string): BoardViewport {
 
   const transform = useCallback(() => transformRef.current, []);
   const glide = useCallback((to: Transform) => apply(to, "glide"), [apply]);
+  const shift = useCallback(
+    (dx: number, dy: number) => {
+      const t = transformRef.current;
+      apply({ ...t, x: t.x - dx * t.scale, y: t.y - dy * t.scale }, "shift");
+    },
+    [apply],
+  );
   const lockVertical = useCallback((locked: boolean) => {
     verticalLocked.current = locked;
   }, []);
@@ -347,6 +360,7 @@ export function useBoardViewport(storageKey: string): BoardViewport {
     onOwnMove,
     follow,
     glide,
+    shift,
     panBy: pan,
     lockVertical,
     toBoard: (clientX, clientY) => {

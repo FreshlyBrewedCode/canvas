@@ -59,8 +59,12 @@ canvas
   (terminals excepted: the host's sizes the PTY), the rest hidden; nothing of it in the doc or
   presence (`hooks/use-fullscreen.ts`, geometry in `web/lib/fullscreen.ts`). It lasts while the
   transform is one (`stillFullscreen`), so any zoom or move off the row ends it; Esc and ✕
-  glide back to the view before. A closed frame hands over to the next of the row (`standIn`);
-  frames move along the row only (`alongAt`), scrolling it at the board's sides (`edgeScroll`)
+  glide back to the view before. It holds the tree's row by id; a frame that leaves it hands over
+  to the next of the row (`standIn`); frames move along the row only (`alongAt`), scrolling it at
+  the board's sides (`edgeScroll`)
+- the view is anchored (ADR 0010, decision 8, `hooks/use-anchor.ts`): as others change the layout,
+  the frame we are on (full screen's, else the one we occupy) stays put on our screen. Our own
+  changes are marked `own()` (`web/lib/board.ts`) and move what they move
 - dragging (ADR 0010): by the pointer, hit against the board without what is dragged (`dropAt`,
   `slotAt` in `shared/layout.ts`); ours until the drop (`web/hooks/start-drag.ts`), the board
   showing the result meanwhile (`web/lib/drag.ts`); peers see a ghost (presence `drag`)

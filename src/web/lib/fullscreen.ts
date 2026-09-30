@@ -11,15 +11,17 @@ export interface FullscreenRow<R extends Rect = Rect> {
   readonly top: number;
 }
 
-/** The row a frame is in (ADR 0010); null once the frame is gone. */
+/**
+ * A row of the tree by its id (ADR 0010): the same row while its frames are
+ * dragged, reordered or resized, by anyone. Null once it has no frames.
+ */
 export function fullscreenRow<R extends Rect & { readonly row: string }>(
   frames: ReadonlyArray<R>,
-  id: string,
+  row: string,
 ): FullscreenRow<R> | null {
-  const frame = frames.find((f) => f.id === id);
-  if (!frame) return null;
-  const row = frames.filter((f) => f.row === frame.row).sort((a, b) => a.x - b.x);
-  return { frames: row, top: Math.min(...row.map((f) => f.y)) };
+  const of = frames.filter((f) => f.row === row).sort((a, b) => a.x - b.x);
+  if (!of.length) return null;
+  return { frames: of, top: Math.min(...of.map((f) => f.y)) };
 }
 
 /** Show a frame at 100%, the row's top at the screen's: centred, or from its left edge if wider. */
