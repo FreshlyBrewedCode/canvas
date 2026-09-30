@@ -21,13 +21,15 @@ const frames = [
 ];
 
 describe("full screen", () => {
-  test("the row is the frame's row, left to right, with its top", () => {
-    expect(fullscreenRow(frames, "b")).toEqual({
+  test("the row is the tree's, by its id, left to right, with its top", () => {
+    expect(fullscreenRow(frames, "r1")).toEqual({
       frames: frames.slice(0, 3),
       top: 0,
     });
-    expect(fullscreenRow(frames, "d")?.frames.map((f) => f.id)).toEqual(["d"]);
-    expect(fullscreenRow(frames, "e")?.frames.map((f) => f.id)).toEqual(["e"]);
+    expect(fullscreenRow(frames, "r2")?.frames.map((f) => f.id)).toEqual(["d"]);
+    // Reordered: still the row, in its new order.
+    const moved = frames.map((f) => (f.id === "a" ? { ...f, x: 2000 } : f));
+    expect(fullscreenRow(moved, "r1")?.frames.map((f) => f.id)).toEqual(["b", "c", "a"]);
     expect(fullscreenRow(frames, "gone")).toBeNull();
   });
 
@@ -43,7 +45,7 @@ describe("full screen", () => {
   });
 
   test("the current frame is the one nearest the middle of the screen", () => {
-    const row = fullscreenRow(frames, "a")!.frames;
+    const row = fullscreenRow(frames, "r1")!.frames;
     expect(currentIn(row, fullscreenTransform(frames[2]!, 0, 1400), 1400)).toBe("c");
     // Panned a little right of a: still a; most of the way to b: b.
     const t = fullscreenTransform(frames[0]!, 0, 1400);
@@ -76,7 +78,7 @@ describe("full screen", () => {
   });
 
   test("scrolling stops once the frame is past the row's end", () => {
-    const row = fullscreenRow(frames, "a")!.frames;
+    const row = fullscreenRow(frames, "r1")!.frames;
     const a = frames[0]!;
     expect(scrollsFurther(row, { ...a, x: 1000 }, 10)).toBe(true);
     expect(scrollsFurther(row, { ...a, x: 1448 }, 10)).toBe(false);

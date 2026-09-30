@@ -259,6 +259,17 @@ export function addFrame(
   return id;
 }
 
+/**
+ * Our own hands' changes of the layout (a drop, a resize, a frame added or
+ * closed from the UI): the view isn't anchored against them (`use-anchor.ts`).
+ */
+export const OWN = Symbol("own");
+export const own = <T>(doc: Y.Doc, change: () => T): T => {
+  let result!: T;
+  doc.transact(() => (result = change()), OWN);
+  return result;
+};
+
 /** Move a frame to `target`, as one change. */
 export function moveFrame(doc: Y.Doc, id: string, target: Target): void {
   applyLayout(doc, move(readTree(doc), id, target));

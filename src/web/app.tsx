@@ -1,5 +1,5 @@
 import { Board } from "@/components/board";
-import { allFrames } from "@/lib/board";
+import { allFrames, moveFrame, resizeLayout } from "@/lib/board";
 import { loadIdentity, readLink } from "@/lib/link";
 import { Room } from "@/lib/room";
 import { RoomContext } from "@/lib/room-context";
@@ -9,8 +9,15 @@ import { RoomContext } from "@/lib/room-context";
 // `joinRoom` — so this must not live in an effect StrictMode can re-run.
 const link = readLink();
 const room = link ? new Room(link, loadIdentity()) : null;
-// For e2e/drive.ts: the room, and the frames with their derived rects.
-if (room && import.meta.env.DEV) Object.assign(window, { room, frames: () => allFrames(room.doc) });
+// For e2e/drive.ts: the room, the frames with their derived rects, and moves over the tree.
+if (room && import.meta.env.DEV)
+  Object.assign(window, {
+    room,
+    frames: () => allFrames(room.doc),
+    moveFrame: (id: string, target: Parameters<typeof moveFrame>[2]) =>
+      moveFrame(room.doc, id, target),
+    resize: (what: Parameters<typeof resizeLayout>[1]) => resizeLayout(room.doc, what),
+  });
 
 export function App() {
   if (!room) return <Landing />;

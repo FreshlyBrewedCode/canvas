@@ -1,7 +1,7 @@
 import { useRef } from "react";
 
 import type { FullscreenRow } from "@/lib/fullscreen";
-import { resizeLayout, type Frame } from "@/lib/board";
+import { own, resizeLayout, type Frame } from "@/lib/board";
 import { useRoom } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
 import type { Layout } from "../../shared/layout";
@@ -143,7 +143,7 @@ function Handle({
         const dy = (event.clientY - s.py) / s.scale;
         cancelAnimationFrame(request.current);
         request.current = requestAnimationFrame(() =>
-          room.doc.transact(() => {
+          own(room.doc, () => {
             const { column, row, frame } = s.from;
             if (column) resizeLayout(room.doc, { column: column.id, w: column.w + dx });
             if (row) resizeLayout(room.doc, { row: row.id, h: row.h + dy });

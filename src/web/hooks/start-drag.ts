@@ -11,7 +11,7 @@
 
 import * as Y from "yjs";
 
-import { allFrames, applyLayout, moveFrame, readTree } from "@/lib/board";
+import { allFrames, applyLayout, moveFrame, own, readTree } from "@/lib/board";
 import { currentDrag, setDrag, type Drag } from "@/lib/drag";
 import { edgeScroll, scrollsFurther } from "@/lib/fullscreen";
 import {
@@ -133,9 +133,11 @@ export function startDrag(event: React.PointerEvent, start: DragStart) {
     const last = dragging ? drag() : null;
     setDrag(null);
     if (!drop || !last) return;
-    if (last.kind === "frame" && last.target) moveFrame(doc, last.frame, last.target);
-    if (last.kind === "cluster")
-      applyLayout(doc, moveCluster(readTree(doc), last.cluster, last.before));
+    own(doc, () => {
+      if (last.kind === "frame" && last.target) moveFrame(doc, last.frame, last.target);
+      if (last.kind === "cluster")
+        applyLayout(doc, moveCluster(readTree(doc), last.cluster, last.before));
+    });
     along?.show();
   };
   const onUp = () => finish(true);

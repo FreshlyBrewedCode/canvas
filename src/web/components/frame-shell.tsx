@@ -16,6 +16,7 @@ import { useFullscreenFrame } from "@/hooks/use-fullscreen";
 import { startDrag } from "@/hooks/start-drag";
 import {
   allFrames,
+  own,
   raiseFrame,
   removeFrame,
   updateFrame,
@@ -184,7 +185,7 @@ export function FrameShell({
             title="Remove frame"
             className="text-muted-foreground hover:text-foreground -mr-1 rounded-md p-1"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => removeFrame(room.doc, frame.id)}
+            onClick={() => own(room.doc, () => removeFrame(room.doc, frame.id))}
           >
             <X className="size-3.5" />
           </button>

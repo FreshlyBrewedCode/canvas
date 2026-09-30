@@ -35,6 +35,7 @@ import {
   hasPreview,
   isHtml,
   isMarkdown,
+  own,
   updateFrame,
   type FileEntry,
   type FileView,
@@ -117,11 +118,13 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
     (path: string, lines: LineRange | null, title: string, newFrame: boolean) => {
       const { id, w, h, files } = latest.current;
       if (newFrame)
-        addFrame(
-          room.doc,
-          { type: "file", path, title, lines },
-          { anchor: id, side: "right" },
-          { w, h },
+        own(room.doc, () =>
+          addFrame(
+            room.doc,
+            { type: "file", path, title, lines },
+            { anchor: id, side: "right" },
+            { w, h },
+          ),
         );
       else
         updateFrame(room.doc, id, {
