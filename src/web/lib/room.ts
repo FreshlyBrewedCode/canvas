@@ -91,6 +91,11 @@ export interface Presence {
   readonly drag?: DragGhost | null;
   /** The frame we occupy, or would if nobody else did (see `focus.ts`). */
   readonly focus: Focus | null;
+  /**
+   * In full screen, the frame we are on (ADR 0010, decision 8): followers go
+   * full screen on it, at their own screen's size, and everyone sees us there.
+   */
+  readonly fullscreen?: string | null;
   /** Host only: the frames agents are working on. */
   readonly agents?: ReadonlyArray<AgentClaim>;
 }

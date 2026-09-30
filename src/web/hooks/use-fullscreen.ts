@@ -43,6 +43,11 @@ export interface Fullscreen {
   height: number;
   /** Go full screen on a frame, or to another frame of the row. */
   show: (frameId: string) => void;
+  /**
+   * Go full screen on the frame someone we follow is on: as `show`, but not
+   * our own move, and without claiming the frame.
+   */
+  lead: (frameId: string) => void;
   /** The frame before (-1) or after (1) the one we are on. */
   step: (direction: 1 | -1) => void;
   /** End it, gliding back to where we went full screen from. */
@@ -72,7 +77,7 @@ export function useFullscreen(
 
   /** Go to a frame of the board, from the doc: a frame added a moment ago is there already. */
   const goTo = useCallback(
-    (id: string) => {
+    (id: string, ours = true) => {
       const board = allFrames(room.doc);
       const frame = board.find((f) => f.id === id);
       const target = frame && fullscreenRow(board, frame.row);
@@ -81,11 +86,12 @@ export function useFullscreen(
       top.current = target.top;
       setHeight(screen().height);
       setAt({ row: frame.row, frame: id });
-      glide(fullscreenTransform(frame, target.top, screen().width));
+      glide(fullscreenTransform(frame, target.top, screen().width), ours);
       return true;
     },
     [room, glide, screen, transform],
   );
+  const lead = useCallback((id: string) => void goTo(id, false), [goTo]);
   const show = useCallback(
     (id: string) => {
       if (!goTo(id)) return;
@@ -212,7 +218,7 @@ export function useFullscreen(
     };
   }, [on, step, exit, show, wrapRef]);
 
-  return { row, current: on ? (at?.frame ?? null) : null, height, show, step, exit, leave };
+  return { row, current: on ? (at?.frame ?? null) : null, height, show, lead, step, exit, leave };
 }
 
 /** For frames: whether full screen shows them, and how. */

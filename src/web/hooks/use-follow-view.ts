@@ -6,7 +6,8 @@ import { usePeers } from "@/lib/room-context";
 
 /**
  * Following someone's view, as in Miro: our viewport shows theirs until we
- * pan or zoom ourselves, they leave, or we let go. Not frame focus
+ * pan or zoom ourselves, they leave, or we let go. Someone in full screen we
+ * follow into it, on their frame, at our own screen's size. Not frame focus
  * (`focus.ts`): that follows an occupant's scroll inside one frame.
  */
 export function useFollowView(viewport: Pick<BoardViewport, "follow" | "onOwnMove">): {
@@ -29,10 +30,12 @@ export function useFollowView(viewport: Pick<BoardViewport, "follow" | "onOwnMov
   );
 
   // Their presence changes with every pointer move: go by the view's numbers.
+  // In full screen, it is their frame we show, full screen (`use-fullscreen.ts`).
   const { x, y, w, h } = followed?.view ?? {};
+  const fullscreen = followed?.fullscreen ?? null;
   useEffect(() => {
-    if (x !== undefined && y !== undefined && w && h) follow({ x, y, w, h });
-  }, [x, y, w, h, follow]);
+    if (!fullscreen && x !== undefined && y !== undefined && w && h) follow({ x, y, w, h });
+  }, [x, y, w, h, fullscreen, follow]);
 
   const toggle = useCallback(
     (next: string | null) => setPeerId((current) => (next === current ? null : next)),
