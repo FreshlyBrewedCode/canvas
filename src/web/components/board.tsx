@@ -28,6 +28,7 @@ import { useFollowView } from "@/hooks/use-follow-view";
 import { BoardScale, useBoardViewport, type BoardViewport } from "@/hooks/use-board-viewport";
 import { FullscreenProvider, useFullscreen, type Fullscreen } from "@/hooks/use-fullscreen";
 import { useAnchor } from "@/hooks/use-anchor";
+import { useBoardKeys } from "@/hooks/use-board-keys";
 import { startDrag } from "@/hooks/start-drag";
 import {
   addFrame,
@@ -75,7 +76,7 @@ export function Board() {
     : room.roomState?.access === "view";
   const go = useBoardNavigation(room, viewport, readOnly);
   const { followed, toggle: toggleFollow } = useFollowView(viewport);
-  const fullscreen = useFullscreen(room, frames, { ...viewport, wrapRef });
+  const fullscreen = useFullscreen(room, frames, viewport);
   const { row, height, show, lead, exit, leave } = fullscreen;
   const { panBy } = viewport;
   const fullscreenFrames = useMemo(
@@ -206,6 +207,7 @@ export function Board() {
     const id = own(room.doc, () => addFrame(room.doc, newFrame(type, frames, extra), target));
     go({ kind: "board", target: { frame: id } });
   };
+  useBoardKeys({ room, board, fullscreen, viewport, readOnly, create });
 
   return (
     <GoProvider value={go}>
@@ -342,8 +344,14 @@ function Toolbar({
       data-hud=""
       className="bg-card/90 absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur"
     >
-      {FRAME_KINDS.map(({ type, label, Icon }) => (
-        <Button key={type} variant="ghost" size="sm" onClick={() => onCreate(type)}>
+      {FRAME_KINDS.map(({ type, label, Icon }, i) => (
+        <Button
+          key={type}
+          variant="ghost"
+          size="sm"
+          title={`${label}, beside the frame you are in (${i + 1})`}
+          onClick={() => onCreate(type)}
+        >
           <Icon /> {label}
         </Button>
       ))}

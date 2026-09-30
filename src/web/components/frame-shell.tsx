@@ -169,7 +169,7 @@ export function FrameShell({
         <button
           type="button"
           data-fullscreen-toggle=""
-          title={fullscreen.mode === "in" ? "Leave full screen (Esc)" : "Full screen (F)"}
+          title={fullscreen.mode === "in" ? "Leave full screen (F)" : "Full screen (F)"}
           className="text-muted-foreground hover:text-foreground rounded-md p-1"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={fullscreen.toggle}

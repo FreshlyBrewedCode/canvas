@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 
-import { typesText, type BoardViewport } from "@/hooks/use-board-viewport";
+import type { BoardViewport } from "@/hooks/use-board-viewport";
 import { allFrames, type Frame } from "@/lib/board";
 import {
   currentIn,
@@ -25,13 +25,13 @@ import type { Transform } from "@/lib/viewport";
 /**
  * Full screen (finding 20): our own view of one row, at 100%, its top under
  * the top bar and its frames as tall as the screen. Only we see it: nothing of
- * it is in the board doc or presence. Panning goes along the row only; a zoom,
- * or anything else that leaves the row's top, ends it where it is. Esc and ✕
- * end it too, gliding back to the view we went full screen from. A frame of the
- * row removed hands over to the next (`standIn`); the row's last ends it.
+ * it is in the board doc; presence says which frame we are on. Panning goes
+ * along the row only; a zoom, or anything else that leaves the row's top, ends
+ * it where it is. F and ✕ end it too, gliding back to the view we went full
+ * screen from. A frame that leaves the row hands over to the next
+ * (`standIn`); the row's last ends it.
  *
- * F over a frame (or its header's button) goes full screen on it; h / l and
- * Alt + ← / → glide to the frame before or after. Going to a frame claims it,
+ * Its keys are the board's (`use-board-keys.ts`). Going to a frame claims it,
  * as a press on it does (`focus.ts`).
  */
 export interface Fullscreen {
@@ -61,14 +61,14 @@ export function useFullscreen(
   frames: ReadonlyArray<Frame>,
   viewport: Pick<
     BoardViewport,
-    "glide" | "lockVertical" | "onOwnMove" | "transform" | "screen" | "subscribe" | "wrapRef"
+    "glide" | "lockVertical" | "onOwnMove" | "transform" | "screen" | "subscribe"
   >,
 ): Fullscreen {
   const [at, setAt] = useState<{ row: string; frame: string } | null>(null);
   // Null once the row has no frames left.
   const row = useMemo(() => (at ? fullscreenRow(frames, at.row) : null), [frames, at]);
   const on = row !== null;
-  const { glide, lockVertical, onOwnMove, transform, screen, subscribe, wrapRef } = viewport;
+  const { glide, lockVertical, onOwnMove, transform, screen, subscribe } = viewport;
   /** The row's top, as last shown. */
   const top = useRef(0);
   const [height, setHeight] = useState(0);
@@ -174,49 +174,6 @@ export function useFullscreen(
     measure();
     return subscribe(measure);
   }, [on, screen, subscribe]);
-
-  // Keys, unless they type (a prompt, a terminal, an editor) or draw.
-  useEffect(() => {
-    const pointer = { x: -1, y: -1 };
-    const onPointer = (event: PointerEvent) => {
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-    };
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.composedPath()[0];
-      if (!(target instanceof Element) || typesText(target)) return;
-      if (target.closest("[data-drawing-editor], [role=dialog]")) return;
-      const plain = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
-      const along =
-        (plain && event.key === "h") || (event.altKey && event.key === "ArrowLeft")
-          ? -1
-          : (plain && event.key === "l") || (event.altKey && event.key === "ArrowRight")
-            ? 1
-            : 0;
-      if (on && along) {
-        step(along);
-      } else if (on && event.key === "Escape") {
-        exit();
-      } else if (plain && event.key === "f") {
-        if (on) exit();
-        else {
-          const hovered = document.elementFromPoint(pointer.x, pointer.y);
-          const frame = hovered?.closest<HTMLElement>("[data-frame]");
-          if (!frame?.dataset.frame || !wrapRef.current?.contains(frame)) return;
-          show(frame.dataset.frame);
-        }
-      } else return;
-      // Alt + ← is the browser's Back too, which board links use.
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    window.addEventListener("pointermove", onPointer, { passive: true });
-    window.addEventListener("keydown", onKey, { capture: true });
-    return () => {
-      window.removeEventListener("pointermove", onPointer);
-      window.removeEventListener("keydown", onKey, { capture: true });
-    };
-  }, [on, step, exit, show, wrapRef]);
 
   return { row, current: on ? (at?.frame ?? null) : null, height, show, lead, step, exit, leave };
 }

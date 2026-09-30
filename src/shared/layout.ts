@@ -851,3 +851,85 @@ function distance(box: Box, point: Point): number {
   const dy = Math.max(box.y - point.y, 0, point.y - box.y - box.h);
   return Math.hypot(dx, dy);
 }
+
+// --- The keyboard (decision 9) -------------------------------------------------
+
+export type Direction = "left" | "right" | "up" | "down";
+
+/**
+ * The frame next to `id` that way: the column beside it in its row, or, up
+ * and down, the frame of the row above or below under its middle. Past its
+ * row's or cluster's end, the nearest frame that way on the board.
+ */
+export function neighbour(layout: Layout, id: string, direction: Direction): string | null {
+  const at = layout.frames.get(id);
+  if (!at) return null;
+  const { cluster, row, column, frame } = at;
+  const step = direction === "left" || direction === "up" ? -1 : 1;
+  if (direction === "left" || direction === "right") {
+    const next = row.columns[row.columns.findIndex((c) => c.id === column.id) + step];
+    if (next) return next.frames[0]!.id;
+  } else {
+    const next = cluster.rows[cluster.rows.findIndex((r) => r.id === row.id) + step];
+    if (next) return under(next, frame.x + frame.w / 2).frames[0]!.id;
+  }
+  return nearestThatWay(layout, frame, direction);
+}
+
+/**
+ * Where the keyboard moves a frame that way: before or after its neighbour
+ * in its row; up or down, into the row beside, by the frame under its middle,
+ * or, with none, into a new row of its own there. Null where it can't go.
+ */
+export function nudge(layout: Layout, id: string, direction: Direction): Beside | null {
+  const at = layout.frames.get(id);
+  if (!at) return null;
+  const { cluster, row, column, frame } = at;
+  if (direction === "left" || direction === "right") {
+    const i = row.columns.findIndex((c) => c.id === column.id);
+    const next = row.columns[i + (direction === "left" ? -1 : 1)];
+    return next ? { anchor: next.frames[0]!.id, side: direction } : null;
+  }
+  const r = cluster.rows.findIndex((x) => x.id === row.id);
+  const next = cluster.rows[r + (direction === "up" ? -1 : 1)];
+  const middle = frame.x + frame.w / 2;
+  if (next) {
+    const c = under(next, middle);
+    const side = middle < c.box.x + c.box.w / 2 ? "left" : "right";
+    return { anchor: c.frames[0]!.id, side };
+  }
+  // A row of its own, above or below the one it leaves: not if it is alone there.
+  const other = row.columns.find((c) => c.id !== column.id);
+  return other
+    ? { anchor: other.frames[0]!.id, side: direction === "up" ? "above" : "below" }
+    : null;
+}
+
+/** The column of a row under `x`, or the nearest to it. */
+function under(row: ResolvedRow, x: number): ResolvedColumn {
+  const off = (c: ResolvedColumn) => Math.max(c.box.x - x, 0, x - c.box.x - c.box.w);
+  return row.columns.reduce((a, b) => (off(b) < off(a) ? b : a));
+}
+
+/** The nearest frame wholly that way of `from`, going straight counting over going aside. */
+function nearestThatWay(layout: Layout, from: Rect, direction: Direction): string | null {
+  const [cx, cy] = [from.x + from.w / 2, from.y + from.h / 2];
+  let best: { id: string; score: number } | null = null;
+  for (const { frame: f } of layout.frames.values()) {
+    if (f.id === from.id) continue;
+    const ahead = {
+      left: from.x - (f.x + f.w),
+      right: f.x - (from.x + from.w),
+      up: from.y - (f.y + f.h),
+      down: f.y - (from.y + from.h),
+    }[direction];
+    if (ahead < -1) continue;
+    const aside =
+      direction === "left" || direction === "right"
+        ? Math.max(f.y - cy, 0, cy - f.y - f.h)
+        : Math.max(f.x - cx, 0, cx - f.x - f.w);
+    const score = Math.max(ahead, 0) + 2 * aside;
+    if (!best || score < best.score) best = { id: f.id, score };
+  }
+  return best?.id ?? null;
+}
