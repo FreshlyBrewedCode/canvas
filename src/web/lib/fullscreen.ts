@@ -1,7 +1,7 @@
 // Full screen (finding 20): one person's own view of a row at 100%, its
 // frames as tall as their screen. The geometry, free of the DOM.
 
-import { clusters, type Rect, type Target } from "../../shared/layout";
+import { clusters, type Beside, type Rect } from "../../shared/layout";
 import type { Transform } from "./viewport";
 
 export interface FullscreenRow<R extends Rect = Rect> {
@@ -94,7 +94,7 @@ export function scrollsFurther(row: ReadonlyArray<Rect>, moving: Rect, v: number
  * Where a frame dragged along its row goes: after the last of the others whose
  * middle it is past, or before the first. Null when the row has no others.
  */
-export function rowTarget(row: ReadonlyArray<Rect>, moving: Rect): Target | null {
+export function rowTarget(row: ReadonlyArray<Rect>, moving: Rect): Beside | null {
   const others = row.filter((f) => f.id !== moving.id).sort((a, b) => a.x - b.x);
   const middle = moving.x + moving.w / 2;
   const before = others.filter((f) => f.x + f.w / 2 < middle).at(-1);
