@@ -224,8 +224,8 @@ export const FullscreenProvider = FullscreenContext.Provider;
 
 /**
  * How full screen shows a frame: `off`, `in` its row (top and height, local
- * to us), or `hidden`, off the row. Terminals keep their height: the host's
- * one sizes the terminal for everyone.
+ * to us), or `hidden`, off the row. Terminals keep a height of their own, set
+ * by the host's screen: the host's one sizes the terminal for everyone.
  */
 export function useFullscreenFrame(frame: Frame): {
   mode: "off" | "in" | "hidden";
@@ -243,7 +243,7 @@ export function useFullscreenFrame(frame: Frame): {
     return { mode: "hidden", box, toggle: exit, show: here, scroll };
   return {
     mode: "in",
-    box: { y: row.top, h: frame.type === "terminal" ? frame.h : height },
+    box: { y: row.top, h: frame.type === "terminal" ? (frame.height ?? frame.h) : height },
     toggle: exit,
     show: here,
     scroll,

@@ -9,7 +9,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 
 import { LinkScope } from "@/components/board-link";
 import { useFullscreenFrame } from "@/hooks/use-fullscreen";
@@ -18,7 +18,6 @@ import {
   allFrames,
   raiseFrame,
   removeFrame,
-  resizeLayout,
   updateFrame,
   type Frame,
   type FrameType,
@@ -42,14 +41,13 @@ const ICONS = Object.fromEntries(FRAME_KINDS.map((k) => [k.type, k.Icon])) as Re
 >;
 
 /**
- * The chrome every frame shares: drag by the header, resize from the corner.
+ * The chrome every frame shares: drag by the header; its edges resize (`edges.tsx`).
  * Where frames are is the board's tree (ADR 0010), so every move is seen by
  * everyone. A drag goes by the pointer and is ours until the drop
  * (`start-drag.ts`): over a frame's left or right edge it goes before or after
  * it in its row, over its top or bottom edge into a new row; elsewhere, or
  * with Alt, into a cluster of its own. Shift drags the whole cluster. While
- * it goes, the others make room (`drag.ts`). Resizing sets its column's width
- * and its row's height.
+ * it goes, the others make room (`drag.ts`).
  * Frames hold user data, so they are square (design.md › Shapes).
  *
  * Pressing on a frame claims it (`focus.ts`): its occupant shows in the
@@ -58,7 +56,7 @@ const ICONS = Object.fromEntries(FRAME_KINDS.map((k) => [k.type, k.Icon])) as Re
  * Full screen (`use-fullscreen.ts`) shows the frames of a row as tall as our
  * screen and hides the rest. There a frame only moves along its row: it
  * reorders the row, and the view glides after it. Held near the board's left
- * or right side, it scrolls the row along. No resizing.
+ * or right side, it scrolls the row along.
  */
 export function FrameShell({
   frame,
@@ -91,7 +89,6 @@ export function FrameShell({
   const dragged =
     drag?.kind === "frame" ? drag.frame === frame.id : drag?.cluster === frame.cluster;
   const gliding = useGliding() && !dragged;
-  const arranging = !readOnly && fullscreen.mode === "off";
   const movable = !readOnly && fullscreen.mode !== "hidden";
   const along =
     fullscreen.mode === "in"
@@ -196,55 +193,12 @@ export function FrameShell({
       <LinkScope value={scope}>
         <div className="relative min-h-0 flex-1">{children}</div>
       </LinkScope>
-      {arranging && (
-        <Resize frame={frame}>
-          <span className="border-muted-foreground/60 absolute right-1.5 bottom-1.5 size-2 border-r-2 border-b-2" />
-        </Resize>
-      )}
     </section>
   );
 }
 
 /** Above every frame while dragged. */
 const DRAGGED_Z = 99990;
-
-/** From the corner: its column's width, its row's height; the rest of the row follows. */
-function Resize({ frame, children }: { frame: Frame; children: React.ReactNode }) {
-  const room = useRoom();
-  const start = useRef<{ px: number; py: number; w: number; h: number; scale: number } | null>(
-    null,
-  );
-  const request = useRef(0);
-  return (
-    <div
-      className="absolute -right-1 -bottom-1 size-4 cursor-nwse-resize"
-      onPointerDown={(event) => {
-        if (event.button !== 0) return;
-        const board = event.currentTarget.closest<HTMLElement>("[data-board]");
-        const scale = Number(board?.style.getPropertyValue("--board-scale") || 1);
-        start.current = { px: event.clientX, py: event.clientY, w: frame.w, h: frame.h, scale };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        const s = start.current;
-        if (!s) return;
-        const w = s.w + (event.clientX - s.px) / s.scale;
-        const h = s.h + (event.clientY - s.py) / s.scale;
-        cancelAnimationFrame(request.current);
-        request.current = requestAnimationFrame(() =>
-          room.doc.transact(() => {
-            resizeLayout(room.doc, { column: frame.column, w });
-            resizeLayout(room.doc, { row: frame.row, h });
-          }),
-        );
-      }}
-      onPointerUp={() => (start.current = null)}
-      onPointerCancel={() => (start.current = null)}
-    >
-      {children}
-    </div>
-  );
-}
 
 /**
  * Who is in the frame. Following them, it just says so; scrolled away,

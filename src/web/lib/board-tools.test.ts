@@ -240,7 +240,7 @@ describe("close_frame", () => {
     );
     run("close_frame", { frame: ids[1] });
     expect(frame(ids[1]!)).toBeUndefined();
-    expect(frame(ids[2]!)!.x).toBe(484);
+    expect(frame(ids[2]!)!.x).toBe(460 + GAP);
     expect(() => run("close_frame", { frame: self })).toThrow(/your own frame/);
   });
 });

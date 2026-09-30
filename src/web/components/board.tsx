@@ -19,6 +19,7 @@ import { BrowserFrame } from "@/components/browser-frame";
 import { DrawingFrame } from "@/components/drawing-frame";
 import { FileFrame } from "@/components/file-frame";
 import { FRAME_KINDS } from "@/components/frame-shell";
+import { Edges } from "@/components/edges";
 import { FullscreenBar, FullscreenInserts } from "@/components/fullscreen";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
@@ -215,6 +216,9 @@ export function Board() {
               </FullscreenProvider>
             </BoardScale>
             {!row && !drag && <ClusterGrips clusters={board.layout.clusters} readOnly={readOnly} />}
+            {!readOnly && !drag && (
+              <Edges layout={board.layout} fullscreen={row ? { row, height } : null} />
+            )}
             {!readOnly && <FullscreenInserts fullscreen={fullscreen} />}
             <Landing box={shown.landing} along={drag?.kind === "frame" && drag.along} />
             <DragGhosts />
