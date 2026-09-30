@@ -42,6 +42,7 @@ mouse. The **current frame** is the one you are in (full screen's, or the one yo
 | **F**                         | Full screen on the current frame, or back                         |
 | Shift + **F**                 | The whole board; again, back, to the frame you are on by then     |
 | **1** – **5**                 | A new Agent, Files, Browser, Terminal or Drawing frame beside the current one |
+| Shift + **X**                 | Close the current frame, on to the one beside it                   |
 | **Esc**                       | Out of a field (a prompt, a title) to the board: the keys work again |
 | Hold **Space**                | Pan                                                               |
 
