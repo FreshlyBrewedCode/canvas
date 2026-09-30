@@ -2,18 +2,23 @@
  * A drag of a frame or a cluster (ADR 0010, decision 5): ours until the drop,
  * nothing of it in the doc. While it goes, the board shows the drop's result —
  * the others make room where it would land — and the dragged frames follow the
- * pointer. Peers see a ghost of it through presence (`DragGhost`).
+ * pointer. A frame's drag keeps the clusters where they were (`pin`): only
+ * what changes inside them shows, and a new cluster is a bar in the gap it
+ * goes to. Peers see a ghost of it through presence (`DragGhost`).
  */
 
 import { useSyncExternalStore } from "react";
 
 import {
   applyChanges,
+  CLUSTER_GAP,
   move,
   moveCluster,
+  pin,
   resolve,
   type Box,
   type Change,
+  type Layout,
   type Point,
   type Target,
   type Tree,
@@ -102,7 +107,8 @@ export function preview(
   frames: ReadonlyArray<Frame>,
   drag: Drag,
 ): { frames: Frame[]; landing: Box | null } {
-  const layout = resolve(applyChanges(tree, dropChanges(tree, drag)));
+  const after = resolve(applyChanges(tree, dropChanges(tree, drag)));
+  const layout = drag.kind === "frame" ? pin(after, resolve(tree)) : after;
   const origin = { x: drag.pointer.x - drag.grab.x, y: drag.pointer.y - drag.grab.y };
   let landing: Box | null = null;
   let from: Point = { x: 0, y: 0 };
@@ -112,7 +118,9 @@ export function preview(
     const frame = frames.find((f) => f.id === drag.frame);
     const at = layout.frames.get(drag.frame)?.frame;
     if (frame) from = frame;
-    if (at && drag.target) landing = { x: at.x, y: at.y, w: at.w, h: at.h };
+    if (frame && drag.target && !("anchor" in drag.target))
+      landing = gapBar(resolve(tree), drag.target.before, frame.h);
+    else if (at && drag.target) landing = { x: at.x, y: at.y, w: at.w, h: at.h };
   } else {
     const was = frames.filter((f) => f.cluster === drag.cluster);
     from = { x: Math.min(...was.map((f) => f.x)), y: Math.min(...was.map((f) => f.y)) };
@@ -133,4 +141,18 @@ export function preview(
       return { ...f, x, y, w, h, row: at.row.id, column: at.column.id, cluster: at.cluster.id };
     }),
   };
+}
+
+/** How wide the bar marking a new cluster's gap is. */
+const BAR_W = 6;
+
+/**
+ * Where a new cluster goes, as a frame's drag shows it with the clusters
+ * pinned: a bar in the gap before `before`, or after the last cluster.
+ */
+function gapBar(layout: Layout, before: string | null, h: number): Box {
+  const next = layout.clusters.find((k) => k.id === before)?.box;
+  const last = layout.clusters.at(-1)?.box;
+  const x = next ? next.x - CLUSTER_GAP / 2 : last ? last.x + last.w + CLUSTER_GAP / 2 : 0;
+  return { x: x - BAR_W / 2, y: next?.y ?? last?.y ?? 0, w: BAR_W, h };
 }

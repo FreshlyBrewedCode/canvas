@@ -70,8 +70,9 @@ canvas
 - the keyboard (ADR 0010, decision 9, `hooks/use-board-keys.ts`): moves over the tree, from the
   current frame (full screen's, else the one we occupy) — `neighbour` and `nudge` in
   `shared/layout.ts`; unless typing or drawing. Esc leaves a field; it no longer ends full screen
-- dragging (ADR 0010): by the pointer, hit against the board without what is dragged (`dropAt`,
-  `slotAt` in `shared/layout.ts`); ours until the drop (`web/hooks/start-drag.ts`), the board
+- dragging (ADR 0010): by the pointer, and up and down by the dragged frame's middle
+  (`dropPoint`), hit against the board without what is dragged, its clusters pinned where they
+  were (`pin`, `dropAt`, `slotAt` in `shared/layout.ts`); ours until the drop (`web/hooks/start-drag.ts`), the board
   showing the result meanwhile (`web/lib/drag.ts`); peers see a ghost (presence `drag`)
 
 - stack (siblings: `../factory`, `../wayful`)

@@ -804,11 +804,17 @@ if (step === "arrange") {
       [x, y] as const,
     );
 
+  /** The box of the frame a header is of; null for a cluster's grip. */
+  const framed = async (from: ReturnType<Page["locator"]>) => {
+    const frame = from.locator("xpath=ancestor::*[@data-frame][1]");
+    return (await frame.count()) ? await frame.boundingBox() : null;
+  };
   /**
-   * Press on `from` (a locator), move the pointer to board (x, y) — or, as a
-   * person aims, into a frame where it shows once the drag is on (`over`, at
-   * fractions of its box) — look, let go: whether the landing showed, and the
-   * DOM boxes of `watch` while it went.
+   * Press on `from` (a locator), move the dragged frame's middle — the
+   * pointer, for a cluster — to board (x, y) — or, as a person aims, into a
+   * frame where it shows once the drag is on (`over`, at fractions of its
+   * box) — look, let go: whether the landing showed, and the DOM boxes of
+   * `watch` while it went.
    */
   const drag = async (
     from: ReturnType<Page["locator"]>,
@@ -827,14 +833,18 @@ if (step === "arrange") {
     await settle(250);
     const over =
       typeof x === "object" ? (await host.locator(`[data-frame="${x.over}"]`).boundingBox())! : null;
-    const to =
+    const aim =
       typeof x === "object"
         ? { x: over!.x + over!.width * x.u, y: over!.y + over!.height * x.v }
         : await client(x, y);
+    // A frame hits by its middle's height: the point aimed at is where its middle goes.
+    const dragged = key === "Shift" ? null : await framed(from);
+    const to = dragged ? { ...aim, y: aim.y - (dragged.y + dragged.height / 2 - start.y) } : aim;
     await host.mouse.move((start.x + to.x) / 2, (start.y + to.y) / 2, { steps: 5 });
     await host.mouse.move(to.x, to.y, { steps: 5 });
     await settle(400);
     const landing = await host.locator("[data-drop-landing]").isVisible();
+    const bar = landing ? await host.locator("[data-drop-landing]").boundingBox() : null;
     const boxes = await Promise.all(
       watch.map(async (id) => (await host.locator(`[data-frame="${id}"]`).boundingBox())!),
     );
@@ -844,7 +854,7 @@ if (step === "arrange") {
     await host.mouse.up();
     if (key) await host.keyboard.up(key);
     await settle();
-    return { landing, boxes, ghost };
+    return { landing, bar, boxes, ghost };
   };
   const header = (id: string) => host.locator(`[data-frame="${id}"] > div`).first();
 
@@ -919,11 +929,53 @@ if (step === "arrange") {
   const [E, F] = [await frame(e), await frame(far)];
   check(E.cluster !== F.cluster && E.cluster !== (await frame(c)).cluster, `Alt: E a cluster of its own (${await at(c, e, far)})`);
 
-  // Naming a cluster: its grip's field, for everyone.
-  await host.locator(`[data-cluster-grip="${F.cluster}"] input`).fill("review");
+  // Along a row by the header, the pointer going only sideways: over a frame's
+  // top, but the frame's middle is in the row, so it stays in the row.
+  await arrange(host, {
+    [a]: box(0, 0),
+    [c]: box(624, 0),
+    [far]: box(1248, 0),
+    [e]: box(2400, 0),
+  });
+  await fit();
+  const grabbed = (await header(a).boundingBox())!;
+  const hold = { x: grabbed.x + grabbed.width * 0.6, y: grabbed.y + grabbed.height / 2 };
+  await host.mouse.move(hold.x, hold.y);
+  await host.mouse.down();
+  // Over the right half of the last frame, far, once the row closes up behind the lifted frame.
+  const past = await client(600 + 600 * 0.8, 0);
+  await host.mouse.move(past.x, hold.y, { steps: 12 });
+  await settle(400);
+  await shot(host, "50-along-by-header");
+  await host.mouse.up();
   await settle();
   check(
-    (await guest.locator(`[data-cluster-grip="${F.cluster}"] input`).inputValue()) === "review",
+    (await at(c, far, a)) === "0,0 600,0 1200,0",
+    `sideways by the header: along the row, not into one above (${await at(c, far, a)})`,
+  );
+
+  // Into a new cluster between two: the clusters stay put while it goes, a bar marks the gap.
+  const eBefore = (await host.locator(`[data-frame="${e}"]`).boundingBox())!;
+  const gap = (await frame(e)).x - 60;
+  seen = await drag(header(c), gap, 200, "new-cluster-gap", { watch: [e] });
+  const eDuring = seen.boxes[0]!;
+  check(
+    Math.abs(eDuring.x - eBefore.x) < 1 && Math.abs(eDuring.y - eBefore.y) < 1,
+    `the next cluster holds still while a frame goes (${eBefore.x} → ${eDuring.x})`,
+  );
+  check(!!seen.bar && seen.bar.width < 20, `a bar marks the new cluster's gap (${seen.bar?.width}px)`);
+  const C = await frame(c);
+  check(
+    C.cluster !== (await frame(a)).cluster && C.cluster !== (await frame(e)).cluster,
+    `…and it lands a cluster of its own (${await at(far, a, c, e)})`,
+  );
+
+  // Naming a cluster: its grip's field, for everyone.
+  const F2 = await frame(far);
+  await host.locator(`[data-cluster-grip="${F2.cluster}"] input`).fill("review");
+  await settle();
+  check(
+    (await guest.locator(`[data-cluster-grip="${F2.cluster}"] input`).inputValue()) === "review",
     "a cluster's name shows for the guest",
   );
 
