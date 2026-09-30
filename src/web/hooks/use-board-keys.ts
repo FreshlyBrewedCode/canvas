@@ -15,7 +15,7 @@ import {
   type FrameType,
 } from "@/lib/board";
 import type { Room } from "@/lib/room";
-import { inView, viewRect, type Transform } from "@/lib/viewport";
+import { fitRects, inView, viewRect, type Transform } from "@/lib/viewport";
 import { neighbour, nudge, type Direction } from "../../shared/layout";
 
 /** W A S D, and vim's H J K L. By the key's place, whatever the keyboard's layout. */
@@ -34,7 +34,7 @@ export interface BoardKeys {
   readonly room: Room;
   readonly board: Board;
   readonly fullscreen: Fullscreen;
-  readonly viewport: Pick<BoardViewport, "screen" | "transform" | "glide" | "show" | "fit">;
+  readonly viewport: Pick<BoardViewport, "screen" | "transform" | "glide">;
   readonly readOnly: boolean;
   /** A new frame of a kind beside the frame we are in, as the toolbar adds it. */
   readonly create: (type: FrameType) => void;
@@ -50,7 +50,8 @@ export interface BoardKeys {
  * - Shift + W A S D: the current frame that way (`nudge`)
  * - Q / E: the cluster before / after
  * - F: full screen on the current frame, or back; Shift + F: the whole board,
- *   and again, back
+ *   where W A S D go on without leaving it, and again, back (to the frame
+ *   we are on by then)
  * - 1 – 5: a new frame of a kind beside the current one
  * - Esc: out of a field, to the board, so the keys work again (a terminal
  *   keeps its Esc)
@@ -64,12 +65,16 @@ export function useBoardKeys(keys: BoardKeys) {
   });
 
   useEffect(() => {
-    /** Shift + F's whole board: the view it fitted, and where we were. */
+    /** Shift + F's whole board: the view it fitted, and where we were, on which frame. */
     let overview: {
       fitted: Transform;
       before: Transform;
-      fullscreen: string | null;
+      frame: string | null;
+      fullscreen: boolean;
     } | null = null;
+    /** Whether we are in the whole board still: no pan or zoom since. */
+    const overviewing = () =>
+      !!overview && sameView(latest.current.viewport.transform(), overview.fitted);
 
     const current = () => {
       const { fullscreen, room } = latest.current;
@@ -87,18 +92,24 @@ export function useBoardKeys(keys: BoardKeys) {
         null
       );
     };
-    /** Bring a frame into view: centred at our zoom if it fits there readably, else fitted. */
+    /** A view of a frame: centred at the zoom `t` if it fits there readably, else fitted. */
+    const onto = (frame: Frame, t: Transform): Transform | null => {
+      const { width, height } = latest.current.viewport.screen();
+      return t.scale >= 0.5 && frame.w * t.scale <= width && frame.h * t.scale <= height
+        ? {
+            ...t,
+            x: width / 2 - (frame.x + frame.w / 2) * t.scale,
+            y: height / 2 - (frame.y + frame.h / 2) * t.scale,
+          }
+        : fitRects([frame], width, height);
+    };
+    /** Bring a frame into view, unless it is there to read already; in the whole board, at all. */
     const bring = (frame: Frame) => {
       const { viewport } = latest.current;
       const { transform: t, width, height } = viewport.screen();
-      if (inView(t, frame, width, height)) return;
-      if (t.scale >= 0.5 && frame.w * t.scale <= width && frame.h * t.scale <= height)
-        viewport.glide({
-          ...t,
-          x: width / 2 - (frame.x + frame.w / 2) * t.scale,
-          y: height / 2 - (frame.y + frame.h / 2) * t.scale,
-        });
-      else viewport.show(frame);
+      if (inView(t, frame, width, height, overviewing() ? 0 : undefined)) return;
+      const to = onto(frame, t);
+      if (to) viewport.glide(to);
     };
     /** Go to a frame: in full screen, full screen on it; else occupy it and see it. */
     const go = (id: string) => {
@@ -147,17 +158,23 @@ export function useBoardKeys(keys: BoardKeys) {
     const toggleOverview = () => {
       const { board, fullscreen, viewport } = latest.current;
       const now = viewport.transform();
-      if (overview && sameView(now, overview.fitted)) {
-        const back = overview;
+      if (overviewing()) {
+        // Back where we were, on the frame we are on now: W A S D may have gone on.
+        const back = overview!;
         overview = null;
-        if (back.fullscreen) fullscreen.show(back.fullscreen);
-        else viewport.glide(back.before);
+        const id = current();
+        const frame = board.frames.find((f) => f.id === id);
+        if (back.fullscreen && id) fullscreen.show(id);
+        else if (!frame || id === back.frame) viewport.glide(back.before);
+        else viewport.glide(onto(frame, back.before) ?? back.before);
         return;
       }
-      const at = fullscreen.current;
+      const { width, height } = viewport.screen();
+      const fitted = fitRects(board.frames, width, height);
+      if (!fitted) return;
+      overview = { fitted, before: now, frame: current(), fullscreen: !!fullscreen.current };
       fullscreen.leave();
-      viewport.fit(board.frames);
-      overview = { fitted: viewport.transform(), before: now, fullscreen: at };
+      viewport.glide(fitted);
     };
     const add = (type: FrameType) => {
       const { fullscreen, room, create, readOnly } = latest.current;

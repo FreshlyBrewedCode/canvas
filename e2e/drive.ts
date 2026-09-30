@@ -3299,13 +3299,39 @@ if (step === "keys") {
   await host.locator("[data-hud]").getByTitle("Reset to 100%").click();
   await settle();
   const was = await transform();
+  const eases = () =>
+    host.evaluate(() => (document.querySelector("[data-board] > div") as HTMLElement).style.transition);
   await press("Shift+F");
   const everything = await Promise.all(ids.map(inView));
   check(everything.every(Boolean), `Shift + F shows the whole board (${await transform()})`);
+  check((await eases()).includes("transform"), `…gliding there (${await eases()})`);
   await shot(host, "161-keys-overview");
   await press("Shift+F");
   await settle(300);
   check((await transform()) === was, `…and again, back (${await transform()})`);
+
+  // In the whole board, W A S D go on without leaving it; Shift + F goes back to where they went.
+  // On a small screen, so the whole board is below a readable zoom.
+  const size = host.viewportSize()!;
+  await host.setViewportSize({ width: 900, height: 600 });
+  await settle();
+  const from = await mine();
+  await press("Shift+F");
+  const whole = await transform();
+  await press("w");
+  check(
+    (await mine()) !== from && (await transform()) === whole,
+    `W in the whole board goes to ${await mine()}, and stays in it (${await transform()})`,
+  );
+  const went = (await mine())!;
+  await press("Shift+F");
+  check(
+    (await inView(went)) && (await transform()).includes("scale(1)"),
+    `…and Shift + F goes back to that frame, at the zoom before (${await transform()})`,
+  );
+  await host.setViewportSize(size);
+  await host.locator("[data-hud]").getByTitle("Reset to 100%").click();
+  await settle();
 
   // Going to a frame off screen brings it into view.
   check(!(await inView(g)), "at 100%, g is off screen");
