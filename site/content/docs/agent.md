@@ -38,7 +38,9 @@ Who can send:
 ## Thread
 
 The thread shows each prompt with its author, the agent's replies, and its tool calls, which
-expand. The status in the header is **idle**, **running**, or **waiting** (for a permission). Board
+expand. Several tool calls in a row fold into one line (**5 tool calls**, with the last one); a
+click unfolds them. Scrolled up, a **Latest** button takes you back to the end; it says **New
+activity** when more arrived meanwhile. The status in the header is **idle**, **running**, or **waiting** (for a permission). Board
 tool calls show as `canvas · open_frame` and the like.
 
 ![A thread: the prompt, the agent's tool calls, and its reply](./screenshots/agent-thread.webp)
