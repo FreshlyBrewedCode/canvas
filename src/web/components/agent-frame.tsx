@@ -5,6 +5,7 @@ import {
   Circle,
   CircleDot,
   CircleStop,
+  CornerDownLeft,
   ArrowDown,
   Layers,
   LoaderCircle,
@@ -13,6 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { EditorView } from "@codemirror/view";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -36,6 +38,7 @@ import {
   type Steps,
   type Turn,
 } from "@/lib/thread";
+import { browse } from "@/lib/prompt-history";
 import { cn } from "@/lib/utils";
 import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
 import type { AgentConfigValue, AgentEvent, PlanEntry } from "../../shared/protocol";
@@ -140,6 +143,41 @@ function AgentThread({
     }
   };
 
+  // ↑/↓: our own prompts of this frame (`prompt-history.ts`).
+  const browsing = useRef<number | null>(null);
+  const recall = (view: EditorView, direction: "older" | "newer") => {
+    const { doc, selection } = view.state;
+    const line = doc.lineAt(selection.main.head).number;
+    if (!selection.main.empty || line !== (direction === "older" ? 1 : doc.lines)) return false;
+    const me = room.identity;
+    const history = turns
+      .filter((turn) => turn.author.name === me.name && turn.author.color === me.color)
+      .map((turn) => turn.text);
+    const step = browse(history, browsing.current, doc.toString(), direction);
+    if (!step) {
+      browsing.current = null;
+      return false;
+    }
+    browsing.current = step.at;
+    view.dispatch({
+      changes: { from: 0, to: doc.length, insert: step.text },
+      selection: { anchor: direction === "older" ? 0 : step.text.length },
+    });
+    return true;
+  };
+  /** A prompt again, into the draft: as it is, or after what is there. */
+  const reuse = (prompt: string) => {
+    const editor = document.querySelector<HTMLElement>(
+      `[data-frame="${frame.id}"] [data-composer] .cm-editor`,
+    );
+    const view = editor && EditorView.findFromDOM(editor);
+    if (!view) return;
+    const end = view.state.doc.length;
+    const insert = view.state.doc.toString().trim() ? `\n\n${prompt}` : prompt;
+    view.dispatch({ changes: { from: end, insert }, selection: { anchor: end + insert.length } });
+    view.focus();
+  };
+
   const configure = (configId: string, value: AgentConfigValue) =>
     room.act({ t: "agent-config", sessionId: frame.id, configId, value });
   const mode = useModeCycle(session?.options, configure);
@@ -175,17 +213,25 @@ function AgentThread({
         <Thread
           frameId={frame.id}
           turns={turns}
+          onReuse={readOnly ? undefined : reuse}
           version={version}
           loading={room.hostOnline && (session ? session.loading : !room.isHost)}
         />
         <Plan events={events} version={version} />
-        <div className="border-t">
+        <div className="border-t" data-composer="">
           <CollabEditor
             text={text}
             readOnly={readOnly}
             placeholder={`Prompt ${agentLabel}… (write together — everyone sees this draft)`}
             onSubmit={send}
-            keys={{ "Shift-Tab": () => !controls && mode.cycle() }}
+            keys={{
+              "Shift-Tab": () => {
+                if (!controls) mode.cycle();
+                return true;
+              },
+              ArrowUp: (view) => recall(view, "older"),
+              ArrowDown: (view) => recall(view, "newer"),
+            }}
             className="max-h-40 min-h-16 overflow-auto"
           />
           <div className="flex items-center gap-2 px-2.5 pb-2">
@@ -234,11 +280,14 @@ function AgentThread({
 function Thread({
   frameId,
   turns,
+  onReuse,
   version,
   loading,
 }: {
   frameId: string;
   turns: ReadonlyArray<Turn>;
+  /** Put a prompt into the draft again. */
+  onReuse: ((prompt: string) => void) | undefined;
   version: number;
   /** The host has not sent the conversation yet. */
   loading: boolean;
@@ -292,7 +341,7 @@ function Thread({
             )
           )}
           {turns.map((turn) => (
-            <TurnView key={turn.id} turn={turn} frameId={frameId} />
+            <TurnView key={turn.id} turn={turn} frameId={frameId} onReuse={onReuse} />
           ))}
           <RemoteSelections frameId={frameId} version={version} />
         </div>
@@ -376,14 +425,36 @@ function PlanItem({ entry }: { entry: PlanEntry }) {
   );
 }
 
-function TurnView({ turn, frameId }: { turn: Turn; frameId: string }) {
+function TurnView({
+  turn,
+  frameId,
+  onReuse,
+}: {
+  turn: Turn;
+  frameId: string;
+  onReuse: ((prompt: string) => void) | undefined;
+}) {
   return (
     <div className="space-y-2">
       <div
         className="group/copy bg-muted/60 relative border-l-[3px] px-2.5 py-2"
         style={{ borderLeftColor: turn.author.color }}
       >
-        <CopyButton text={turn.text} title="Copy the prompt" />
+        <div className="absolute top-1 right-1 z-10 flex gap-1">
+          {onReuse && (
+            <button
+              type="button"
+              data-reuse=""
+              title="Into the draft again, to edit and send"
+              className="bg-card text-muted-foreground hover:text-foreground rounded-md border p-1 opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100 focus-visible:opacity-100"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => onReuse(turn.text)}
+            >
+              <CornerDownLeft className="size-3" />
+            </button>
+          )}
+          <CopyButton text={turn.text} title="Copy the prompt" inline />
+        </div>
         <div
           className="mb-0.5 text-[11px] font-semibold tracking-wide uppercase"
           style={{ color: turn.author.color }}

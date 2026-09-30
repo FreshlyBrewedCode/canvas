@@ -12,11 +12,14 @@ export function CopyButton({
   get,
   title = "Copy",
   group = "copy",
+  inline = false,
 }: {
   text?: string;
   get?: () => string;
   title?: string;
   group?: "copy" | "code";
+  /** Placed by its parent, not in the corner. */
+  inline?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -30,7 +33,8 @@ export function CopyButton({
       data-copy=""
       title={copied ? "Copied" : title}
       className={cn(
-        "bg-card text-muted-foreground hover:text-foreground absolute top-1 right-1 z-10 rounded-md border p-1 opacity-0 shadow-sm transition-opacity focus-visible:opacity-100",
+        "bg-card text-muted-foreground hover:text-foreground rounded-md border p-1 opacity-0 shadow-sm transition-opacity focus-visible:opacity-100",
+        !inline && "absolute top-1 right-1 z-10",
         group === "copy" ? "group-hover/copy:opacity-100" : "group-hover/code:opacity-100",
         copied && "opacity-100",
       )}

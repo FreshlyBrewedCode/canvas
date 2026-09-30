@@ -26,8 +26,11 @@ export function CollabEditor({
   placeholder?: string;
   /** ⌘/Ctrl+Enter. */
   onSubmit?: () => void;
-  /** More key bindings (CodeMirror key names), fixed when the editor is made. */
-  keys?: Record<string, () => void>;
+  /**
+   * More key bindings (CodeMirror key names, fixed when the editor is made);
+   * one that returns false lets the key through.
+   */
+  keys?: Record<string, (view: EditorView) => boolean>;
   className?: string;
 }) {
   const room = useRoom();
@@ -58,10 +61,7 @@ export function CollabEditor({
               },
               ...Object.keys(extra.current ?? {}).map((key) => ({
                 key,
-                run: () => {
-                  extra.current?.[key]?.();
-                  return true;
-                },
+                run: (view: EditorView) => extra.current?.[key]?.(view) ?? false,
               })),
             ]),
           ),

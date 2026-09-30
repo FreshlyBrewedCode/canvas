@@ -3152,7 +3152,7 @@ if (step === "copy") {
   };
   const copy = async (within: ReturnType<Page["locator"]>) => {
     await within.hover();
-    const button = within.locator("> [data-copy]");
+    const button = within.locator(":scope > [data-copy], :scope > div > [data-copy]");
     check(await shown(button), "the copy button shows on hover");
     await button.click();
     return clipboard();
@@ -3223,5 +3223,69 @@ if (step === "usage") {
   check((await popover.count()) === 0, "another closes it");
   const guestFooter = guest.locator(`[data-frame="${await frame.getAttribute("data-frame")}"] [data-turn-footer=done]`);
   check((await guestFooter.innerText()) === footer, "the guest sees the same footer");
+}
+if (step === "history") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const frame = await newAgent(host, process.env.AGENT ?? "opencode");
+  const id = (await frame.getAttribute("data-frame"))!;
+  const editor = (page: Page) => page.locator(`[data-frame="${id}"] [data-composer] .cm-content`);
+  const draft = () =>
+    host.evaluate((id) => (window as any).room.doc.getText(`prompt:${id}`).toString(), id);
+  for (const prompt of ["Reply with just: A", "Reply with just: B"]) {
+    await editor(host).click();
+    await host.keyboard.type(prompt);
+    await host.keyboard.press("Control+Enter");
+    await approveUntilIdle(host, guest);
+  }
+  await editor(host).click();
+  const seen: string[] = [];
+  for (const key of ["ArrowUp", "ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown"]) {
+    await host.keyboard.press(key);
+    seen.push(await draft());
+  }
+  check(
+    JSON.stringify(seen) ===
+      JSON.stringify(["Reply with just: B", "Reply with just: A", "Reply with just: A", "Reply with just: B", ""]),
+    `↑ and ↓ go through our prompts: ${JSON.stringify(seen)}`,
+  );
+
+  // Not over someone's draft; not someone else's prompts.
+  await editor(guest).click();
+  await guest.keyboard.type("Ada writes");
+  await new Promise((r) => setTimeout(r, 500));
+  await editor(host).click();
+  await host.keyboard.press("Control+Home");
+  await host.keyboard.press("ArrowUp");
+  check((await draft()) === "Ada writes", "↑ leaves a draft someone wrote alone");
+  await guest.keyboard.press("Control+a");
+  await guest.keyboard.press("Backspace");
+  await new Promise((r) => setTimeout(r, 300));
+  await guest.keyboard.press("ArrowUp");
+  await new Promise((r) => setTimeout(r, 300));
+  check((await draft()) === "", "the guest's ↑ has none of the host's prompts");
+
+  // A prompt back into the draft, from the thread.
+  const prompt = host.locator(`[data-frame="${id}"] .group\\/copy:has([data-sel-key$=':prompt'])`).first();
+  await prompt.hover();
+  await prompt.locator("[data-reuse]").click();
+  check((await draft()) === "Reply with just: A", "the prompt's button puts it into the draft");
+  check(
+    await host.evaluate(() => !!document.activeElement?.closest("[data-composer]")),
+    "…with the composer focused",
+  );
+  await prompt.hover();
+  await prompt.locator("[data-reuse]").click();
+  check(
+    (await draft()) === "Reply with just: A\n\nReply with just: A",
+    "into a draft with text, it goes after it",
+  );
+  await shot(host, "200-history-reuse");
 }
 await browser.close();
