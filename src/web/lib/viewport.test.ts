@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   edgeMarker,
+  showsAny,
   fitRects,
   fitView,
   inView,
@@ -50,6 +51,16 @@ describe("viewport", () => {
     const t = fitView(view, 500, 800);
     expect(t.scale).toBe(1);
     expect(viewRect(t, 500, 800)).toEqual({ x: 100, y: -250, w: 500, h: 800 });
+  });
+
+  test("a rectangle shows if any of it is in the viewport", () => {
+    const t = { scale: 0.5, x: 100, y: 0 };
+    // At (100, 0)..(200, 50) on screen.
+    expect(showsAny(t, { x: 0, y: 0, w: 200, h: 100 }, 1000, 800)).toBe(true);
+    // Its right edge meets the viewport's left one: not in view.
+    expect(showsAny(t, { x: -400, y: 0, w: 200, h: 100 }, 1000, 800)).toBe(false);
+    expect(showsAny(t, { x: -400, y: 0, w: 201, h: 100 }, 1000, 800)).toBe(true);
+    expect(showsAny(t, { x: 0, y: 1600, w: 200, h: 100 }, 1000, 800)).toBe(false);
   });
 
   describe("edge markers", () => {

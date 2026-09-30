@@ -67,6 +67,16 @@ export function useSession(id: string) {
   );
 }
 
+/** The agent frames blocked on a permission for the host, by id. */
+export function useWaitingAgents(): ReadonlySet<string> {
+  const room = useRoom();
+  const key = useSyncExternalStore(
+    (onChange) => room.subscribe("sessions", onChange),
+    () => room.waitingSessions().join(" "),
+  );
+  return useMemo(() => new Set(key ? key.split(" ") : []), [key]);
+}
+
 /** A file as the host mirrors it; undefined until it arrives. */
 export function useFile(path: string) {
   const room = useRoom();
