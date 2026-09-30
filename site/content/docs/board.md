@@ -28,6 +28,31 @@ hold Space there, or drag its header.
 
 The viewport is yours alone; it is kept per board in your browser.
 
+## Keyboard
+
+The keyboard moves over the board's frames, for your left hand while the right one stays on the
+mouse. The **current frame** is the one you are in (full screen's, or the one you occupy:
+[Focus](/docs/focus)).
+
+| Keys                          | To                                                               |
+| ----------------------------- | ---------------------------------------------------------------- |
+| **W A S D**, or **H J K L**   | The frame above, left, below or right; the view goes along if it is off screen |
+| Shift + **W A S D**           | Move the current frame that way: along its row, or into the row above or below |
+| **Q** / **E**                 | The cluster before / after                                        |
+| **F**                         | Full screen on the current frame, or back                         |
+| Shift + **F**                 | The whole board; again, back                                      |
+| **1** – **5**                 | A new Agent, Files, Browser, Terminal or Drawing frame beside the current one |
+| **Esc**                       | Out of a field (a prompt, a title) to the board: the keys work again |
+| Hold **Space**                | Pan                                                               |
+
+- **Going to a frame occupies it**, as pressing on it does. With no current frame, the first key
+  goes to the frame in the middle of the view.
+- **Left and right** go along the row, then on to the nearest frame that way, in the next
+  cluster too. **Up and down** go to the frame under the current one's middle in the row beside.
+- **Keys are the field's while you type**: a prompt, a title, a terminal, a drawing being edited.
+  A terminal keeps Esc too, for the programs in it.
+- Letters go by their place on the keyboard, whatever its layout.
+
 ## Full screen
 
 Full screen shows one row of frames at 100%, as tall as your screen, to work in them one at a
@@ -35,13 +60,14 @@ time.
 
 | Do                                           | To                               |
 | -------------------------------------------- | -------------------------------- |
-| **F** over a frame, or the ⤢ in its header   | Full screen on that frame        |
-| **H** / **L**, or Alt + **←** / **→**        | The frame before / after it      |
+| **F**, or the ⤢ in a frame's header          | Full screen on the current frame, or that one |
+| **A** / **D**, **H** / **L**, or Alt + **←** / **→** | The frame before / after it |
+| **W** / **S**, **K** / **J**                 | Full screen on the row above / below |
 | **‹** / **›**, or a dot, in the top bar      | The frame before / after, or that one |
 | Wheel, drag or swipe                         | Along the row                    |
 | **+** beside a frame                         | Add a frame there                |
 | Drag a frame's header                        | Move it along the row            |
-| **Esc**, **F**, the **×** in the top bar, or zoom | Leave full screen           |
+| **F**, the **×** in the top bar, or zoom     | Leave full screen                |
 
 - **It is yours alone.** The frames of the row take your screen's height on your board only;
   everyone else sees them as they are. Terminals keep a height of their own, half the host's
@@ -54,14 +80,13 @@ time.
 - **Frames only move along the row**: over the left or right half of another, a dragged frame
   goes before or after it, and the others make room. Hold a frame near the left or right side of
   the screen to scroll the row that way. The edges between frames set their widths.
-- **Leaving with Esc, F or ×** takes you back to where you were before full screen.
+- **Leaving with F or ×** takes you back to where you were before full screen. Esc doesn't
+  leave: it takes you out of a field, so the keys work again ([Keyboard](#keyboard)).
 - **Someone else changing the row** doesn't move you: the frame you are on stays where it is on
   your screen, and the others move around it, whether they resize, reorder, add or take frames
   away. Full screen stays on the row even if your frame is moved out of it: you go on to the one
   before or after it.
 - **Closing a frame** goes on to the next one in the row; closing the last leaves full screen.
-- **Keys are the frame's while you type** in it: a prompt, a terminal, a title. Press the board
-  first.
 - **Others see where you are**: a chip with your name on the header of the frame you are on, and a
   ring in your colour around its dot in their full-screen bar. You see theirs the same way.
 - **Following someone in full screen** takes you into full screen on their frame, at your own

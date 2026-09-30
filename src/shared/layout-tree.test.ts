@@ -17,6 +17,8 @@ import {
   MIN_W,
   move,
   moveCluster,
+  neighbour,
+  nudge,
   prune,
   repair,
   resize,
@@ -661,5 +663,75 @@ describe("drop zones", () => {
     expect(alongAt(layout, "k1r1", b.x + 300)).toEqual({ anchor: "b", side: "right" });
     expect(alongAt(layout, "k1r1", b.x + 9000)).toEqual({ anchor: "b", side: "right" });
     expect(alongAt(resolve(lifted(tree, new Set(["c"]))), "k1r2", 0)).toBeNull();
+  });
+});
+
+describe("the keyboard", () => {
+  // Cluster one: a b c over d e (d under a and half of b), f under them.
+  // Cluster two, right of it: g.
+  const tree = build([
+    {
+      rows: [
+        {
+          h: 300,
+          frames: [
+            ["a", 400],
+            ["b", 400],
+            ["c", 400],
+          ],
+        },
+        {
+          h: 300,
+          frames: [
+            ["d", 600],
+            ["e", 600],
+          ],
+        },
+        { h: 300, frames: [["f", 400]] },
+      ],
+    },
+    { rows: [{ h: 300, frames: [["g", 400]] }] },
+  ]);
+  const layout = resolve(tree);
+
+  test("left and right go along the row, then over to the nearest frame that way", () => {
+    expect(neighbour(layout, "b", "left")).toBe("a");
+    expect(neighbour(layout, "b", "right")).toBe("c");
+    expect(neighbour(layout, "a", "left")).toBeNull();
+    // Past the row's end: the next cluster.
+    expect(neighbour(layout, "c", "right")).toBe("g");
+    expect(neighbour(layout, "g", "left")).toBe("c");
+  });
+
+  test("up and down go to the frame of the row beside under the middle", () => {
+    expect(neighbour(layout, "a", "down")).toBe("d");
+    expect(neighbour(layout, "c", "down")).toBe("e");
+    // e's middle (900) is under c.
+    expect(neighbour(layout, "e", "up")).toBe("c");
+    expect(neighbour(layout, "e", "down")).toBe("f");
+    expect(neighbour(layout, "a", "up")).toBeNull();
+    expect(neighbour(layout, "f", "down")).toBeNull();
+  });
+
+  test("Shift moves a frame along its row, or into the row beside", () => {
+    expect(nudge(layout, "b", "left")).toEqual({ anchor: "a", side: "left" });
+    expect(nudge(layout, "b", "right")).toEqual({ anchor: "c", side: "right" });
+    expect(nudge(layout, "a", "left")).toBeNull();
+    // Down from a (middle 200): d's left half, before it.
+    expect(nudge(layout, "a", "down")).toEqual({ anchor: "d", side: "left" });
+    // Down from c (middle 1000): e's right half, after it.
+    expect(nudge(layout, "c", "down")).toEqual({ anchor: "e", side: "right" });
+    // Up from d (middle 300): a's right half, after it.
+    expect(nudge(layout, "d", "up")).toEqual({ anchor: "a", side: "right" });
+    const moved = applyChanges(tree, move(tree, "c", nudge(layout, "c", "down")!, counter()));
+    expect(shape(moved)[0]).toEqual([["a", "b"], ["d", "e", "c"], ["f"]]);
+  });
+
+  test("past the cluster's top or bottom, a row of its own; alone in its row, nowhere", () => {
+    expect(nudge(layout, "b", "up")).toEqual({ anchor: "a", side: "above" });
+    const moved = applyChanges(tree, move(tree, "b", nudge(layout, "b", "up")!, counter()));
+    expect(shape(moved)[0]).toEqual([["b"], ["a", "c"], ["d", "e"], ["f"]]);
+    expect(nudge(layout, "f", "down")).toBeNull();
+    expect(nudge(layout, "g", "up")).toBeNull();
   });
 });

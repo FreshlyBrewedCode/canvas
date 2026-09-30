@@ -2781,9 +2781,9 @@ if (step === "fullscreen") {
   const board = (await host.locator("[data-board]").boundingBox())!;
   const on = async () => (await host.locator("[data-fullscreen-bar]").count()) > 0;
 
-  // F over a frame: 100%, its top under the top bar, as tall as the screen.
+  // F on the frame we are in: 100%, its top under the top bar, as tall as the screen.
   const b = (await frame(files).boundingBox())!;
-  await host.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await host.mouse.click(b.x + b.width * 0.6, b.y + 10);
   await host.keyboard.press("f");
   await settle();
   let box = (await frame(files).boundingBox())!;
@@ -3011,7 +3011,10 @@ if (step === "fullscreen") {
   check(await enter(), "the header's button goes full screen");
   await host.keyboard.press("Escape");
   await settle();
-  check(!(await on()), "Esc ends it");
+  check(await on(), "Esc doesn't end it: it is for leaving a field");
+  await host.keyboard.press("f");
+  await settle();
+  check(!(await on()), "F ends it");
   check((await transform()) === fitted, `…back to the view before (${await transform()})`);
   await enter();
   await host.locator("[data-fullscreen-exit]").click();
@@ -3113,7 +3116,7 @@ if (step === "fullscreen-presence") {
     "…and Ada Karl on a's",
   );
   await shot(host, "150-fullscreen-peers");
-  await guest.keyboard.press("Escape");
+  await guest.keyboard.press("f");
   await settle();
   check(!(await on(guest)), "Ada leaves full screen");
   check(
@@ -3156,7 +3159,7 @@ if (step === "fullscreen-presence") {
   check(await following(), "…still following");
 
   // He leaves full screen: she does too, following his view again.
-  await host.keyboard.press("Escape");
+  await host.keyboard.press("f");
   await settle();
   check(!(await on(guest)), "Karl leaves full screen: so does Ada");
   check(await following(), "…still following his view");
@@ -3173,6 +3176,157 @@ if (step === "fullscreen-presence") {
   await host.keyboard.press("l");
   await settle();
   check((await current(guest)) !== c, "…no longer going where Karl goes");
+}
+// The keyboard (ADR 0010, decision 9): moves over the tree, for the left hand.
+if (step === "keys") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  // A cluster of a b c over d, and g in a cluster of its own right of it.
+  const ids: string[] = [];
+  for (const kind of ["Files", "Drawing", "Drawing", "Drawing", "Drawing"])
+    ids.push((await (await addFrame(host, kind)).getAttribute("data-frame"))!);
+  const [a, b, c, d, g] = ids as [string, string, string, string, string];
+  await arrange(host, {
+    [a]: { x: 0, y: 0, w: 600, h: 400 },
+    [b]: { x: 600, y: 0, w: 600, h: 400 },
+    [c]: { x: 1200, y: 0, w: 600, h: 400 },
+    [d]: { x: 0, y: 400, w: 600, h: 400 },
+    [g]: { x: 3000, y: 0, w: 600, h: 400 },
+  });
+  await host.locator("[data-hud]").getByTitle("Fit board to view").click();
+  await settle(800);
+  const frame = (id: string) => host.locator(`[data-frame="${id}"]`);
+  const mine = () => host.evaluate(() => (window as any).room.ownFrame() as string | null);
+  const at = async (id: string) => (await framesOf(host)).find((f) => f.id === id)!;
+  const press = async (key: string) => {
+    await host.keyboard.press(key);
+    await settle();
+  };
+  const header = async (id: string) => {
+    const box = (await frame(id).boundingBox())!;
+    return { x: box.x + box.width * 0.6, y: box.y + 8 };
+  };
+  const board = (await host.locator("[data-board]").boundingBox())!;
+  const inView = async (id: string) => {
+    const box = (await frame(id).boundingBox())!;
+    return (
+      box.x >= board.x - 1 &&
+      box.y >= board.y - 1 &&
+      box.x + box.width <= board.x + board.width + 1 &&
+      box.y + box.height <= board.y + board.height + 1
+    );
+  };
+
+  // W A S D go to the neighbouring frame, occupying it.
+  const h = await header(a);
+  await host.mouse.click(h.x, h.y);
+  await settle();
+  check((await mine()) === a, "a press occupies a");
+  await press("d");
+  check((await mine()) === b, "D goes right, to b");
+  await press("l");
+  check((await mine()) === c, "…and L, to c");
+  await press("d");
+  check((await mine()) === g, "past the row's end, D goes over to the next cluster");
+  await press("a");
+  check((await mine()) === c, "A comes back");
+  await press("e");
+  check((await mine()) === g, "E goes to the cluster after");
+  await press("q");
+  check((await mine()) === a, "Q to the cluster before, its first frame");
+  await press("s");
+  check((await mine()) === d, "S goes down, to d");
+  await press("w");
+  check((await mine()) === a, "W back up");
+  await shot(host, "160-keys-current");
+
+  // Shift + W A S D move the current frame.
+  await press("Shift+D");
+  const [ma, mb] = [await at(a), await at(b)];
+  check(ma.row === mb.row && ma.x > mb.x, `Shift + D moves a after b (${mb.x} < ${ma.x})`);
+  check((await mine()) === a, "…and a stays the current frame");
+  await press("Shift+S");
+  check((await at(a)).row === (await at(d)).row, "Shift + S moves it into the row below");
+  await press("Shift+W");
+  check((await at(a)).row === (await at(b)).row, "Shift + W back up");
+
+  // 1 – 5 add a frame of a kind beside the current one, and go to it.
+  const before = (await framesOf(host)).length;
+  await press("2");
+  const all = await framesOf(host);
+  const added = all.find((f) => !ids.includes(f.id));
+  check(all.length === before + 1 && added?.type === "file", "2 adds a files frame");
+  check(
+    !!added && added.row === (await at(a)).row && added.x === (await at(a)).x + (await at(a)).w,
+    "…right beside the current frame",
+  );
+  check((await mine()) === added?.id, "…and it is the current frame");
+  await host.evaluate((id) => (window as any).room.doc.getMap("frames").delete(id), added!.id);
+  await settle();
+  await host.mouse.click((await header(a)).x, (await header(a)).y);
+  await settle();
+
+  // F: full screen on the current frame; D along its row; S to the row below; F back.
+  await press("f");
+  const current = () =>
+    host.locator("[data-fullscreen-dot][aria-current]").getAttribute("data-fullscreen-dot");
+  check((await current()) === a, "F: full screen on the current frame");
+  const dots = await host
+    .locator("[data-fullscreen-dot]")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-fullscreen-dot")));
+  const i = dots.indexOf(a);
+  // Along: to the next, or, from the row's last, back to the one before.
+  await press(dots[i + 1] ? "d" : "a");
+  check(
+    (await current()) === (dots[i + 1] ?? dots[i - 1]) && (await mine()) === (await current()),
+    "D / A go along the row, occupying the frame",
+  );
+  await press("s");
+  check((await current()) === d, "S goes to the row below, full screen");
+  await press("f");
+  check((await host.locator("[data-fullscreen-bar]").count()) === 0, "F leaves full screen");
+
+  // Shift + F: the whole board; again, back.
+  const transform = () =>
+    host.evaluate(() => (document.querySelector("[data-board] > div") as HTMLElement).style.transform);
+  await host.locator("[data-hud]").getByTitle("Reset to 100%").click();
+  await settle();
+  const was = await transform();
+  await press("Shift+F");
+  const everything = await Promise.all(ids.map(inView));
+  check(everything.every(Boolean), `Shift + F shows the whole board (${await transform()})`);
+  await shot(host, "161-keys-overview");
+  await press("Shift+F");
+  await settle(300);
+  check((await transform()) === was, `…and again, back (${await transform()})`);
+
+  // Going to a frame off screen brings it into view.
+  check(!(await inView(g)), "at 100%, g is off screen");
+  await press("e");
+  check((await mine()) === g && (await inView(g)), "E goes to g, and the view goes along");
+
+  // Typing is the field's; Esc leaves the field, and the keys work again.
+  const title = frame(g).getByLabel("Frame title");
+  const name = await title.inputValue();
+  await title.click();
+  await host.keyboard.press("End");
+  await host.keyboard.type("wasd");
+  check((await title.inputValue()) === `${name}wasd` && (await mine()) === g, "keys type into a title");
+  await press("Escape");
+  check(
+    await host.evaluate(() => document.activeElement === document.body),
+    "Esc leaves the field for the board",
+  );
+  await press("q");
+  check((await at((await mine())!)).cluster === (await at(b)).cluster, "…and Q works again");
+  await title.fill(name);
 }
 // Edges (ADR 0010): frames of a cluster share their borders, and every edge
 // resizes — a vertical one its column's width, a horizontal one its row's
@@ -3270,7 +3424,7 @@ if (step === "edges") {
     Math.abs((await guest.locator(`[data-frame="${t}"]`).boundingBox())!.height - height) < 1,
     "the guest's full screen shows the terminal at the host's height",
   );
-  await guest.keyboard.press("Escape");
+  await guest.keyboard.press("f");
   // "+" sits on the edge the frame shares with the next.
   tb = await dom(t);
   await host.mouse.move(tb.x + tb.width / 2, tb.y + 60);

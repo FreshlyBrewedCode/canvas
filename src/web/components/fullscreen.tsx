@@ -25,7 +25,7 @@ export function FullscreenBar({ fullscreen }: { fullscreen: Fullscreen }) {
       <div className="flex items-center gap-1 rounded-lg border px-1 py-0.5">
         <button
           type="button"
-          title="Frame before (h, Alt + ←)"
+          title="Frame before (A, H, Alt + ←)"
           className={arrow}
           disabled={at <= 0}
           onClick={() => fullscreen.step(-1)}
@@ -63,7 +63,7 @@ export function FullscreenBar({ fullscreen }: { fullscreen: Fullscreen }) {
         })}
         <button
           type="button"
-          title="Frame after (l, Alt + →)"
+          title="Frame after (D, L, Alt + →)"
           className={arrow}
           disabled={at >= frames.length - 1}
           onClick={() => fullscreen.step(1)}
@@ -73,7 +73,7 @@ export function FullscreenBar({ fullscreen }: { fullscreen: Fullscreen }) {
       </div>
       <button
         type="button"
-        title="Leave full screen (Esc)"
+        title="Leave full screen (F)"
         data-fullscreen-exit=""
         className="text-muted-foreground hover:text-foreground rounded-lg border p-1.5"
         onClick={fullscreen.exit}

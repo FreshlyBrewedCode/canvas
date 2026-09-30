@@ -60,13 +60,16 @@ canvas
   (`hooks/use-fullscreen.ts`, geometry in `web/lib/fullscreen.ts`). Presence `fullscreen` is the
   frame we are on in it: shown on its header and dot, and following someone in full screen is
   full screen on their frame (`lead`), at our own screen's size. It lasts while the
-  transform is one (`stillFullscreen`), so any zoom or move off the row ends it; Esc and ✕
+  transform is one (`stillFullscreen`), so any zoom or move off the row ends it; F and ✕
   glide back to the view before. It holds the tree's row by id; a frame that leaves it hands over
   to the next of the row (`standIn`); frames move along the row only (`alongAt`), scrolling it at
   the board's sides (`edgeScroll`)
 - the view is anchored (ADR 0010, decision 8, `hooks/use-anchor.ts`): as others change the layout,
   the frame we are on (full screen's, else the one we occupy) stays put on our screen. Our own
   changes are marked `own()` (`web/lib/board.ts`) and move what they move
+- the keyboard (ADR 0010, decision 9, `hooks/use-board-keys.ts`): moves over the tree, from the
+  current frame (full screen's, else the one we occupy) — `neighbour` and `nudge` in
+  `shared/layout.ts`; unless typing or drawing. Esc leaves a field; it no longer ends full screen
 - dragging (ADR 0010): by the pointer, hit against the board without what is dragged (`dropAt`,
   `slotAt` in `shared/layout.ts`); ours until the drop (`web/hooks/start-drag.ts`), the board
   showing the result meanwhile (`web/lib/drag.ts`); peers see a ghost (presence `drag`)
@@ -95,7 +98,7 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|edges|fullscreen-presence|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|edges|fullscreen-presence|keys|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
