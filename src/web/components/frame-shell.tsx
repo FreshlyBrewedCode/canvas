@@ -24,7 +24,7 @@ import {
   type FrameType,
 } from "@/lib/board";
 import { useDrag, useGliding } from "@/lib/drag";
-import { useFrameFocus, useRoom } from "@/lib/room-context";
+import { useFrameFocus, usePeers, useRoom } from "@/lib/room-context";
 import { cn } from "@/lib/utils";
 
 /** The kinds of frame, as the toolbar offers them. */
@@ -163,6 +163,7 @@ export function FrameShell({
         </span>
         <span className="min-w-12 flex-1" />
         {status}
+        <FullscreenPeers frameId={frame.id} />
         {focus.occupant && <OccupantBadge frameId={frame.id} focus={focus} />}
         {actions}
         <button
@@ -196,6 +197,23 @@ export function FrameShell({
       </LinkScope>
     </section>
   );
+}
+
+/** Who else is in full screen on the frame, each in their colour. */
+function FullscreenPeers({ frameId }: { frameId: string }) {
+  const here = usePeers().filter((peer) => peer.fullscreen === frameId);
+  return here.map(({ user }) => (
+    <span
+      key={user.peerId}
+      data-fullscreen-peer={user.name}
+      title={`${user.name} is in full screen here`}
+      className="flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold"
+      style={{ backgroundColor: user.color, color: "oklch(0.2 0 0)" }}
+    >
+      <Maximize className="size-3" />
+      {user.name}
+    </span>
+  ));
 }
 
 /** Above every frame while dragged. */

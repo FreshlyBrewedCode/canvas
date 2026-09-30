@@ -13,7 +13,8 @@ occupant: "look at this" needs no line numbers.
 
 ## Occupy a frame
 
-- **Press** a free frame to occupy it.
+- **Press** a free frame to occupy it. Going to a frame in [full screen](/docs/board#full-screen)
+  occupies it too.
 - Pressing a frame someone else occupies, or the empty board, frees yours.
 - If two people press the same frame at once, the earlier one keeps it.
 
@@ -37,3 +38,10 @@ tools](/docs/board-tools), until its turn ends. Its avatar is a bot icon. A pers
 frame takes it over.
 
 Occupancy is presence: it goes with the person who holds it, like their pointer.
+
+## Full screen
+
+Someone in full screen shows on the header of the frame they are on, as a chip with their name,
+and, if you are in full screen on the same row, as a ring in their colour around its dot in the
+top bar. Following their view takes you into full screen with them
+([Presence](/docs/board#presence)).

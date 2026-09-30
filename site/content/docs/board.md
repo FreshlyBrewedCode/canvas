@@ -62,7 +62,13 @@ time.
 - **Closing a frame** goes on to the next one in the row; closing the last leaves full screen.
 - **Keys are the frame's while you type** in it: a prompt, a terminal, a title. Press the board
   first.
-- **Following someone's view** ends full screen, as does anything that zooms or leaves the row.
+- **Others see where you are**: a chip with your name on the header of the frame you are on, and a
+  ring in your colour around its dot in their full-screen bar. You see theirs the same way.
+- **Following someone in full screen** takes you into full screen on their frame, at your own
+  screen's size, and along the row as they go. When they leave full screen, you do too, and go on
+  following their view. Your own pan, zoom or step ends following and leaves you where you are.
+- **Following someone who isn't in full screen** ends yours, as does anything that zooms or leaves
+  the row.
 
 ## Links
 
@@ -148,8 +154,8 @@ Agents use the same rules: they name frames and sides, never coordinates
   Click it to go there.
 - **Click someone's avatar** in the top bar to **follow their view**: your board shows what theirs
   shows, framed in their colour, as they pan and zoom. On a screen of another size you see all of
-  theirs, and more around it. Panning or zooming yourself lets go, as do **Stop**, their avatar
-  again, or their leaving. Following a view is not following a frame's occupant
+  theirs, and more around it. If they are in [full screen](#full-screen), you are too, on their
+  frame. Panning or zooming yourself lets go, as do **Stop**, their avatar again, or their leaving. Following a view is not following a frame's occupant
   ([Focus](/docs/focus)), though the two go together: follow someone's view into the frame they
   occupy and you scroll with them there too.
 - **Text selections** in agent threads and files frames show in the selecting person's colour.

@@ -76,19 +76,23 @@ export function Board() {
   const go = useBoardNavigation(room, viewport, readOnly);
   const { followed, toggle: toggleFollow } = useFollowView(viewport);
   const fullscreen = useFullscreen(room, frames, { ...viewport, wrapRef });
-  const { row, height, show, exit, leave } = fullscreen;
+  const { row, height, show, lead, exit, leave } = fullscreen;
   const { panBy } = viewport;
   const fullscreenFrames = useMemo(
     () => ({ row, height, show, exit, scroll: (dx: number) => panBy(-dx, 0) }),
     [row, height, show, exit, panBy],
   );
-  // Following someone shows their view: not full screen's.
+  // Following someone shows their view, or, in full screen, full screen on their frame.
   const following = followed !== null;
+  const led = followed?.fullscreen ?? null;
   useEffect(() => {
-    if (following) leave();
-  }, [following, leave]);
-  // The frame we are on stays put on our screen as others change the layout.
+    if (led) lead(led);
+    else if (following) leave();
+  }, [following, led, lead, leave]);
+  // Where we are in full screen, for everyone: followers go there too.
   const current = fullscreen.current;
+  useEffect(() => room.setPresence({ fullscreen: current }), [room, current]);
+  // The frame we are on stays put on our screen as others change the layout.
   useAnchor(
     room.doc,
     frames,

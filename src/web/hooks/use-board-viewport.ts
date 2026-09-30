@@ -43,8 +43,8 @@ export interface BoardViewport {
   onOwnMove: (listener: (glide: boolean) => void) => () => void;
   /** Show someone else's view, easing over from where we are. */
   follow: (view: Rect) => void;
-  /** Go to a transform, easing over from where we are: our own move. */
-  glide: (to: Transform) => void;
+  /** Go to a transform, easing over from where we are: our own move, unless `ours` is false. */
+  glide: (to: Transform, ours?: boolean) => void;
   /**
    * Move the view by board px along with the board: what we look at moved
    * under us (`use-anchor.ts`). Not our own move.
@@ -115,12 +115,16 @@ export function useBoardViewport(storageKey: string): BoardViewport {
   }, []);
 
   const apply = useCallback(
-    (next: Transform, how: "own" | "glide" | "followed" | "shift" = "own") => {
+    (next: Transform, how: "own" | "glide" | "led" | "followed" | "shift" = "own") => {
       transformRef.current = next;
       const followed = how === "followed";
       // Someone else's view comes a few times a second: ease between them. Our own moves are
       // instant, but for glides.
-      const ease = followed ? `${FOLLOW_EASE_MS}ms linear` : how === "glide" ? GLIDE_EASE : "";
+      const ease = followed
+        ? `${FOLLOW_EASE_MS}ms linear`
+        : how === "glide" || how === "led"
+          ? GLIDE_EASE
+          : "";
       if (canvasRef.current) {
         canvasRef.current.style.transition = ease && `transform ${ease}`;
         canvasRef.current.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`;
@@ -182,7 +186,10 @@ export function useBoardViewport(storageKey: string): BoardViewport {
   );
 
   const transform = useCallback(() => transformRef.current, []);
-  const glide = useCallback((to: Transform) => apply(to, "glide"), [apply]);
+  const glide = useCallback(
+    (to: Transform, ours = true) => apply(to, ours ? "glide" : "led"),
+    [apply],
+  );
   const shift = useCallback(
     (dx: number, dy: number) => {
       const t = transformRef.current;

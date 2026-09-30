@@ -3052,6 +3052,128 @@ if (step === "fullscreen") {
     `…it stays put on our screen (${was.x} → ${now.x})`,
   );
 }
+// Full screen in presence (ADR 0010, decision 8): others see who is in full
+// screen where — on the frame's header, and in the full-screen bar's dots —
+// and following someone in full screen is full screen on their frame, at our
+// own screen's size, stepping along with them.
+if (step === "fullscreen-presence") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+  await host.evaluate(() => {
+    const frames = (window as any).room.doc.getMap("frames");
+    for (const id of [...frames.keys()]) frames.delete(id);
+  });
+  const a = (await (await addFrame(host, "Files")).getAttribute("data-frame"))!;
+  const b = (await (await addFrame(host, "Drawing")).getAttribute("data-frame"))!;
+  const c = (await (await addFrame(host, "Drawing")).getAttribute("data-frame"))!;
+  await arrange(host, {
+    [a]: { x: 0, y: 0, w: 600, h: 400 },
+    [b]: { x: 600, y: 0, w: 600, h: 400 },
+    [c]: { x: 1200, y: 0, w: 600, h: 400 },
+  });
+  // Ada's screen is smaller than Karl's.
+  await guest.setViewportSize({ width: 1100, height: 720 });
+  for (const page of [host, guest]) {
+    await page.locator("[data-hud]").getByTitle("Fit board to view").click();
+  }
+  await settle(800);
+  const frame = (id: string, page: Page) => page.locator(`[data-frame="${id}"]`);
+  const on = async (page: Page) => (await page.locator("[data-fullscreen-bar]").count()) > 0;
+  const current = (page: Page) =>
+    page.locator("[data-fullscreen-dot][aria-current]").getAttribute("data-fullscreen-dot");
+  const following = async () => (await guest.locator("[data-following-view]").count()) > 0;
+
+  // Karl goes full screen on a: Ada sees it on its header.
+  await frame(a, host).locator("[data-fullscreen-toggle]").click();
+  await settle();
+  check(await on(host), "Karl is in full screen");
+  check(
+    (await frame(a, guest).locator('[data-fullscreen-peer="Karl"]').count()) === 1,
+    "Ada sees him in full screen on its header",
+  );
+  check(
+    (await frame(b, guest).locator("[data-fullscreen-peer]").count()) === 0,
+    "…and on no other frame's",
+  );
+
+  // Ada goes full screen on b: Karl sees her on its dot.
+  await frame(b, guest).locator("[data-fullscreen-toggle]").click();
+  await settle();
+  check(
+    (await host.locator(`[data-fullscreen-dot="${b}"]`).getAttribute("data-fullscreen-dot-peers")) ===
+      "Ada",
+    "Karl sees Ada on b's dot",
+  );
+  check(
+    (await guest.locator(`[data-fullscreen-dot="${a}"]`).getAttribute("data-fullscreen-dot-peers")) ===
+      "Karl",
+    "…and Ada Karl on a's",
+  );
+  await shot(host, "150-fullscreen-peers");
+  await guest.keyboard.press("Escape");
+  await settle();
+  check(!(await on(guest)), "Ada leaves full screen");
+  check(
+    (await host.locator(`[data-fullscreen-dot="${b}"]`).getAttribute("data-fullscreen-dot-peers")) ===
+      null,
+    "…and her ring goes from b's dot",
+  );
+  await shot(guest, "151-fullscreen-header");
+
+  // Following Karl is full screen on his frame, at Ada's own screen's size.
+  await guest.locator('header [data-avatar="Karl"]').click();
+  await settle();
+  const guestBoard = (await guest.locator("[data-board]").boundingBox())!;
+  const box = (await frame(a, guest).boundingBox())!;
+  check(await on(guest), "following Karl, Ada is in full screen");
+  check((await current(guest)) === a, "…on his frame");
+  check(
+    Math.abs(box.height - guestBoard.height) < 1 && Math.abs(box.y - guestBoard.y) < 1,
+    `…as tall as her own screen (${box.height} of ${guestBoard.height})`,
+  );
+  check(
+    Math.abs(box.x + box.width / 2 - (guestBoard.x + guestBoard.width / 2)) < 1,
+    "…in the middle of it",
+  );
+  check(await following(), "…still following");
+  check(
+    (await frame(a, host).getAttribute("data-occupant")) === "Karl",
+    "…without taking the frame from him",
+  );
+  await shot(guest, "152-following-fullscreen");
+
+  // He steps along; she goes with him.
+  await host.mouse.move(700, 20);
+  await host.keyboard.press("l");
+  await settle();
+  check((await current(guest)) === b, "Karl steps to b: Ada goes with him");
+  await host.keyboard.press("l");
+  await settle();
+  check((await current(guest)) === c, "…and to c");
+  check(await following(), "…still following");
+
+  // He leaves full screen: she does too, following his view again.
+  await host.keyboard.press("Escape");
+  await settle();
+  check(!(await on(guest)), "Karl leaves full screen: so does Ada");
+  check(await following(), "…still following his view");
+
+  // Her own move ends following, and leaves her where she is.
+  await frame(b, host).locator("[data-fullscreen-toggle]").click();
+  await settle();
+  check((await on(guest)) && (await current(guest)) === b, "Karl goes full screen again: Ada too");
+  await guest.mouse.move(guestBoard.x + guestBoard.width / 2, guestBoard.y + 10);
+  await guest.mouse.wheel(0, 300);
+  await settle();
+  check(!(await following()), "Ada's own pan ends following");
+  check(await on(guest), "…and she stays in full screen, on her own");
+  await host.keyboard.press("l");
+  await settle();
+  check((await current(guest)) !== c, "…no longer going where Karl goes");
+}
 // Edges (ADR 0010): frames of a cluster share their borders, and every edge
 // resizes — a vertical one its column's width, a horizontal one its row's
 // height, a corner both. In full screen, widths, and a terminal's own height.
