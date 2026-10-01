@@ -81,6 +81,13 @@ canvas
   growing; a new host peer starts over), and presence — every path: pointer, view, selection,
   focus, drag all ride awareness — goes only to and is taken only from peers on it
   (`presenceTargets`, `takesPresence`); presence that comes before the list is held until then
+- resetting the invite link (ADR 0011, decision 6, `web/lib/handover.ts`): `room-reset`, and
+  `member-remove`, make `canvas serve` mint a new room id and key (`Store.rotateRoom`, relay room
+  and tokens with it), save it, and send the host tab `room`. The host seals `moved` to each peer
+  in (`Admissions.moving`) — ECDH to the page's seal key from its join proof, signed with the host
+  key — waits for them to leave, then follows (`Room.relocate`: new transport, address bar via
+  `showLink`). Room ids are in signatures, so the owner's statement names the host public key;
+  a welcome with another room than the link's moves the host tab there
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends. A file frame's tree panel follows too
@@ -138,12 +145,12 @@ canvas
     a host (a paired browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the
     first link must carry a pairing code — `canvas pair` — later ones need none) and a guest,
     which the host admits when it knocks (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|lobby|trusted-session|presence-members|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|lobby|trusted-session|presence-members|rotate|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
     `comments-agent` the repo of finding 13, `links` the one of finding 14, `relay` a `canvas relay`
-    and `serve --relay`, `pairing` a fresh pairing link (and `DIR=<project>` to try `canvas pair`); `IDLE_MS` gives slow agents longer than 4 min per
+    and `serve --relay`, `rotate` p2p and each relay mode in turn, `pairing` a fresh pairing link (and `DIR=<project>` to try `canvas pair`); `IDLE_MS` gives slow agents longer than 4 min per
     prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit

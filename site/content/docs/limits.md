@@ -27,9 +27,10 @@ canvas is a prototype. These are known, and not bugs to report.
 
 - **Roles are view and edit.** No guest runs anything without the host's approval, or types into
   a terminal, unless the host trusts them; that lasts only while the host's tab is open.
-- **A guest link can't be changed** except by deleting `.canvas/`, which changes every link. Whoever
-  holds it can knock, a removed member included; waiting in the lobby, they see nobody's
-  presence, and nobody sees theirs.
+- **A guest link lasts until the host resets it**, by hand or by removing a member. Until then
+  whoever holds it can knock; waiting in the lobby, they see nobody's presence, and nobody sees
+  theirs. A reset moves only the members on the board: anyone else needs the new link, members
+  who were away included.
 - **Late joiners receive whole threads**, shortest first, each in one message: a very long thread
   takes a while to appear, and closed frames' threads are not sent.
 

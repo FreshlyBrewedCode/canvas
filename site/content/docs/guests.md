@@ -56,11 +56,22 @@ the shield again to take it back, at once. A guest sees **trusted** as their bad
 
 Trust them only as far as you would let them use your keyboard: a terminal runs as you.
 
-**Remove** cuts a member off at once: they are told so, and the board goes away for them. If they
-open the link again, they knock again. They still hold the guest link, so they can knock; see
-[Limits](/docs/limits#guests).
+**Remove** cuts a member off at once: they are told so, and the board goes away for them. It also
+[resets the invite link](#reset-invite-link), so the link they hold leads nowhere. With a new link
+from someone, they knock again.
 
 `canvas serve` keeps the members in `.canvas/members.json`.
+
+### Reset invite link
+
+**Reset invite link**, at the bottom of **Members**, makes a new guest link and retires the old
+one. Removing a member does the same by itself. Members on the board move along without noticing,
+trust included; their address bar shows the new link, so a reload keeps them in. The host's tab
+moves too, and the host link from before still opens the board.
+
+Everyone else holding the old link is left behind, in a room nobody comes to: someone waiting in
+the lobby, a removed member, and members who aren't on the board right now. Send them the new
+link from **Copy guest link**. Members come in with it without knocking.
 
 ## Approvals
 
