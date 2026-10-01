@@ -27,6 +27,38 @@ jobs:
       - name: Stage the release package
         run: bun scripts/build-release.ts 0.0.0-development --smoke-test
 
+  # The e2e tests (`e2e/`): a host and a guest in Chromium against Vite, a
+  # `canvas relay` and a `canvas serve` per test.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Cache Playwright's Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - run: bunx playwright install --with-deps chromium
+
+      - run: bun run e2e
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
   # The `canvas relay` image (ADR 0008): it builds, and answers /health.
   relay-image:
     runs-on: ubuntu-latest
