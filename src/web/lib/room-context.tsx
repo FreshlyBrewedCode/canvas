@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
 
-import type { Presence, Room } from "./room";
+import type { Peer, Room } from "./room";
 
 export const RoomContext = createContext<Room | null>(null);
 
@@ -96,7 +96,7 @@ export function useTree() {
 }
 
 /** Everyone else's presence, re-read on every awareness change. */
-export function usePeers(): Presence[] {
+export function usePeers(): Peer[] {
   const room = useRoom();
   return useSyncExternalStore(
     (onChange) => room.subscribe("peers", onChange),

@@ -347,7 +347,9 @@ export type HostBroadcast =
   | AgentOptionsMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | FileMessage
-  | TreeMessage;
+  | TreeMessage
+  /** The fingerprints the host verified (ADR 0011), by peer id, the host's own included. */
+  | { readonly t: "identities"; readonly fingerprints: Readonly<Record<string, string>> };
 
 export interface FileMessage {
   readonly t: "file";

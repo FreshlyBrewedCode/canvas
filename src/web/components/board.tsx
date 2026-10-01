@@ -43,7 +43,7 @@ import {
 } from "@/lib/board";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
 import { guestLink, saveIdentity } from "@/lib/link";
-import type { Approval, Presence } from "@/lib/room";
+import type { Approval, Peer, Presence } from "@/lib/room";
 import {
   useApprovals,
   usePeers,
@@ -55,6 +55,7 @@ import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
+import { readable } from "../../shared/identity";
 import { MIN_H, MIN_W, type Beside, type Box, type ResolvedCluster } from "../../shared/layout";
 import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
 
@@ -578,6 +579,11 @@ function Pointers() {
               >
                 {peer.user.name}
                 {peer.user.host && " · host"}
+                {peer.fingerprint && (
+                  <span className="ml-1.5 font-mono font-normal opacity-70">
+                    {readable(peer.fingerprint)}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -618,7 +624,7 @@ function PeerMarkers({
             type="button"
             data-hud=""
             data-peer-marker={peer.user.name}
-            title={`${peer.user.name}${peer.user.host ? " (host)" : ""}: go there`}
+            title={`${who(peer)}: go there`}
             onClick={() => viewport.centreOn(target)}
             className="border-card absolute top-0 left-0 grid size-7 place-items-center rounded-full border-2 text-[11px] font-semibold shadow-md transition-transform duration-100 ease-linear"
             style={{
@@ -914,7 +920,8 @@ function TopBar({
                 type="button"
                 aria-pressed={on}
                 data-avatar={peer.user.name}
-                title={`${on ? "Stop following" : "Follow"} ${peer.user.name}${peer.user.host ? " (host)" : ""}`}
+                data-fingerprint={peer.fingerprint ?? ""}
+                title={`${on ? "Stop following" : "Follow"} ${who(peer)}`}
                 onClick={() => onFollow(peer.user.peerId)}
                 className="border-card grid size-6 place-items-center rounded-full border-2 text-[10px] font-semibold"
                 style={{
@@ -941,6 +948,13 @@ function TopBar({
             room.rename(identity);
           }}
         />
+        <span
+          data-fingerprint-self={room.fingerprint}
+          className="text-muted-foreground font-mono text-[11px]"
+          title="This browser's fingerprint: who you are to the others on the board"
+        >
+          {readable(room.fingerprint)}
+        </span>
         {room.isHost ? <AccessSelect /> : <AccessBadge access={room.roomState?.access} />}
         <Button
           size="sm"
@@ -956,6 +970,12 @@ function TopBar({
       </div>
     </header>
   );
+}
+
+/** Someone as a title names them: name, fingerprint if verified, host. */
+function who(peer: Peer) {
+  const fingerprint = peer.fingerprint ? readable(peer.fingerprint) : "not verified";
+  return `${peer.user.name} · ${fingerprint}${peer.user.host ? " (host)" : ""}`;
 }
 
 const ACCESS: Record<GuestAccess, string> = {

@@ -2718,6 +2718,52 @@ if (step === "pan") {
   check(await editor.isVisible(), "…and the drawing is still being edited");
   await shot(host, "131-pan-drawing");
 }
+// ADR 0011: each browser proves its key; the host tells everyone whose fingerprint each peer has.
+if (step === "identity") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const self = (page: Page) =>
+    page.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self");
+  /** The fingerprint `page` shows on `name`'s avatar once verified; null if it never is. */
+  const seen = (page: Page, name: string, expected: string | null) =>
+    page
+      .waitForFunction(
+        ([name, expected]) => {
+          const value = document
+            .querySelector(`[data-avatar="${name}"]`)
+            ?.getAttribute("data-fingerprint");
+          return value && (!expected || value === expected) ? value : null;
+        },
+        [name, expected] as const,
+        { timeout: 15000 },
+      )
+      .then((handle) => handle.jsonValue() as Promise<string>)
+      .catch(() => null);
+  const karl = (await self(host))!;
+  const ada = (await self(guest))!;
+  check(/^[0-9a-f]{32}$/.test(karl) && /^[0-9a-f]{32}$/.test(ada), `fingerprints ${karl}, ${ada}`);
+  check(karl !== ada, "host and guest have different keys");
+  check((await seen(host, "Ada", null)) === ada, "the host sees Ada's verified fingerprint");
+  check((await seen(guest, "Karl", null)) === karl, "the guest sees Karl's fingerprint");
+  const shown = await host.locator("[data-fingerprint-self]").innerText();
+  check(shown === `${karl.slice(0, 4)} ${karl.slice(4, 8)}`, `shown as "${shown}"`);
+  await shot(host, "identity-host");
+
+  // Reloads keep the key: the guest's, then the host's (new peer ids both times).
+  await guest.reload();
+  await guest.getByText("host online").waitFor({ timeout: 30000 });
+  check((await self(guest)) === ada, "the guest's fingerprint survives a reload");
+  check((await seen(host, "Ada", ada)) === ada, "the host verifies the reloaded guest");
+  check((await seen(guest, "Karl", karl)) === karl, "the reloaded guest sees Karl's");
+  await host.reload();
+  await host.getByText("connected to canvas serve").waitFor({ timeout: 15000 });
+  check((await self(host)) === karl, "the host's fingerprint survives a reload");
+  check((await seen(host, "Ada", ada)) === ada, "the reloaded host verifies Ada");
+  check((await seen(guest, "Karl", karl)) === karl, "the guest sees the reloaded host's");
+}
+
 if (step === "presence") {
   const check = (ok: boolean, what: string) => {
     console.log(`${ok ? "ok  " : "FAIL"} ${what}`);

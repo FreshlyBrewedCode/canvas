@@ -18,7 +18,9 @@
  *    to approve it.
  *
  * Guests only accept host traffic from the peer that proved it holds the
- * board's host key (see `host-key.ts`).
+ * board's host key (see `host-key.ts`). Every guest in turn proves its
+ * browser's key to the host (ADR 0011, `shared/identity.ts`), which tells
+ * everyone whose fingerprint each peer verified with.
  */
 
 import { selfId } from "trystero";
@@ -59,7 +61,9 @@ import { runBoardTool } from "./board-tools";
 import { drawingImage, prepareDrawCall } from "./drawing-kit";
 import type { ConnectionEvent, RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
-import { loadAuthorId, type BoardLink, type Identity, type RelayLink } from "./link";
+import { provePeer, type BrowserKey } from "./identity-key";
+import { type BoardLink, type Identity, type RelayLink } from "./link";
+import { PeerIdentities, type PeerIdentity, type PeerProof } from "../../shared/identity";
 import { ServerLink, type LinkStatus } from "./server-link";
 import { openTransport } from "./transport/open";
 import type { Transport } from "./transport/transport";
@@ -98,6 +102,11 @@ export interface Presence {
   readonly fullscreen?: string | null;
   /** Host only: the frames agents are working on. */
   readonly agents?: ReadonlyArray<AgentClaim>;
+}
+
+/** Someone else's presence, with the fingerprint the host verified for their peer, if any. */
+export interface Peer extends Presence {
+  readonly fingerprint: string | null;
 }
 
 /** A frame's occupant as one peer sees it. */
@@ -157,8 +166,8 @@ export class Room {
   readonly doc = new Y.Doc();
   readonly awareness = new Awareness(this.doc);
   readonly isHost: boolean;
-  /** Says which comments are ours (`comments.ts`). */
-  readonly authorId = loadAuthorId();
+  /** This browser's key's fingerprint (`identity-key.ts`); also says which comments are ours. */
+  readonly fingerprint: string;
   readonly selfId = selfId;
 
   roomState: RoomState | null = null;
@@ -166,7 +175,7 @@ export class Room {
   hostOnline = false;
   approvals: Approval[] = [];
   /** Everyone else's presence; a new array on every change. */
-  peerList: Presence[] = [];
+  peerList: Peer[] = [];
   /** What happened to the connection, and every error (`connection.ts`); a new array on every change. */
   log: ConnectionEvent[] = [];
   /** When we joined the room. */
@@ -183,6 +192,10 @@ export class Room {
   private readonly peerClients = new Map<string, Set<number>>();
   private readonly server: ServerLink | null = null;
   private hostPrivateKey: JsonWebKey | null = null;
+  /** Host: who each guest proved to be. */
+  private readonly identities: PeerIdentities;
+  /** Verified fingerprints by peer id: the host's own book, or as the host told us. */
+  private fingerprints: Readonly<Record<string, string>> = {};
   private transport: Transport | null = null;
   private actions: ReturnType<Room["makeActions"]> | null = null;
   private access: GuestAccess = "edit";
@@ -205,15 +218,17 @@ export class Room {
   constructor(
     readonly link: BoardLink,
     readonly identity: Identity,
+    private readonly key: BrowserKey,
   ) {
     this.isHost = link.host !== null;
+    this.fingerprint = key.fingerprint;
+    this.identities = new PeerIdentities(link.roomId);
     this.setPresence({ pointer: null, view: null, selection: null, focus: null });
     this.doc.on("update", (update: Uint8Array, origin: unknown) =>
       this.onDocUpdate(update, origin),
     );
     this.awareness.on("change", () => {
-      this.peerList = this.peers();
-      this.emit("peers");
+      this.refreshPeers();
       this.onFocusChange();
     });
     this.awareness.on("update", ({ added, updated, removed }: AwarenessChange, origin: unknown) =>
@@ -443,10 +458,12 @@ export class Room {
 
   private onAwareness(changed: number[], added: number[], origin: unknown) {
     if (typeof origin === "string" && origin !== "local" && origin !== "leave") {
-      // Remember which Yjs clients belong to which peer, to drop them on leave.
+      // Remember which Yjs clients belong to which peer, to drop them on leave
+      // and to know whose fingerprint they show.
       let set = this.peerClients.get(origin);
       if (!set) this.peerClients.set(origin, (set = new Set()));
       for (const id of added) set.add(id);
+      if (added.length) this.refreshPeers();
       return;
     }
     if (origin === "local" && this.actions) {
@@ -460,6 +477,7 @@ export class Room {
   private makeActions(transport: Transport) {
     return {
       hello: transport.channel("hello"),
+      identify: transport.channel("identify"),
       state: transport.channel("state"),
       broadcast: transport.channel("hostcast"),
       update: transport.channel<Uint8Array>("yupdate"),
@@ -500,6 +518,10 @@ export class Room {
       this.record({ level: "info", source: "peer", text: "peer left", peerId });
       removeAwarenessStates(this.awareness, [...(this.peerClients.get(peerId) ?? [])], "leave");
       this.peerClients.delete(peerId);
+      if (this.isHost) {
+        this.identities.forget(peerId);
+        this.publishIdentities();
+      }
       if (peerId === this.roomState?.hostPeerId && !this.isHost) {
         this.record({ level: "warn", source: "host", text: "host left", peerId });
         this.hostOnline = false;
@@ -513,7 +535,7 @@ export class Room {
     // The host's hello carries everything a guest needs to start, so nothing
     // arrives while the (async) signature check is still running.
     actions.hello.onMessage = async (message, { peerId }) => {
-      const { signature, state, vector } = message as unknown as Hello;
+      const { signature, state, vector, nonce } = message as unknown as Hello;
       if (this.isHost) return;
       if (!(await verifyHost(this.link.hostPublicKey, this.link.roomId, peerId, signature))) {
         this.record({
@@ -532,6 +554,24 @@ export class Room {
         target: peerId,
       });
       void actions.sync.send(Y.encodeStateVector(this.doc), { target: peerId });
+      const proof = await provePeer(this.key, this.link.roomId, selfId, nonce);
+      void actions.identify.send(json(proof), { target: peerId });
+    };
+
+    // A guest's answer to the nonce in our hello: who it is.
+    actions.identify.onMessage = async (proof, { peerId }) => {
+      if (!this.isHost) return;
+      const identity = await this.identities.prove(peerId, proof as unknown as PeerProof);
+      if (!identity) {
+        this.record({
+          level: "error",
+          source: "peer",
+          text: "a peer's proof of its browser key doesn't verify",
+          peerId,
+        });
+        return;
+      }
+      this.publishIdentities();
     };
 
     actions.state.onMessage = (state, { peerId }) => {
@@ -625,8 +665,34 @@ export class Room {
       signature: await signHost(this.hostPrivateKey, this.link.roomId, selfId),
       state: this.roomState,
       vector: [...Y.encodeStateVector(this.doc)],
+      nonce: this.identities.challenge(peerId),
     };
     await this.actions.hello.send(json(hello), { target: peerId });
+  }
+
+  /** Host: tell everyone the fingerprints we verified, ours included. */
+  private publishIdentities() {
+    this.setFingerprints(this.verifiedFingerprints());
+    this.hostcast({ t: "identities", fingerprints: this.fingerprints });
+  }
+
+  private verifiedFingerprints() {
+    return { ...this.identities.fingerprints(), [selfId]: this.fingerprint };
+  }
+
+  private setFingerprints(fingerprints: Readonly<Record<string, string>>) {
+    this.fingerprints = fingerprints;
+    this.refreshPeers();
+  }
+
+  /** The fingerprint `peerId` verified with; null if it hasn't (yet). */
+  fingerprintOf(peerId: string): string | null {
+    return this.fingerprints[peerId] ?? null;
+  }
+
+  /** Host: the key `peerId` proved it holds, if it has. */
+  verifiedPeer(peerId: string): PeerIdentity | undefined {
+    return this.identities.get(peerId);
   }
 
   /**
@@ -656,6 +722,7 @@ export class Room {
       ...(this.treePaths && this.access !== "view"
         ? [{ t: "tree" as const, paths: this.treePaths }]
         : []),
+      { t: "identities", fingerprints: this.verifiedFingerprints() },
     ];
     try {
       for (const message of messages)
@@ -707,6 +774,8 @@ export class Room {
         return this.putFile(message.path, message.file);
       case "tree":
         return this.putTree(message.paths);
+      case "identities":
+        return this.setFingerprints(message.fingerprints);
     }
   }
 
@@ -1060,6 +1129,8 @@ export class Room {
     const clients = [...this.peerClients.values()].flatMap((ids) => [...ids]);
     removeAwarenessStates(this.awareness, clients, "leave");
     this.peerClients.clear();
+    this.identities.clear();
+    this.fingerprints = {};
     for (const approval of [...this.approvals]) approval.resolve(false);
   }
 
@@ -1091,11 +1162,21 @@ export class Room {
     this.emit("room");
   }
 
-  private peers(): Presence[] {
+  private refreshPeers() {
+    this.peerList = this.peers();
+    this.emit("peers");
+  }
+
+  /** By the peer each Yjs client came from, not the peer id it claims in its presence. */
+  private peers(): Peer[] {
+    const peerOf = new Map<number, string>();
+    for (const [peerId, ids] of this.peerClients) for (const id of ids) peerOf.set(id, peerId);
     return [...this.awareness.getStates().entries()]
-      .filter(([id]) => id !== this.doc.clientID)
-      .map(([, state]) => state as Presence)
-      .filter((state) => state.user);
+      .filter(([id, state]) => id !== this.doc.clientID && (state as Presence).user)
+      .map(([id, state]) => {
+        const peerId = peerOf.get(id);
+        return { ...(state as Presence), fingerprint: peerId ? this.fingerprintOf(peerId) : null };
+      });
   }
 
   destroy() {
@@ -1123,6 +1204,8 @@ interface Hello {
   readonly signature: string;
   readonly state: RoomState;
   readonly vector: number[];
+  /** For the guest to sign, proving its browser key. */
+  readonly nonce: string;
 }
 
 interface AwarenessChange {
