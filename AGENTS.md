@@ -141,17 +141,26 @@ canvas
     from other devices: `CANVAS_DEV_HOST=<name>` in a local `.env`, a cert for it in
     `.certs/dev.{crt,key}`, then `serve --tls-host <name> --web-url https://<name>:4417`. Machine
     names and certs stay local, never in the repo
-  - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
-    a host (a paired browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the
-    first link must carry a pairing code — `canvas pair` — later ones need none) and a guest,
-    which the host admits when it knocks (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|lobby|trusted-session|presence-members|rotate|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
-    takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
-    `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
-    finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
-    `comments-agent` the repo of finding 13, `links` the one of finding 14, `relay` a `canvas relay`
-    and `serve --relay`, `rotate` p2p and each relay mode in turn, `pairing` a fresh pairing link (and `DIR=<project>` to try `canvas pair`); `IDLE_MS` gives slow agents longer than 4 min per
-    prompt)
+  - e2e: `bun run e2e` (Playwright test, through `nix develop` for its libs) — `e2e/tests/*.spec.ts`
+    on the fixtures of `e2e/fixtures.ts`: Vite and a `canvas relay` started for the run, each test
+    its own `canvas serve` on a copy of `e2e/projects/<name>` (`test.use({ project })`), the host's
+    tab, and a guest's on the guest link when the test asks for `guest`. `e2e/board.ts` reads and
+    sets up the board through the dev build's `window` hooks. One test per feature, `test.step`s
+    for its parts; `-g <title>` runs one
+  - `e2e/drive.ts <host link>`: the steps not yet moved to `e2e/tests/`. It drives a host (a paired
+    browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the first link must carry
+    a pairing code — `canvas pair` — later ones need none) and a guest, which the host admits when
+    it knocks (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|layout|arrange|
+    cluster-lines|fullscreen-presence|identity|pairing|lobby|trusted-session|presence-members|
+    rotate|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|
+    comments-agent|takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|
+    needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding
+    05, `tools`/`lines`/`scratch`/`lists` the one of finding 07, `focus`/`focus-agent` a long file
+    and a long markdown file, finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML
+    file and a loopback server, finding 09, `comments`/`comments-agent` the repo of finding 13,
+    `links` the one of finding 14, `relay` a `canvas relay` and `serve --relay`, `rotate` p2p and
+    each relay mode in turn, `pairing` a fresh pairing link (and `DIR=<project>` to try `canvas
+    pair`); `IDLE_MS` gives slow agents longer than 4 min per prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
     semantic-release reads. Every merge to `main` publishes `@frebreco/canvas@next` and deploys its

@@ -11,7 +11,7 @@ import { RoomContext } from "@/lib/room-context";
 // The browser's key is in IndexedDB: everything that says who we are waits for it.
 const link = readLink();
 const room = link ? new Room(link, loadIdentity(), await loadBrowserKey()) : null;
-// For e2e/drive.ts: the room, the frames with their derived rects, and moves over the tree.
+// For the e2e tests (`e2e/board.ts`): the room, the frames with their derived rects, and moves over the tree.
 if (room && import.meta.env.DEV)
   Object.assign(window, {
     room,

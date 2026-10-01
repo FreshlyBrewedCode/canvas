@@ -1,10 +1,30 @@
 {
-  "plugins": ["react", "jsx-a11y"],
-  "ignorePatterns": ["spikes", "dist"],
-  "categories": { "correctness": "error" },
+  "plugins": [
+    "react",
+    "jsx-a11y"
+  ],
+  "ignorePatterns": [
+    "spikes",
+    "dist",
+    "e2e/drive.ts",
+    "e2e/screenshots.ts"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
   "rules": {
     "react/react-in-jsx-scope": "off",
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn"
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "e2e/**"
+      ],
+      "rules": {
+        "react/rules-of-hooks": "off"
+      }
+    }
+  ]
 }
