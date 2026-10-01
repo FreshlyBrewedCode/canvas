@@ -6,9 +6,9 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Entry, Message } from "./cassette";
+import { scrub, type Entry, type Message } from "./cassette";
 import { Ids, withoutIds } from "./ids";
 
 const CASSETTE = join(import.meta.dir, "cassette.ts");
@@ -248,6 +248,14 @@ describe("replay", () => {
     );
     expect(run.result.stopReason).toContain("rerecord");
   });
+});
+
+test("scrub: no paths, users or accounts of the recording machine", () => {
+  expect(
+    scrub(
+      `{"cwd":"${homedir()}/x","email":"someone@example.org","canvas":"${join(import.meta.dir, "../..")}/skills"}`,
+    ),
+  ).toBe('{"cwd":"<home>/x","email":"user@example.com","canvas":"<canvas>/skills"}');
 });
 
 describe("record", () => {

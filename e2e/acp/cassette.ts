@@ -21,7 +21,8 @@
  * holds which are taken, and is the run's own.
  */
 import { appendFileSync, existsSync, openSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { homedir, userInfo } from "node:os";
+import { join, resolve } from "node:path";
 import { Ids, withoutIds } from "./ids";
 
 export type Rpc = {
@@ -38,6 +39,21 @@ export type McpCall = { dir: "mcp"; server: string; req: unknown; res: unknown }
 export type Entry = (Message | McpCall) & { t: number };
 
 type Server = { name: string; url: string; headers: Array<{ name: string; value: string }> };
+
+/**
+ * What a recording must not carry into the repo: where things are on the
+ * recording machine, whose it is, the agent's account (Claude Code reports
+ * its email). The same text out, whoever records.
+ */
+export function scrub(line: string): string {
+  const user = userInfo().username;
+  let out = line
+    .replaceAll(resolve(import.meta.dir, "../.."), "<canvas>")
+    .replaceAll(homedir(), "<home>")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "user@example.com");
+  if (user.length >= 3) out = out.replace(new RegExp(`\\b${RegExp.escape(user)}\\b`, "g"), "user");
+  return out;
+}
 
 /** How long a replay waits between the agent's messages at most, in ms. */
 const GAP = Number(process.env.CANVAS_REPLAY_GAP_MS ?? 25);
@@ -70,7 +86,7 @@ async function record(cassettes: string, state: string, kind: string, command: s
   const file = claim(cassettes, state, kind, false);
   const start = Date.now();
   const write = (entry: Message | McpCall) =>
-    appendFileSync(file, JSON.stringify({ t: Date.now() - start, ...entry }) + "\n");
+    appendFileSync(file, scrub(JSON.stringify({ t: Date.now() - start, ...entry })) + "\n");
 
   // The agent's MCP servers, behind a proxy that writes each call down.
   const servers: Server[] = [];

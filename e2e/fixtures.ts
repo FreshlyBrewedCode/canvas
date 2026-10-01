@@ -206,7 +206,9 @@ export async function open(
  */
 function agentWrapper(testInfo: TestInfo) {
   const mode = process.env.E2E_AGENTS ?? "replay";
-  if (mode === "live") return { env: {}, done: () => {} };
+  // A recording is as good as the model: Claude Code on Sonnet, not the account's default.
+  const live = { ANTHROPIC_MODEL: process.env.E2E_CLAUDE_MODEL ?? "sonnet" };
+  if (mode === "live") return { env: live, done: () => {} };
   if (mode !== "replay" && mode !== "record")
     throw new Error(`E2E_AGENTS is replay, record or live, not ${mode}`);
   const spec = basename(testInfo.file).replace(/\.spec\.ts$/, "");
@@ -223,7 +225,7 @@ function agentWrapper(testInfo: TestInfo) {
   const state = mkdtempSync(join(tmpdir(), "canvas-e2e-agents-"));
   const wrapper = ["bun", join(ROOT, "e2e/acp/cassette.ts"), mode, cassettes, state];
   return {
-    env: { CANVAS_AGENT_WRAPPER: JSON.stringify(wrapper) },
+    env: { CANVAS_AGENT_WRAPPER: JSON.stringify(wrapper), ...(mode === "record" && live) },
     done: () => rmSync(state, { recursive: true, force: true }),
   };
 }

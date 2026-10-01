@@ -26,6 +26,8 @@ export default defineConfig({
     baseURL: E2E.webUrl,
     viewport: { width: 1400, height: 900 },
     colorScheme: "dark",
+    // A click that can't happen fails, rather than waiting out the test.
+    actionTimeout: 15_000,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
