@@ -28,6 +28,11 @@
  * host lets it in; until then the host sends it nothing but its hello and
  * `lobby`, and refuses its updates, requests and presence. It isn't on the
  * member list, so no guest sends it presence or takes its own.
+ *
+ * Resetting the invite link (ADR 0011, decision 6, `handover.ts`): `canvas
+ * serve` mints a new room; the host hands it to the members that are in,
+ * sealed to each, and everyone moves there. Whoever else holds the old link —
+ * the lobby, removed members — stays behind in a room nobody comes to.
  */
 
 import { selfId } from "trystero";
@@ -49,6 +54,7 @@ import type {
   HostBroadcast,
   Member,
   MemberRole,
+  RoomSecrets,
   RoomState,
   ServerToClient,
   SignedMemberList,
@@ -74,7 +80,8 @@ import { drawingImage, prepareDrawCall } from "./drawing-kit";
 import type { ConnectionEvent, RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
 import { provePeer, type BrowserKey } from "./identity-key";
-import { forgetPairingCode, type BoardLink, type Identity, type RelayLink } from "./link";
+import { makeSealKey, openMove, sealMove, type Move, type SealedMove } from "./handover";
+import { forgetPairingCode, showLink, type BoardLink, type Identity, type RelayLink } from "./link";
 import { Members, nextVersion, signMembers } from "./member-list";
 import {
   PeerIdentities,
@@ -185,6 +192,8 @@ type Topic =
   | `file:${string}`;
 
 const APP_ID = "canvas-prototype-v1";
+/** Host, resetting the invite link: how long the members have to leave for the new room before we follow. */
+const MOVE_WAIT_MS = 3000;
 const LOG_LIMIT = 300;
 const TERM_SCROLLBACK = 200_000;
 const json = <T>(value: T) => value as never;
@@ -230,8 +239,8 @@ export class Room {
   private readonly peerClients = new Map<string, Set<number>>();
   private readonly server: ServerLink | null = null;
   private hostPrivateKey: JsonWebKey | null = null;
-  /** Host: who each guest proved to be. */
-  private readonly identities: PeerIdentities;
+  /** Host: who each guest proved to be, in this room. */
+  private identities: PeerIdentities;
   /** Host: who is in, who knocks. */
   private readonly admissions = new Admissions();
   /** Guests: the peer that proved it is the host. */
@@ -239,7 +248,7 @@ export class Room {
   /** Verified fingerprints by peer id: the host's own book, or as its member list says. */
   private fingerprints: Readonly<Record<string, string>> = {};
   /** Guests: the latest member list the host signed; whom presence goes to and comes from. */
-  private readonly memberList: Members;
+  private memberList: Members;
   /** Guests: the last presence of peers not on the list (yet): the list may come after it. */
   private readonly heldPresence = new Map<string, Uint8Array>();
   /** Host: the member list we signed last, and its version. */
@@ -262,12 +271,20 @@ export class Room {
   private agentClaims: AgentClaim[] = [];
   private relayStates = new Map<string, RelayInfo["state"]>();
   private relayWatch: ReturnType<typeof setInterval> | null = null;
+  /** This page's ECDH key: a new room is sealed to it (`handover.ts`). */
+  private readonly sealKey = makeSealKey();
+  /** Host: invite link resets, one after the other. */
+  private moving: Promise<void> = Promise.resolve();
+  private current: BoardLink;
+  /** Host: the room being handed over, until we are there. */
+  private next: BoardLink | null = null;
 
   constructor(
-    readonly link: BoardLink,
+    link: BoardLink,
     readonly identity: Identity,
     private readonly key: BrowserKey,
   ) {
+    this.current = link;
     this.isHost = link.host !== null;
     this.fingerprint = key.fingerprint;
     this.identities = new PeerIdentities(link.roomId);
@@ -292,7 +309,7 @@ export class Room {
         async (nonce) => ({
           t: "auth",
           publicKey: key.publicKey,
-          signature: await key.sign(ownerStatement(link.roomId, nonce)),
+          signature: await key.sign(ownerStatement(link.hostPublicKey, nonce)),
           ...(pair && { pair }),
         }),
         (message) => {
@@ -326,6 +343,11 @@ export class Room {
     } else {
       this.join();
     }
+  }
+
+  /** The room we are in: the link's, until the invite link is reset. */
+  get link(): BoardLink {
+    return this.current;
   }
 
   // -------------------------------------------------------------------------
@@ -626,7 +648,15 @@ export class Room {
       this.hostPeer = peerId;
       this.hostOnline = true;
       this.emit("room");
-      const proof = await provePeer(this.key, this.link.roomId, selfId, nonce);
+      const proof = await provePeer(
+        this.key,
+        this.link.roomId,
+        selfId,
+        nonce,
+        (await this.sealKey).publicKey,
+      );
+      // We moved meanwhile: the new room's host asks again.
+      if (this.transport !== room) return;
       const { name, color } = this.identity;
       void actions.identify.send(json({ ...proof, name, color } satisfies Identify), {
         target: peerId,
@@ -637,7 +667,9 @@ export class Room {
     actions.identify.onMessage = async (message, { peerId }) => {
       if (!this.isHost || this.admissions.isDropped(peerId)) return;
       const proof = message as unknown as Identify;
-      const identity = await this.identities.prove(peerId, proof);
+      const identities = this.identities;
+      const identity = await identities.prove(peerId, proof);
+      if (identities !== this.identities) return;
       if (!identity) {
         this.record({
           level: "error",
@@ -765,13 +797,13 @@ export class Room {
 
   /** Host: prove who we are to a new peer, and ask it who it is. */
   private async greet(peerId: string) {
-    if (!this.actions || !this.hostPrivateKey) return;
+    const actions = this.actions;
+    if (!actions || !this.hostPrivateKey) return;
     if (!this.roomState || this.admissions.isDropped(peerId)) return;
-    const hello: Hello = {
-      signature: await signHost(this.hostPrivateKey, this.link.roomId, selfId),
-      nonce: this.identities.challenge(peerId),
-    };
-    await this.actions.hello.send(json(hello), { target: peerId });
+    const nonce = this.identities.challenge(peerId);
+    const signature = await signHost(this.hostPrivateKey, this.link.roomId, selfId);
+    if (this.actions !== actions) return;
+    await actions.hello.send(json({ signature, nonce } satisfies Hello), { target: peerId });
   }
 
   /**
@@ -903,6 +935,8 @@ export class Room {
       case "denied":
       case "removed":
         return this.leaveRoom(message.t);
+      case "moved":
+        return void this.onMoved(message);
     }
     this.emit("room");
   }
@@ -918,13 +952,7 @@ export class Room {
     this.access = null;
     this.roomState = null;
     this.hostOnline = false;
-    this.transport?.leave();
-    this.transport = null;
-    this.actions = null;
-    this.joinedAt = null;
-    const clients = [...this.peerClients.values()].flatMap((ids) => [...ids]);
-    removeAwarenessStates(this.awareness, clients, "leave");
-    this.peerClients.clear();
+    this.leaveTransport();
     this.sessions.clear();
     this.terminals.clear();
     this.files.clear();
@@ -972,9 +1000,116 @@ export class Room {
     this.emit("members");
   }
 
-  /** Host: a member is out, at once; coming again is knocking again. */
+  /**
+   * Host: a member is out, at once; coming again is knocking again. `canvas
+   * serve` resets the invite link too: the link they hold leads nowhere.
+   */
   removeMember(fingerprint: string) {
     this.server?.send({ t: "member-remove", fingerprint });
+  }
+
+  /** Host: a new invite link (decision 6). Members here move along; links from before lead nowhere. */
+  resetInviteLink() {
+    this.server?.send({ t: "room-reset" });
+  }
+
+  /**
+   * Host: `canvas serve` minted a new room. Each member that is in gets it,
+   * sealed to its own seal key; once they left for it, or a moment passed,
+   * we follow. Nobody else is told.
+   */
+  private async move(secrets: RoomSecrets, relay: WelcomeRelay | null) {
+    const from = this.link;
+    const next: BoardLink = { ...from, roomId: secrets.roomId, key: secrets.key };
+    this.next = next;
+    this.relaySetup = relay;
+    this.emit("room");
+    const { actions, transport, hostPrivateKey } = this;
+    if (actions && transport && hostPrivateKey) {
+      const move: Move = { roomId: next.roomId, key: next.key, relay: this.guestRelay() };
+      const moving = this.admissions.moving();
+      this.record({
+        level: "info",
+        source: "relay",
+        text: `the invite link was reset: ${moving.length} member${moving.length === 1 ? "" : "s"} move along`,
+      });
+      await Promise.allSettled(
+        moving.map(async ({ peerId, sealKey }) => {
+          const sealed = await sealMove(hostPrivateKey, from.roomId, peerId, sealKey, move);
+          await actions.admission.send(json({ t: "moved", ...sealed } satisfies Admission), {
+            target: peerId,
+          });
+        }),
+      );
+      // Leaving closes the channels: what we sent must arrive first.
+      const end = Date.now() + MOVE_WAIT_MS;
+      while (Date.now() < end && moving.some(({ peerId }) => transport.peers().includes(peerId)))
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    this.relocate(next);
+  }
+
+  /**
+   * Guests: the host handed us the new room. If it opens with our seal key
+   * and the host signed it for us, we go there; the host follows.
+   */
+  private async onMoved(sealed: SealedMove) {
+    const { link, hostPeer, transport } = this;
+    const move = await openMove(
+      await this.sealKey,
+      link.hostPublicKey,
+      link.roomId,
+      selfId,
+      sealed,
+    );
+    if (this.transport !== transport || this.hostPeer !== hostPeer || !transport) return;
+    if (!move)
+      return this.record({
+        level: "error",
+        source: "host",
+        text: "a handover to a new room didn't open with our key, or the host didn't sign it",
+      });
+    this.record({ level: "info", source: "host", text: "the invite link was reset: moving along" });
+    this.relocate({ ...link, roomId: move.roomId, key: move.key, relay: move.relay });
+  }
+
+  /**
+   * Into the room `next` names. The old room's peers are gone; who is in
+   * comes again there, and the address bar shows it, so a reload comes back.
+   * A guest stays in meanwhile: its board stays up, waiting for the host.
+   */
+  private relocate(next: BoardLink) {
+    const joined = this.transport !== null;
+    this.leaveTransport();
+    this.current = next;
+    this.next = null;
+    showLink(next);
+    this.identities = new PeerIdentities(next.roomId);
+    this.memberList = new Members(next.roomId, next.hostPublicKey, selfId);
+    this.heldPresence.clear();
+    this.setFingerprints({});
+    if (this.isHost) {
+      this.admissions.moved();
+      this.signedList = null;
+      for (const approval of [...this.approvals]) approval.resolve(false);
+      this.refreshKnocks();
+    } else {
+      this.hostPeer = null;
+      this.hostOnline = false;
+    }
+    this.emit("room");
+    if (joined) this.join();
+  }
+
+  /** Out of the room's transport: nobody's presence stays. */
+  private leaveTransport() {
+    this.transport?.leave();
+    this.transport = null;
+    this.actions = null;
+    this.joinedAt = null;
+    const clients = [...this.peerClients.values()].flatMap((ids) => [...ids]);
+    removeAwarenessStates(this.awareness, clients, "leave");
+    this.peerClients.clear();
   }
 
   private setFingerprints(fingerprints: Readonly<Record<string, string>>) {
@@ -1186,6 +1321,10 @@ export class Room {
       case "welcome": {
         this.hostPrivateKey = message.room.hostPrivateKey;
         this.relaySetup = message.relay ?? null;
+        // The invite link was reset since this link was made: the room is `canvas serve`'s.
+        const { roomId, key } = message.room;
+        if (roomId !== this.link.roomId || key !== this.link.key)
+          this.relocate({ ...this.link, roomId, key });
         if (message.board)
           Y.applyUpdate(
             this.doc,
@@ -1213,6 +1352,19 @@ export class Room {
       }
       case "members":
         return this.setMembers(message.members);
+      case "room": {
+        const { room, relay } = message;
+        this.moving = this.moving
+          .then(() => this.move(room, relay))
+          .catch((error: unknown) =>
+            this.record({
+              level: "error",
+              source: "serve",
+              text: `resetting the invite link: ${error}`,
+            }),
+          );
+        return;
+      }
       case "agent-meta":
         this.putMeta(message.meta);
         // Its turn is over: it leaves the frame it worked on.
@@ -1431,6 +1583,11 @@ export class Room {
     });
   }
 
+  /** The room guest links name: after a reset, the new one at once, while members move there. */
+  inviteRoom(): BoardLink {
+    return this.next ?? this.current;
+  }
+
   /** The relay guest links name, with the guest token; null for a board without one. */
   guestRelay(): RelayLink | null {
     if (!this.isHost) return this.link.relay;
@@ -1453,14 +1610,8 @@ export class Room {
    * that has `canvas serve`; the next welcome joins it again.
    */
   private stepDown() {
-    this.transport?.leave();
-    this.transport = null;
-    this.joinedAt = null;
+    this.leaveTransport();
     this.record({ level: "info", source: "relay", text: "left the room: another tab is the host" });
-    this.actions = null;
-    const clients = [...this.peerClients.values()].flatMap((ids) => [...ids]);
-    removeAwarenessStates(this.awareness, clients, "leave");
-    this.peerClients.clear();
     this.identities.clear();
     this.admissions.clear();
     this.refreshKnocks();

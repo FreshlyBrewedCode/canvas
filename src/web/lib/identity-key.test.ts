@@ -72,16 +72,23 @@ describe("fingerprint", () => {
 });
 
 describe("join statement", () => {
-  test("names the room, the peer and the nonce", () => {
-    expect(peerStatement("room-1", "peer-a", "n0")).toBe("canvas-peer:room-1:peer-a:n0");
+  test("names the room, the peer, the nonce and the seal key", () => {
+    expect(peerStatement("room-1", "peer-a", "n0", "s")).toBe("canvas-peer:room-1:peer-a:n0:s");
   });
 
   test("a peer's proof verifies, and the host knows its fingerprint", async () => {
     const key = await loadBrowserKey(memoryStore());
     const book = new PeerIdentities("room-1");
     const nonce = book.challenge("peer-a");
-    const identity = await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", nonce));
-    expect(identity).toEqual({ publicKey: key.publicKey, fingerprint: key.fingerprint });
+    const identity = await book.prove(
+      "peer-a",
+      await provePeer(key, "room-1", "peer-a", nonce, "seal"),
+    );
+    expect(identity).toEqual({
+      publicKey: key.publicKey,
+      fingerprint: key.fingerprint,
+      sealKey: "seal",
+    });
     expect(book.get("peer-a")?.fingerprint).toBe(key.fingerprint);
     expect(book.fingerprints()).toEqual({ "peer-a": key.fingerprint });
   });
@@ -91,16 +98,21 @@ describe("join statement", () => {
     const other = await loadBrowserKey(memoryStore());
     const forgeries = [
       // Signed for another peer id, another room, another nonce.
-      (nonce: string) => provePeer(key, "room-1", "peer-b", nonce),
-      (nonce: string) => provePeer(key, "room-2", "peer-a", nonce),
-      () => provePeer(key, "room-1", "peer-a", "stale"),
+      (nonce: string) => provePeer(key, "room-1", "peer-b", nonce, "seal"),
+      (nonce: string) => provePeer(key, "room-2", "peer-a", nonce, "seal"),
+      () => provePeer(key, "room-1", "peer-a", "stale", "seal"),
       // Someone else's key, claimed as ours.
       async (nonce: string) => ({
-        ...(await provePeer(other, "room-1", "peer-a", nonce)),
+        ...(await provePeer(other, "room-1", "peer-a", nonce, "seal")),
         publicKey: key.publicKey,
       }),
+      // Another seal key than the one signed: someone in between swapped it.
+      async (nonce: string) => ({
+        ...(await provePeer(key, "room-1", "peer-a", nonce, "seal")),
+        sealKey: "theirs",
+      }),
       // Not a signature at all.
-      async () => ({ publicKey: key.publicKey, signature: "x" }),
+      async () => ({ publicKey: key.publicKey, signature: "x", sealKey: "seal" }),
     ];
     for (const forge of forgeries) {
       const book = new PeerIdentities("room-1");
@@ -115,12 +127,14 @@ describe("join statement", () => {
     const book = new PeerIdentities("room-1");
     const old = book.challenge("peer-a");
     const nonce = book.challenge("peer-a");
-    expect(await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", old))).toBeNull();
-    const proof = await provePeer(key, "room-1", "peer-a", nonce);
+    expect(
+      await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", old, "seal")),
+    ).toBeNull();
+    const proof = await provePeer(key, "room-1", "peer-a", nonce, "seal");
     // The failed try used the nonce up.
     expect(await book.prove("peer-a", proof)).toBeNull();
     const fresh = book.challenge("peer-a");
-    const replay = await provePeer(key, "room-1", "peer-a", fresh);
+    const replay = await provePeer(key, "room-1", "peer-a", fresh, "seal");
     expect(await book.prove("peer-a", replay)).not.toBeNull();
     expect(await book.prove("peer-a", replay)).toBeNull();
   });
@@ -129,7 +143,7 @@ describe("join statement", () => {
     const key = await loadBrowserKey(memoryStore());
     const book = new PeerIdentities("room-1");
     const nonce = book.challenge("peer-a");
-    await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", nonce));
+    await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", nonce, "seal"));
     book.forget("peer-a");
     expect(book.get("peer-a")).toBeUndefined();
     expect(book.fingerprints()).toEqual({});
@@ -138,7 +152,9 @@ describe("join statement", () => {
   test("an unasked proof is refused", async () => {
     const key = await loadBrowserKey(memoryStore());
     const book = new PeerIdentities("room-1");
-    expect(await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", "n"))).toBeNull();
+    expect(
+      await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", "n", "seal")),
+    ).toBeNull();
   });
 });
 
@@ -146,7 +162,7 @@ describe("peers that come and go", () => {
   test("a proof still being checked when its peer leaves doesn't count", async () => {
     const key = await loadBrowserKey(memoryStore());
     const book = new PeerIdentities("room-1");
-    const proof = await provePeer(key, "room-1", "peer-a", book.challenge("peer-a"));
+    const proof = await provePeer(key, "room-1", "peer-a", book.challenge("peer-a"), "seal");
     const checking = book.prove("peer-a", proof);
     book.forget("peer-a");
     expect(await checking).toBeNull();
@@ -156,11 +172,14 @@ describe("peers that come and go", () => {
   test("a peer that comes back under its id proves itself again", async () => {
     const key = await loadBrowserKey(memoryStore());
     const book = new PeerIdentities("room-1");
-    await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", book.challenge("peer-a")));
+    await book.prove(
+      "peer-a",
+      await provePeer(key, "room-1", "peer-a", book.challenge("peer-a"), "seal"),
+    );
     book.forget("peer-a");
     const nonce = book.challenge("peer-a");
     expect(
-      await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", nonce)),
+      await book.prove("peer-a", await provePeer(key, "room-1", "peer-a", nonce, "seal")),
     ).not.toBeNull();
   });
 });

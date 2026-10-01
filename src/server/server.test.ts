@@ -1,11 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { KEY_ALGORITHM, SIGNATURE, ownerStatement, toBase64Url } from "../shared/identity";
 import { AUTH_REFUSED, HOST_REPLACED, type ServerToClient } from "../shared/protocol";
-import { serve } from "./server";
+import { relayRoom } from "../shared/relay-room";
+import { verifyRelayToken } from "./relay-token";
+import { serve, type ServeRelay } from "./server";
 
 const until = async (what: string, test: () => boolean) => {
   const end = Date.now() + 3000;
@@ -35,10 +37,10 @@ interface Tab {
 }
 const got = (tab: Tab, t: ServerToClient["t"]) => tab.received.some((m) => m.t === t);
 
-async function start() {
+async function start(relay?: ServeRelay) {
   const dir = mkdtempSync(join(tmpdir(), "canvas-server-"));
   writeFileSync(join(dir, "README.md"), "# hi\n");
-  const served = await serve({ dir, port: 0, hostname: "127.0.0.1" });
+  const served = await serve({ dir, port: 0, hostname: "127.0.0.1", ...(relay && { relay }) });
   afterAll(() => void served.server.stop(true));
   /** A socket that hasn't answered anything yet, once challenged. */
   const open = async (): Promise<Tab> => {
@@ -53,14 +55,14 @@ async function start() {
     return tab;
   };
   /** Answer the challenge with `key` (and a pairing code). */
-  const answer = async (tab: Tab, key: Key, pair?: string, roomId = served.room.roomId) => {
+  const answer = async (tab: Tab, key: Key, pair?: string, board = served.room.hostPublicKey) => {
     const challenge = tab.received.find((m) => m.t === "challenge")!;
     if (challenge.t !== "challenge") throw new Error("no challenge");
     tab.ws.send(
       JSON.stringify({
         t: "auth",
         publicKey: key.publicKey,
-        signature: await key.sign(ownerStatement(roomId, challenge.nonce)),
+        signature: await key.sign(ownerStatement(board, challenge.nonce)),
         ...(pair && { pair }),
       }),
     );
@@ -107,8 +109,8 @@ describe("pairing and the challenge", async () => {
     tab.ws.close();
   });
 
-  test("a signature for another room is refused", async () => {
-    const tab = await answer(await open(), owner, undefined, "other-room");
+  test("a signature for another board is refused", async () => {
+    const tab = await answer(await open(), owner, undefined, "other-board");
     expect(tab.closed).toBe(AUTH_REFUSED);
   });
 
@@ -186,5 +188,66 @@ describe("members", async () => {
     );
     await until("error", () => got(host, "error"));
     expect(lists().at(-1)).toEqual([]);
+  });
+});
+
+describe("resetting the invite link", async () => {
+  const issuer = { name: "team", secret: "s3cret" };
+  const relay: ServeRelay = { url: "wss://relay.example", via: "transport", issuer };
+  const { open, answer, pairing, room: first, dir } = await start(relay);
+  const owner = await browserKey();
+  const host = await answer(await open(), owner, pairing!);
+  const issuers = new Map([[issuer.name, issuer.secret]]);
+  const roomOf = (token: string) => {
+    const check = verifyRelayToken(token, issuers);
+    return check.ok ? check.token.room : null;
+  };
+  const rooms = () => host.received.flatMap((m) => (m.t === "room" ? [m] : []));
+  const saved = () => JSON.parse(readFileSync(join(dir, ".canvas", "room.json"), "utf8"));
+
+  test("mints a new room id and key, keeps the host key, saves it and tells the host tab", async () => {
+    host.ws.send(JSON.stringify({ t: "room-reset" }));
+    await until("room", () => rooms().length === 1);
+    const { room, relay } = rooms()[0]!;
+    expect(room.roomId).not.toBe(first.roomId);
+    expect(room.key).not.toBe(first.key);
+    expect(room.hostPublicKey).toBe(first.hostPublicKey);
+    expect(room.hostPrivateKey).toEqual(first.hostPrivateKey);
+    expect(saved()).toEqual(room);
+    // The relay room comes from the key: new tokens, for the new one.
+    const welcome = host.received.find((m) => m.t === "welcome");
+    if (welcome?.t !== "welcome") throw new Error("no welcome");
+    expect(roomOf(welcome.relay!.guestToken)).toBe(await relayRoom(first.key));
+    expect(roomOf(relay!.guestToken)).toBe(await relayRoom(room.key));
+    expect(roomOf(relay!.hostToken)).toBe(await relayRoom(room.key));
+  });
+
+  test("the host link from before still opens it, in the new room", async () => {
+    const tab = await answer(await open(), owner);
+    const welcome = tab.received.find((m) => m.t === "welcome");
+    expect(welcome?.t === "welcome" && welcome.room.roomId).toBe(saved().roomId);
+    tab.ws.close();
+  });
+
+  test("removing a member resets it too, after the member list", async () => {
+    const again = await answer(await open(), owner);
+    const guest = await browserKey();
+    again.ws.send(
+      JSON.stringify({ t: "member-admit", publicKey: guest.publicKey, name: "Ada", role: "edit" }),
+    );
+    await until("admitted", () => again.received.filter((m) => m.t === "members").length === 1);
+    const before = saved().roomId;
+    const members = again.received.find((m) => m.t === "members");
+    const fingerprint = members?.t === "members" ? members.members[0]!.fingerprint : "";
+    again.ws.send(JSON.stringify({ t: "member-remove", fingerprint }));
+    await until("room", () => got(again, "room"));
+    const order = again.received.map((m) => m.t).filter((t) => t === "members" || t === "room");
+    expect(order).toEqual(["members", "members", "room"]);
+    expect(saved().roomId).not.toBe(before);
+    // Nobody to remove: nothing changes.
+    again.ws.send(JSON.stringify({ t: "member-remove", fingerprint }));
+    await Bun.sleep(100);
+    expect(again.received.filter((m) => m.t === "room")).toHaveLength(1);
+    again.ws.close();
   });
 });

@@ -173,8 +173,12 @@ export type FileContent =
 // Host browser ⇄ server (JSON over one WebSocket)
 
 export interface RoomSecrets {
+  /** The trystero room peers meet in. A new one, with a new key, when the invite link is reset. */
   readonly roomId: string;
-  /** trystero room password — peers without it cannot even decrypt signalling. */
+  /**
+   * trystero room password — peers without it cannot even decrypt signalling.
+   * On a relay, the relay room and the seal of every message come from it too.
+   */
   readonly key: string;
   /** ECDSA P-256 public key (base64url raw point); guests verify the host with it. */
   readonly hostPublicKey: string;
@@ -273,7 +277,10 @@ export type ClientToServer =
       readonly role: MemberRole;
     }
   | { readonly t: "member-role"; readonly fingerprint: string; readonly role: MemberRole }
-  | { readonly t: "member-remove"; readonly fingerprint: string };
+  /** Removing a member resets the invite link too (`room`). */
+  | { readonly t: "member-remove"; readonly fingerprint: string }
+  /** Reset the invite link (ADR 0011, decision 6): a new room id and key. */
+  | { readonly t: "room-reset" };
 
 /** An image a board tool shows the agent, e.g. a drawing (ADR 0009). */
 export interface ToolImage {
@@ -301,6 +308,15 @@ export type ServerToClient =
     }
   /** The member list, after every change. */
   | { readonly t: "members"; readonly members: ReadonlyArray<Member> }
+  /**
+   * The invite link was reset: the board's new room, saved already, and its
+   * relay's tokens for it. The host tab hands it to the members in, and goes there.
+   */
+  | {
+      readonly t: "room";
+      readonly room: RoomSecrets;
+      readonly relay: WelcomeRelay | null;
+    }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage
@@ -381,7 +397,12 @@ export type Admission =
   /** Not let in; the host drops this peer. */
   | { readonly t: "denied" }
   /** No longer a member; the host drops this peer. Coming again is knocking again. */
-  | { readonly t: "removed" };
+  | { readonly t: "removed" }
+  /**
+   * The invite link was reset (decision 6): the new room, sealed to this
+   * member's seal key and signed by the host (`web/lib/handover.ts`). Go there.
+   */
+  | { readonly t: "moved"; readonly from: string; readonly iv: string; readonly data: string };
 
 export interface RoomState {
   readonly hostPeerId: string;
