@@ -76,6 +76,34 @@ const guest = await open(guestLink, "Ada", "#3b82f6");
 await guest.getByText("host online").waitFor({ timeout: 30000 });
 console.log("guest sees host");
 
+/**
+ * The guest link is an invite (ADR 0011): a browser the host doesn't know
+ * knocks, and the host lets it in. A member's browser comes straight in.
+ */
+async function letIn(page: Page, name: string, role: "view" | "edit" = "edit") {
+  const knock = host.locator(`[data-knock="${name}"]`).first();
+  const board = page.locator("[data-board]");
+  // Two pages: no locator waits for either.
+  const end = Date.now() + 30000;
+  while (!(await knock.isVisible()) && !(await board.isVisible()) && Date.now() < end)
+    await page.waitForTimeout(250);
+  if (await knock.isVisible())
+    await knock.getByRole("button", { name: role === "edit" ? "Admit to edit" : "Admit to view" }).click();
+  await board.waitFor({ timeout: 30000 });
+}
+/** The host sets what `page`'s browser (a member) may do, and waits until it knows. */
+async function setRole(role: "view" | "edit", page: Page = guest) {
+  const fingerprint = await page.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self");
+  await host.locator("[data-members-button]").click();
+  await host.locator(`[data-member][data-fingerprint="${fingerprint}"] select`).selectOption(role);
+  await host.keyboard.press("Escape");
+  await page.locator(`[data-access="${role}"]`).waitFor({ timeout: 10000 });
+}
+if (step !== "lobby") {
+  await letIn(guest, "Ada");
+  console.log("guest let in");
+}
+
 /** The host answers every tool permission the agent asks for until it goes idle. */
 /** Until the agent is idle: `id`'s frame, else the last agent frame. */
 async function approveUntilIdle(host: Page, guest: Page, id?: string | null) {
@@ -544,7 +572,7 @@ if (step === "files") {
   await shot(host, "26-host-tree-hidden");
 
   // View-only guests see open files, but get no tree.
-  await host.getByLabel("Guest access").selectOption("view");
+  await setRole("view");
   await pick(host, "docs/adr/0001-host-relayed-star-topology.md").catch(async () => {
     await frameOf(host).getByTitle("Show files").click();
     await pick(host, "docs/adr/0001-host-relayed-star-topology.md");
@@ -561,7 +589,7 @@ if (step === "files") {
     await frameOf(guest).getByRole("treeitem").count(),
   );
   await shot(guest, "27-view-guest");
-  await host.getByLabel("Guest access").selectOption("edit");
+  await setRole("edit");
 }
 /** The board's frames as the host's doc has them, with their rects (derived: ADR 0010). */
 const framesOf = (page: Page): Promise<Array<Record<string, any>>> =>
@@ -1752,7 +1780,7 @@ if (step === "lists") {
   await wait();
 
   // A view guest sees the list, can't click through it, and gets no full tree.
-  await host.getByLabel("Guest access").selectOption("view");
+  await setRole("view");
   await wait(1500);
   const other = list.find((e) => e.display !== pick.display)!;
   check((await rows(guest)).length === list.length, "view guest: sees the list");
@@ -1765,7 +1793,7 @@ if (step === "lists") {
   check((await selectedRow(guest)) === pick.display, "view guest: the selection snaps back");
   check((await frameOf(guest).getByTitle("Show all files").count()) === 0, "view guest: no full tree");
   await frameOf(guest).screenshot({ path: `${out}/83-${kind}-view-guest-list.png` });
-  await host.getByLabel("Guest access").selectOption("edit");
+  await setRole("edit");
 }
 
 // Comments on a file frame (ADR 0006): people write them from the gutter,
@@ -1937,13 +1965,13 @@ if (step === "comments") {
   check((await card(guest, "guest note").count()) === 0, "the host deletes the guest's comment");
 
   // View guests read comments, but can't write them.
-  await host.getByLabel("Guest access").selectOption("view");
+  await setRole("view");
   await wait(1500);
   const box = (await frameOf(guest).locator('[data-line="30"]').first().boundingBox())!;
   await guest.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 3 });
   await wait(300);
   check((await frameOf(guest).locator("[data-utility-button]").count()) === 0, "view guest: no +");
-  await host.getByLabel("Guest access").selectOption("edit");
+  await setRole("edit");
 
   // Comments are the frame's: a new frame has none, and they go with it.
   await frameOf(host).locator('[role=treeitem][data-item-path="src/values.ts"]').waitFor();
@@ -2388,6 +2416,7 @@ if (step === "relay") {
   await guarded.goto(guestLink);
   await guarded.getByText("host online").waitFor({ timeout: 30000 });
   check(true, "a guest without Nostr" + (via === "transport" ? " or WebRTC" : "") + " reaches the host");
+  await letIn(guarded, "Locked");
 
   const fromHost = await addFrame(host, "Files");
   const hostFrameId = await fromHost.getAttribute("data-frame");
@@ -2398,17 +2427,22 @@ if (step === "relay") {
   await host.locator(`[data-frame="${guestFrameId}"]`).waitFor({ timeout: 10000 });
   check(true, "its board edit reaches the host");
 
-  // A request: typing into a terminal runs on the host's machine.
-  await host.getByLabel("Guest access").selectOption("trusted");
+  // A terminal's output reaches it, and a request (one needing no approval) gets its answer.
   const term = await addFrame(host, "Terminal");
   const termId = await term.getAttribute("data-frame");
   await guarded.locator(`[data-frame="${termId}"] .xterm`).waitFor({ timeout: 10000 });
   await new Promise((r) => setTimeout(r, 1500));
-  await guarded.locator(`[data-frame="${termId}"] .xterm`).click();
-  await guarded.keyboard.type("echo relay-$((6*7))\n");
-  await host.locator(`[data-frame="${termId}"]`).getByText("relay-42").first().waitFor({ timeout: 15000 });
+  await host.locator(`[data-frame="${termId}"] .xterm`).click();
+  await host.keyboard.type("echo relay-$((6*7))\n");
   await guarded.locator(`[data-frame="${termId}"]`).getByText("relay-42").first().waitFor({ timeout: 15000 });
-  check(true, "its terminal input runs on the host, and the output comes back");
+  check(true, "terminal output comes to it");
+  const answer = await guarded.evaluate(() =>
+    (window as any).room.act({ t: "agent-cancel", sessionId: "none" }).then(
+      () => "ok",
+      (e: Error) => e.message,
+    ),
+  );
+  check(answer === "ok", `its request runs on the host, and the answer comes back (${answer})`);
   await guarded.locator("[data-connection-indicator]").click();
   await headline(guarded).waitFor();
   await guarded.waitForTimeout(500);
@@ -2544,7 +2578,7 @@ if (step === "drawing") {
   check(near(before.width / after.width, 1.25), "the picture zooms with the board");
 
   // View guests look, but don't draw.
-  await host.getByLabel("Guest access").selectOption("view");
+  await setRole("view");
   await guest.waitForTimeout(1500);
   check(
     (await guest.locator(`[data-frame="${id}"] [data-drawing-edit]`).count()) === 0,
@@ -2553,7 +2587,7 @@ if (step === "drawing") {
   await guest.locator(`[data-frame="${id}"] [data-drawing]`).dblclick();
   await guest.waitForTimeout(800);
   check((await guest.locator("[data-drawing-editor]").count()) === 0, "nor an editor on double-click");
-  await host.getByLabel("Guest access").selectOption("edit");
+  await setRole("edit");
 
   // Removing the frame clears its drawing.
   await host.locator(`[data-frame="${id}"]`).getByTitle("Remove frame").click();
@@ -2799,6 +2833,112 @@ if (step === "pan") {
   check(panned(d), `middle drag over a terminal pans (${d.dx},${d.dy})…`);
   check(await editor.isVisible(), "…and the drawing is still being edited");
   await shot(host, "131-pan-drawing");
+}
+// Members and the lobby (ADR 0011, decision 2): the guest link is an invite.
+// A browser the host doesn't know waits, with nothing of the board; the host
+// admits it, removes it (cut off at once, a new knock if it comes again),
+// denies it, and admits it to view.
+if (step === "lobby") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const lobby = (state: string) => guest.locator(`[data-lobby="${state}"]`);
+  const knock = host.locator('[data-knock="Ada"]').first();
+  const ada = (await guest.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self"))!;
+  const marker = () => `lobby-${Math.random().toString(36).slice(2, 8)}`;
+  /**
+   * Set a key in the doc from `page`; whether `other`'s doc has it 1.5 s later.
+   * A guest sends it even if it isn't let in: the host is what refuses it.
+   */
+  const reaches = async (page: Page, other: Page) => {
+    const key = marker();
+    await page.evaluate((k) => {
+      const room = (window as any).room;
+      const access = room.access;
+      if (!room.isHost) room.access = "edit";
+      room.doc.getMap("e2e").set(k, 1);
+      room.access = access;
+    }, key);
+    await other.waitForTimeout(1500);
+    return other.evaluate((k) => (window as any).room.doc.getMap("e2e").has(k), key);
+  };
+  const ask = () =>
+    guest.evaluate(() =>
+      (window as any).room.act({ t: "agent-cancel", sessionId: "none" }).then(
+        () => "ok",
+        (e: Error) => e.message,
+      ),
+    );
+
+  await lobby("lobby").waitFor({ timeout: 30000 });
+  check(true, "the guest waits in the lobby");
+  check((await guest.locator("[data-board]").count()) === 0, "it sees no board");
+  if ((await framesOf(host)).length === 0) await addFrame(host, "Files");
+  check((await guest.evaluate(() => (window as any).frames().length)) === 0, "its doc has no frames");
+  check(!(await reaches(host, guest)), "the host's edits don't reach it");
+  check(!(await reaches(guest, host)), "its edits don't reach the host");
+  check((await ask()).includes("let you in"), "its requests are refused");
+  check((await host.locator('[data-avatar="Ada"]').count()) === 0, "the host doesn't show it as present");
+  await knock.waitFor({ timeout: 10000 });
+  check((await knock.getAttribute("data-fingerprint")) === ada, "the host sees it knock, by its full fingerprint");
+  check(
+    (await knock.innerText()).includes(ada.match(/.{4}/g)!.join(" ")),
+    "the knock shows all of the fingerprint",
+  );
+  await shot(host, "lobby-01-host-knock");
+  await shot(guest, "lobby-01-guest-waits");
+
+  await knock.getByRole("button", { name: "Admit to edit" }).click();
+  await guest.locator("[data-board]").waitFor({ timeout: 15000 });
+  check(true, "admitted, the guest sees the board");
+  await guest.waitForFunction(() => (window as any).frames().length > 0, null, { timeout: 10000 });
+  check(true, "its doc syncs");
+  check((await guest.locator('[data-access="edit"]').count()) === 1, "as edit");
+  check(await reaches(guest, host), "its edits reach the host");
+  check((await ask()) === "ok", "its requests run");
+  await host.locator('[data-avatar="Ada"]').waitFor({ timeout: 10000 });
+  check(true, "the host shows it as present");
+  await host.locator("[data-members-button]").click();
+  const row = host.locator(`[data-member][data-fingerprint="${ada}"]`);
+  check((await row.locator("select").inputValue()) === "edit", "the members list has it as edit");
+  await host.waitForTimeout(400);
+  await shot(host, "lobby-02-host-members");
+
+  await row.getByRole("button", { name: /^Remove/ }).click();
+  await host.keyboard.press("Escape");
+  await lobby("removed").waitFor({ timeout: 10000 });
+  check(true, "removed, the guest is told and sees no board");
+  await host.locator('[data-avatar="Ada"]').waitFor({ state: "detached", timeout: 10000 });
+  check(true, "nor does the host show it any more");
+  check(!(await reaches(host, guest)), "the host's edits no longer reach it");
+  await shot(guest, "lobby-03-guest-removed");
+
+  await guest.reload();
+  await lobby("lobby").waitFor({ timeout: 30000 });
+  await knock.waitFor({ timeout: 10000 });
+  check(true, "coming again, it knocks again");
+  await knock.getByRole("button", { name: "Deny" }).click();
+  await lobby("denied").waitFor({ timeout: 10000 });
+  check(true, "denied, it is told so");
+  check((await knock.count()) === 0, "and the knock is gone");
+  await shot(guest, "lobby-04-guest-denied");
+
+  await guest.reload();
+  await letIn(guest, "Ada", "view");
+  await guest.locator('[data-access="view"]').waitFor({ timeout: 10000 });
+  check(true, "admitted to view");
+  check(
+    (await guest.locator("[data-hud]").getByRole("button", { name: "Agent" }).count()) === 0,
+    "a view guest gets no toolbar",
+  );
+  check(!(await reaches(guest, host)), "a view guest's edits don't reach the host");
+  check((await ask()).includes("read-only"), "a view guest's requests are refused");
+  await setRole("edit");
+  check(await reaches(guest, host), "made edit, its edits reach the host");
+  await guest.reload();
+  await guest.locator('[data-access="edit"]').waitFor({ timeout: 30000 });
+  check((await knock.count()) === 0, "a member comes back without knocking");
 }
 // ADR 0011: each browser proves its key; the host tells everyone whose fingerprint each peer has.
 if (step === "identity") {

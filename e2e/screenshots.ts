@@ -46,6 +46,9 @@ const host = await open(hostLink, "Karl", "#f97316");
 await host.getByText("connected to canvas serve").waitFor({ timeout: 15000 });
 const guest = await open(guestLink, "Ada", "#3b82f6");
 await guest.getByText("host online").waitFor({ timeout: 30000 });
+// A new browser each run: it knocks, and the host lets it in (ADR 0011).
+await host.locator('[data-knock="Ada"]').getByRole("button", { name: "Admit to edit" }).click({ timeout: 30000 });
+await guest.locator("[data-board]").waitFor({ timeout: 30000 });
 
 /** Add a frame from the toolbar and return its id. */
 async function addFrame(page: Page, button: string) {
