@@ -10,8 +10,11 @@ canvas
   2. **web app** (`src/web/`) — Vite/React SPA standing in for the publicly hosted UI; peers
      meet over trystero (Nostr), the board is a Yjs doc
 - `src/shared/protocol.ts` is the wire contract of both halves; the trust model is ADR 0001 (the
-  host's browser is the only door to the machine; star for authority, mesh for presence) and
-  ADR 0002 (files reach guests read-only, from a set `canvas serve` fixes — `shared-set.ts`).
+  host's browser is the only door to the machine; star for authority, mesh for presence),
+  amended by ADR 0011 (a key per browser; the guest link is an invite, the host admits each
+  browser with a role into a lobby, members saved by `canvas serve`; the host pairs once by a
+  one-time code, then by signature; trusted lasts one host session; presence only among
+  members; the room key rotates on reset and removal) and ADR 0002 (files reach guests read-only, from a set `canvas serve` fixes — `shared-set.ts`).
   Anything a board path names comes from a guest: resolve it through the shared set. So does a
   browser frame's URL: ADR 0004 (loopback loads for the host only, http(s) only, HTML files
   render in a sandboxed `srcdoc` — `web/lib/browser-url.ts`)

@@ -3,6 +3,8 @@
 ## Status
 
 Accepted, 2026-09-25 (prototype). Validated end to end in `docs/findings/03-prototype-validation.md`.
+Amended by ADR 0011: a key per browser, the host admits each one with its own role, the host's
+browser pairs once and then authenticates by signature, and presence goes only among members.
 
 ## Context
 
