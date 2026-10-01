@@ -39,6 +39,15 @@ export function useMembers() {
   );
 }
 
+/** Host: the fingerprints of the members trusted this session. */
+export function useTrusted() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("members", onChange),
+    () => room.trusted,
+  );
+}
+
 /** Host: who waits in the lobby. */
 export function useKnocks() {
   const room = useRoom();

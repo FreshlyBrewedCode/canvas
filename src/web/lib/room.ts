@@ -204,6 +204,8 @@ export class Room {
   approvals: Approval[] = [];
   /** Host: the members `canvas serve` keeps; a new array on every change. */
   members: ReadonlyArray<Member> = [];
+  /** Host: the fingerprints of the members trusted this session (decision 4); a new array on every change. */
+  trusted: ReadonlyArray<string> = [];
   /** Host: who waits in the lobby; a new array on every change. */
   knocks: Knock[] = [];
   /** Everyone else's presence; a new array on every change. */
@@ -904,6 +906,22 @@ export class Room {
     this.server?.send({ t: "member-role", fingerprint, role });
   }
 
+  /**
+   * Host: trust a member, or take it back: runs without the approval click,
+   * typing into terminals. Never saved; it lasts while this tab is the host.
+   */
+  trust(fingerprint: string, on: boolean) {
+    this.run(this.admissions.trust(fingerprint, on));
+    this.refreshTrusted();
+  }
+
+  private refreshTrusted() {
+    this.trusted = this.members.flatMap((m) =>
+      this.admissions.isTrusted(m.fingerprint) ? [m.fingerprint] : [],
+    );
+    this.emit("members");
+  }
+
   /** Host: a member is out, at once; coming again is knocking again. */
   removeMember(fingerprint: string) {
     this.server?.send({ t: "member-remove", fingerprint });
@@ -1375,6 +1393,7 @@ export class Room {
     this.identities.clear();
     this.admissions.clear();
     this.refreshKnocks();
+    this.refreshTrusted();
     this.fingerprints = {};
     for (const approval of [...this.approvals]) approval.resolve(false);
   }
@@ -1398,8 +1417,8 @@ export class Room {
   /** Host: `canvas serve`'s member list, and what it changes for who is connected. */
   private setMembers(members: ReadonlyArray<Member>) {
     this.members = members;
-    this.emit("members");
     this.run(this.admissions.setMembers(members));
+    this.refreshTrusted();
   }
 
   private refreshPeers() {
