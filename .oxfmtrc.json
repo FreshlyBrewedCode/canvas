@@ -1,7 +1,7 @@
 {
   "ignorePatterns": [
-    "e2e/drive.ts",
     "e2e/screenshots.ts",
-    "e2e/projects"
+    "e2e/projects",
+    "e2e/cassettes"
   ]
 }

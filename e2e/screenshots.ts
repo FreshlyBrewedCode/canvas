@@ -1,5 +1,5 @@
 // Screenshots for the docs site (`site/content/docs/screenshots/`). Drives a
-// host and a guest, like `drive.ts`, against the demo project of
+// host and a guest, as the e2e tests do, against the demo project of
 // `e2e/screenshots-demo.sh`, with a real Claude Code session. Raw PNGs land in
 // $OUT (default /tmp/canvas-docs-shots); `site/scripts/shots.ts` converts the
 // ones the docs use.
