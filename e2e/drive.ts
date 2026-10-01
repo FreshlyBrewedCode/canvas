@@ -99,6 +99,17 @@ async function setRole(role: "view" | "edit", page: Page = guest) {
   await host.keyboard.press("Escape");
   await page.locator(`[data-access="${role}"]`).waitFor({ timeout: 10000 });
 }
+/** The host trusts `page`'s browser (a member) for this session, or takes it back (ADR 0011, decision 4). */
+async function setTrusted(on: boolean, page: Page = guest) {
+  const fingerprint = await page.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self");
+  await host.locator("[data-members-button]").click();
+  const row = host.locator(`[data-member][data-fingerprint="${fingerprint}"]`);
+  const toggle = row.getByRole("button", { name: /^(Trust|Take trusted back)/ });
+  const access = await row.locator("select").inputValue();
+  if ((await toggle.getAttribute("aria-pressed")) !== String(on)) await toggle.click();
+  await host.keyboard.press("Escape");
+  await page.locator(`[data-access="${on ? "trusted" : access}"]`).waitFor({ timeout: 10000 });
+}
 if (step !== "lobby") {
   await letIn(guest, "Ada");
   console.log("guest let in");
@@ -2443,6 +2454,13 @@ if (step === "relay") {
     ),
   );
   check(answer === "ok", `its request runs on the host, and the answer comes back (${answer})`);
+  // Trusted, it types into the terminal: the input runs on the host, the output comes back.
+  await setTrusted(true, guarded);
+  await guarded.locator(`[data-frame="${termId}"] .xterm`).click();
+  await guarded.keyboard.type("echo trusted-$((6*7))\n");
+  await host.locator(`[data-frame="${termId}"]`).getByText("trusted-42").first().waitFor({ timeout: 15000 });
+  await guarded.locator(`[data-frame="${termId}"]`).getByText("trusted-42").first().waitFor({ timeout: 15000 });
+  check(true, "trusted, its terminal input runs on the host, and the output comes back");
   await guarded.locator("[data-connection-indicator]").click();
   await headline(guarded).waitFor();
   await guarded.waitForTimeout(500);
@@ -2833,6 +2851,86 @@ if (step === "pan") {
   check(panned(d), `middle drag over a terminal pans (${d.dx},${d.dy})…`);
   check(await editor.isVisible(), "…and the drawing is still being edited");
   await shot(host, "131-pan-drawing");
+}
+// Trusted for one host session (ADR 0011, decision 4): granted on top of the
+// saved role, its requests run without the approval click and it types into
+// terminals; the host takes it back, and a host reload drops it, never saved.
+if (step === "trusted-session") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const ada = (await guest.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self"))!;
+  const row = host.locator(`[data-member][data-fingerprint="${ada}"]`);
+  const approval = host.getByRole("button", { name: "Run on my machine" });
+  /** A request that waits for the host's approval as `edit`: setting an agent's option. */
+  const ask = () =>
+    guest.evaluate(() => {
+      const room = (window as any).room;
+      (window as any).asked = room
+        .act({ t: "agent-config", sessionId: "none", configId: "model", value: "x" })
+        .then(
+          () => "ok",
+          (e: Error) => e.message,
+        );
+    });
+  const answer = () => guest.evaluate(() => (window as any).asked as Promise<string>);
+  const typed = async (text: string) => {
+    await guest.locator(`[data-frame="${termId}"] .xterm`).click();
+    await guest.keyboard.type(`echo ${text}-$((6*7))\n`);
+    return host
+      .locator(`[data-frame="${termId}"]`)
+      .getByText(`${text}-42`)
+      .first()
+      .waitFor({ timeout: 8000 })
+      .then(
+        () => true,
+        () => false,
+      );
+  };
+  const term = await addFrame(host, "Terminal");
+  const termId = await term.getAttribute("data-frame");
+  await guest.locator(`[data-frame="${termId}"] .xterm`).waitFor({ timeout: 10000 });
+  await guest.waitForTimeout(1500);
+
+  check((await guest.locator('[data-access="edit"]').count()) === 1, "the guest is in as edit");
+  await setTrusted(true);
+  check(true, "granted, the guest is told it is trusted");
+  await host.locator("[data-members-button]").click();
+  check((await row.getAttribute("data-trusted")) === "true", "the members list marks it trusted");
+  check((await row.locator("select").inputValue()) === "edit", "its saved role stays edit");
+  await host.waitForTimeout(300);
+  await shot(host, "trusted-01-host-members");
+  await host.keyboard.press("Escape");
+  await ask();
+  check((await answer()) === "ok", "its request runs without the approval click");
+  check((await approval.count()) === 0, "the host is asked nothing");
+  check(await typed("trusted"), "it types into a terminal");
+  await shot(guest, "trusted-02-guest");
+
+  await guest.reload();
+  await guest.locator('[data-access="trusted"]').waitFor({ timeout: 30000 });
+  check(true, "a guest reload keeps it: it's the member's, for the host's session");
+
+  await setTrusted(false);
+  check(true, "taken back, the guest is edit again");
+  check(!(await typed("untrusted")), "its typing no longer reaches the terminal");
+  await setTrusted(true);
+
+  await host.reload();
+  await host.getByText("connected to canvas serve").waitFor({ timeout: 15000 });
+  await guest.locator('[data-access="edit"]').waitFor({ timeout: 30000 });
+  check(true, "the host reloads: the guest is back to its saved role");
+  await host.locator("[data-members-button]").click();
+  check((await row.getAttribute("data-trusted")) === null, "the members list marks nobody trusted");
+  await host.keyboard.press("Escape");
+  await ask();
+  await approval.waitFor({ timeout: 10000 });
+  check(true, "its next request needs the host's approval");
+  await shot(host, "trusted-03-host-approval");
+  await host.getByRole("button", { name: "Decline" }).click();
+  check((await answer()).includes("declined"), "declined, it doesn't run");
+  check(!(await typed("reloaded")), "nor does its typing reach the terminal");
 }
 // Members and the lobby (ADR 0011, decision 2): the guest link is an invite.
 // A browser the host doesn't know waits, with nothing of the board; the host
