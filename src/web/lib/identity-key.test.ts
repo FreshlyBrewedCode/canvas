@@ -5,6 +5,7 @@ import {
   fingerprint,
   peerStatement,
   readable,
+  readableFull,
   verify,
 } from "../../shared/identity";
 import { loadBrowserKey, provePeer, type KeyStore } from "./identity-key";
@@ -62,6 +63,11 @@ describe("fingerprint", () => {
     expect(readable(key.fingerprint)).toBe(
       `${key.fingerprint.slice(0, 4)} ${key.fingerprint.slice(4, 8)}`,
     );
+  });
+
+  test("its full form is all of it, in groups of four", () => {
+    const full = readableFull("0123456789abcdef0123456789abcdef");
+    expect(full).toBe("0123 4567 89ab cdef 0123 4567 89ab cdef");
   });
 });
 

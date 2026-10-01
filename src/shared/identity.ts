@@ -39,6 +39,12 @@ export async function fingerprint(publicKey: string): Promise<string> {
 export const readable = (fingerprint: string) =>
   `${fingerprint.slice(0, 4)} ${fingerprint.slice(4, 8)}`;
 
+/**
+ * All of a fingerprint, in groups of four: where telling browsers apart
+ * matters (admitting one), as the short form is only 32 bits.
+ */
+export const readableFull = (fingerprint: string) => fingerprint.match(/.{1,4}/g)?.join(" ") ?? "";
+
 export const peerStatement = (roomId: string, peerId: string, nonce: string) =>
   `canvas-peer:${roomId}:${peerId}:${nonce}`;
 

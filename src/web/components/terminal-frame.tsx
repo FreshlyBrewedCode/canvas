@@ -25,7 +25,7 @@ export function TerminalFrame({
   const room = useRoomState();
   const host = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const canType = room.isHost || room.roomState?.access === "trusted";
+  const canType = room.isHost || room.access === "trusted";
   // The scrollback, in lines, follows the frame's occupant.
   const surface = useRef<ScrollSurface | null>(null);
   const [terminal, setTerminal] = useState(0);

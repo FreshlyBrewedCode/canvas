@@ -1,0 +1,175 @@
+import { DoorOpen, Trash2, Users } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { Knock } from "@/lib/admission";
+import { useMembers, usePeers, useRoom, useRoomState } from "@/lib/room-context";
+import { readable, readableFull } from "../../shared/identity";
+import type { GuestAccess, MemberRole } from "../../shared/protocol";
+
+/**
+ * Members and the lobby (ADR 0011, decision 2): the host's knock cards and
+ * member list, a guest's role, and the lobby a guest waits in.
+ */
+
+const ROLE: Record<MemberRole, string> = {
+  view: "view only",
+  edit: "can edit · runs need approval",
+};
+
+/** Host: someone knocks. Their whole fingerprint, so two browsers can be told apart. */
+export function KnockCard({ knock }: { knock: Knock }) {
+  const room = useRoom();
+  return (
+    <div
+      data-knock={knock.name}
+      data-fingerprint={knock.fingerprint}
+      data-status="ready"
+      className="bg-card border-status-ready/45 border border-l-[3px] p-3 shadow-md"
+      style={{ borderLeftColor: knock.color }}
+    >
+      <p className="mb-1 text-xs">
+        <span className="font-semibold" style={{ color: knock.color }}>
+          {knock.name}
+        </span>{" "}
+        wants to join
+      </p>
+      <p
+        className="text-muted-foreground mb-2 font-mono text-[11px] break-words"
+        title="This browser's fingerprint: ask them what theirs shows"
+      >
+        {readableFull(knock.fingerprint)}
+      </p>
+      <div className="flex justify-end gap-1.5">
+        <Button size="sm" variant="ghost" onClick={() => room.deny(knock.peerId)}>
+          Deny
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => room.admit(knock.peerId, "view")}>
+          Admit to view
+        </Button>
+        <Button size="sm" onClick={() => room.admit(knock.peerId, "edit")}>
+          Admit to edit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Host: everyone admitted, whether they are here, their role; remove them. */
+export function MembersButton() {
+  const room = useRoom();
+  const members = useMembers();
+  const peers = usePeers();
+  const [open, setOpen] = useState(false);
+  const here = new Set(peers.flatMap((p) => (p.fingerprint ? [p.fingerprint] : [])));
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline" data-members-button="">
+          <Users /> Members{members.length ? ` (${members.length})` : ""}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 p-3 text-xs" data-members="">
+        <h3 className="text-muted-foreground mb-2 text-[11px] font-semibold tracking-wide uppercase">
+          Members
+        </h3>
+        {members.length === 0 ? (
+          <p className="text-muted-foreground leading-relaxed">
+            Nobody yet. Whoever opens the guest link knocks, and you let them in.
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {members.map((member) => (
+              <li
+                key={member.fingerprint}
+                data-member={member.name}
+                data-fingerprint={member.fingerprint}
+                className="flex items-center gap-2"
+              >
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${here.has(member.fingerprint) ? "bg-status-complete" : "bg-muted"}`}
+                  title={here.has(member.fingerprint) ? "here now" : "not here"}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  {member.name || "—"}{" "}
+                  <span
+                    className="text-muted-foreground font-mono"
+                    title={readableFull(member.fingerprint)}
+                  >
+                    {readable(member.fingerprint)}
+                  </span>
+                </span>
+                <select
+                  aria-label={`Role of ${member.name}`}
+                  className="bg-muted/60 rounded-md px-1.5 py-1 outline-none"
+                  value={member.role}
+                  onChange={(event) =>
+                    room.setRole(member.fingerprint, event.target.value as MemberRole)
+                  }
+                >
+                  <option value="view">view</option>
+                  <option value="edit">edit</option>
+                </select>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Remove ${member.name}`}
+                  title="Remove: cut off now; they knock again if they come back"
+                  onClick={() => room.removeMember(member.fingerprint)}
+                >
+                  <Trash2 />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Guest: what the host lets us do. */
+export function AccessBadge({ access }: { access: GuestAccess | null }) {
+  if (!access) return null;
+  return (
+    <span data-access={access} className="bg-secondary rounded-md px-2 py-1 font-mono text-[11px]">
+      {access === "trusted" ? "trusted" : ROLE[access]}
+    </span>
+  );
+}
+
+/** Guest: in place of the board until the host lets us in, or once it shut us out. */
+export function Lobby() {
+  const room = useRoomState();
+  const { admission } = room;
+  const text =
+    admission === "denied"
+      ? "The host didn't let you in."
+      : admission === "removed"
+        ? "The host removed you from this board. Reload to knock again."
+        : !room.hostOnline
+          ? "Waiting for the host. You knock once they're here."
+          : admission === "lobby"
+            ? "Waiting for the host to let you in."
+            : "Knocking…";
+  const shut = admission === "denied" || admission === "removed";
+  return (
+    <div data-lobby={admission} className="bg-dot-grid grid min-h-0 flex-1 place-items-center p-6">
+      <div className="bg-card max-w-md space-y-3 border p-5 shadow-sm">
+        <p className="flex items-center gap-2 text-sm font-semibold">
+          <DoorOpen className="size-4" /> {text}
+        </p>
+        {!shut && (
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            The host sees your name and this browser's fingerprint,{" "}
+            <span className="text-foreground font-mono" data-lobby-fingerprint="">
+              {readableFull(room.fingerprint)}
+            </span>
+            . Tell them it's you.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

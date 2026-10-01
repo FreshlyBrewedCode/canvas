@@ -126,7 +126,7 @@ function AgentThread({
   const busy = status !== "idle" || sending;
   const agentLabel =
     room.roomState?.agents.find((a) => a.kind === frame.agent)?.label ?? frame.agent;
-  const access = room.roomState?.access;
+  const access = room.access;
 
   const send = async () => {
     const prompt = text.toString().trim();

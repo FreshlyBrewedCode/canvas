@@ -154,3 +154,37 @@ describe("host tabs", async () => {
     again.ws.close();
   });
 });
+
+describe("members", async () => {
+  const { open, answer, pairing } = await start();
+  const host = await answer(await open(), await browserKey(), pairing!);
+  const guest = await browserKey();
+  const lists = () =>
+    host.received.flatMap((m) =>
+      m.t === "members" || m.t === "welcome" ? [m.members.map((x) => `${x.name}:${x.role}`)] : [],
+    );
+
+  test("the host tab admits, changes roles and removes; each change comes back", async () => {
+    expect(lists()).toEqual([[]]);
+    host.ws.send(
+      JSON.stringify({ t: "member-admit", publicKey: guest.publicKey, name: "Ada", role: "edit" }),
+    );
+    await until("admitted", () => lists().length === 2);
+    const welcome = host.received.find((m) => m.t === "members");
+    const fingerprint = welcome?.t === "members" ? welcome.members[0]!.fingerprint : "";
+    expect(fingerprint).toHaveLength(32);
+    host.ws.send(JSON.stringify({ t: "member-role", fingerprint, role: "view" }));
+    await until("role", () => lists().length === 3);
+    host.ws.send(JSON.stringify({ t: "member-remove", fingerprint }));
+    await until("removed", () => lists().length === 4);
+    expect(lists()).toEqual([[], ["Ada:edit"], ["Ada:view"], []]);
+  });
+
+  test("a role that isn't one is refused", async () => {
+    host.ws.send(
+      JSON.stringify({ t: "member-admit", publicKey: guest.publicKey, name: "A", role: "trusted" }),
+    );
+    await until("error", () => got(host, "error"));
+    expect(lists().at(-1)).toEqual([]);
+  });
+});
