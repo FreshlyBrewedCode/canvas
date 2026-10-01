@@ -22,7 +22,8 @@ design is about **who can make `canvas serve` act, and through what**:
    port: WebSockets are not protected by CORS.
 2. **Guests reach the machine only through the host's browser**, which checks every request
    against the requesting member's [role](/docs/guests#members-and-roles): view (refused), edit
-   (the host approves). Someone the host hasn't let in gets refused.
+   (the host approves), [trusted](/docs/guests#trusted-for-this-session) (runs; never saved, gone
+   when the host's tab reloads). Someone the host hasn't let in gets refused.
 3. **Agent permissions are answered by the host only**, whatever the guest's role.
 4. **Guests verify the host.** `canvas serve` makes a key pair per board. The public key is in
    every link; the private key reaches only the host's browser, which signs its peer id with it.
@@ -94,6 +95,8 @@ Roles narrow what reaches the machine; they do not make guests harmless.
 - **Edit guests** can add agent and terminal frames, which start an idle agent process or shell on
   the host's machine, without approval. Prompting an agent needs the host's approval; typing into
   a terminal is not open to edit guests at all.
+- **Trusted members** run everything without approval and type into terminals, as the host's user:
+  they can do anything the host can, until the host takes it back or its tab reloads.
 - **An approved prompt** can ask the agent for anything. The agent's own permission prompts, which
   only the host answers, are the next line of defence; an agent in an auto-approve mode has none.
 - **An agent can read what files frames cannot**, `.env` included, and write it into its thread for

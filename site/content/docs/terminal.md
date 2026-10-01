@@ -10,7 +10,8 @@ its output live.
 
 ![A terminal frame running the project's dev server](./screenshots/terminal.webp)
 
-- **Who types**: the host. Everyone else reads.
+- **Who types**: the host, and members the host [trusts](/docs/guests#trusted-for-this-session)
+  for the session. Everyone else reads.
 - **Size**: the shell follows the size of the host's frame. In
   [full screen](/docs/board#full-screen) a terminal keeps a height of its own: half the host's
   screen to begin with; drag its bottom edge there to change it. Everyone's full screen shows the

@@ -49,4 +49,5 @@ order: 7
 | **signalling relay** | A server through which browsers find each other before they connect directly: public Nostr relays, or a canvas relay. [Connection](/docs/connection) |
 | **skill**         | Instructions an agent loads when a request calls for them. canvas gives its own to every agent session. [Skills](/docs/skills) |
 | **terminal frame**| A shell on the host's machine. [Terminal](/docs/terminal)                   |
+| **trusted**       | A member the host lets run things without approval and type into terminals, until the host's tab reloads. Never saved. [Guests](/docs/guests#trusted-for-this-session) |
 | **web app**       | The browser UI at `ui.canvas.frebreco.de`                                   |
