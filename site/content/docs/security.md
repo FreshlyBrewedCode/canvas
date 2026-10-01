@@ -32,13 +32,18 @@ design is about **who can make `canvas serve` act, and through what**:
 5. **The host verifies everyone else.** Each browser has its own key, kept where the page can use
    it but not read it out. On joining, a guest signs its peer id with it, over a one-time challenge
    from the host; the host checks it and tells everyone each peer's verified
-   [fingerprint](/docs/board#presence). A fingerprint says which browser someone is on, not who
+   [fingerprint](/docs/board#presence), in the member list it signs (below). A fingerprint says which browser someone is on, not who
    they are: names are what people typed.
 6. **The host lets each browser in.** The guest link is an invite. A browser whose key isn't a
    member's waits in the [lobby](/docs/guests#the-lobby): the host sends it nothing of the board,
    agents, terminals or files, and drops what it sends, until the host admits it with a role.
    Members are found by their whole key, not the short fingerprint people see. `canvas serve`
    keeps them in `.canvas/members.json`; removing one cuts them off at once.
+7. **Presence only among members.** The host signs the list of who is in (their peer ids and
+   fingerprints, and a version) with the board's key and sends it to them whenever it changes.
+   Guests take only a list that verifies against the host key in their link and is newer than
+   the last, and send their pointer, view, selection and focus only to peers on it, and take them
+   only from those peers. Someone in the lobby, or removed, sees nobody's and shows nobody theirs.
 
 ## The links
 
@@ -119,8 +124,9 @@ Roles narrow what reaches the machine; they do not make guests harmless.
   pages in it don't load, and its links go through the board's own link handling.
 - **Peers see each other's IP addresses**, as with any WebRTC connection. Through a relay's
   transport they don't; the relay does.
-- **Someone in the lobby holds the room key.** The host sends them nothing, but cursors and other
-  presence go between guests directly, so they may still see other guests' and show their own. A
+- **Someone in the lobby holds the room key.** Nobody sends them anything but the host's answers
+  to their knock, yet they can still tell how many others are in the room, and on WebRTC their IP
+  addresses. A
   removed member keeps the key too, and with it can decrypt a relay's traffic for the board.
 
 ## Not covered

@@ -18,7 +18,7 @@ guest ──┐
 guest ──┼── trystero (WebRTC) ──▶ host's browser ── WebSocket + key ──▶ canvas serve ──┬── agents (ACP)
 guest ──┘                                                                                ├── terminals (PTY)
                                                                                          ├── files (read-only)
-presence (pointers, selections, focus): every browser to every browser                  └── board tools (MCP)
+presence (pointers, selections, focus): between the members' browsers                   └── board tools (MCP)
 ```
 
 ## canvas serve
@@ -90,8 +90,9 @@ Running one: [Relay](/docs/relay).
   against the requesting member's role ([Guests](/docs/guests)). Someone the host hasn't let in
   waits in the lobby and gets none of this.
 - **Presence** (pointers, views, selections, frame focus) goes peer to peer, since it carries no
-  authority. On a canvas relay's transport it goes from every browser to every other through the
-  relay.
+  authority, but only between members: the host signs the list of who is in and sends it to them,
+  and each browser sends its presence only to those on it and takes it only from them. On a canvas
+  relay's transport it goes through the relay, addressed to them.
 
 ## Agent threads
 

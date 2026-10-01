@@ -19,8 +19,8 @@ server hosting the web app.
 
 Someone who opens the guest link in a browser the host hasn't let in yet waits in the **lobby**:
 **Waiting for the host to let you in**, with their browser's whole
-[fingerprint](/docs/board#presence). They see nothing of the board until then, and nothing they
-do reaches it.
+[fingerprint](/docs/board#presence). They see nothing of the board until then, nor anyone's
+pointer, and nothing they do reaches it; nobody sees theirs.
 
 The host sees a card for each knock: the name they typed and their whole fingerprint. Names are
 what people typed; if it matters, ask them to read you the fingerprint their lobby shows. Then:

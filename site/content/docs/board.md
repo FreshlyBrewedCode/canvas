@@ -194,4 +194,6 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
   verified**, the host hasn't vouched for it. It stays the same as long as you use the same
   browser; another browser or device has another one. It also says which comments are yours.
 
-Presence carries no authority, and goes directly between peers.
+Presence carries no authority, and goes directly between peers, but only between those the host
+let in: someone waiting in the [lobby](/docs/guests#the-lobby) sees nobody's, and nobody sees
+theirs.
