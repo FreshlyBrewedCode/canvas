@@ -15,7 +15,7 @@ open across a release, or an older CLI), a strip under the top bar says which on
 
 ```
 guest ──┐
-guest ──┼── trystero (WebRTC) ──▶ host's browser ── WebSocket + token ──▶ canvas serve ──┬── agents (ACP)
+guest ──┼── trystero (WebRTC) ──▶ host's browser ── WebSocket + key ──▶ canvas serve ──┬── agents (ACP)
 guest ──┘                                                                                ├── terminals (PTY)
                                                                                          ├── files (read-only)
 presence (pointers, selections, focus): every browser to every browser                  └── board tools (MCP)
@@ -33,9 +33,10 @@ A [Bun](https://bun.sh) server started in the project directory. It:
 - gives each agent session an **MCP server** on loopback with the [board tools](/docs/board-tools);
 - **persists** the room, the board and the sessions in `.canvas/` (see below).
 
-It speaks to exactly one kind of client: the host's browser, over one WebSocket, authenticated with
-the token from the host link, in one tab at a time: a newer tab takes over from an older one. It
-knows nothing about guests.
+It speaks to exactly one kind of client: the host's browser, over one WebSocket, in one tab at a
+time: a newer tab takes over from an older one. Each connection first signs a challenge with a
+paired browser's key, or pairs one with the code from the host link; until then it gets nothing
+else. It knows nothing about guests.
 
 ## Web app
 
@@ -61,7 +62,7 @@ relay instead of connections to each other.
 
 ```
 guest ──┐
-guest ──┼── wss:// ──▶ canvas relay ◀── wss:// ── host's browser ── WebSocket + token ──▶ canvas serve
+guest ──┼── wss:// ──▶ canvas relay ◀── wss:// ── host's browser ── WebSocket + key ──▶ canvas serve
 guest ──┘   (sealed with the board key: the relay forwards, it can't read)
 ```
 
@@ -112,7 +113,10 @@ Everything `canvas serve` keeps lives in `<project>/.canvas/`:
 
 | File                    | Holds                                                         |
 | ----------------------- | ------------------------------------------------------------- |
-| `room.json`             | Room id, room key, the host's key pair, the host token (mode `0600`) |
+| `room.json`             | Room id, room key, the host's key pair (mode `0600`)          |
+| `owners.json`           | The browsers paired as host: their public keys and fingerprints |
+| `pairing.json`          | The pending pairing code and when it runs out, if any         |
+| `serve.json`            | Where `canvas serve` and the web app are, for `canvas pair`'s links |
 | `board.bin`             | The latest state of the board                                 |
 | `sessions/<id>.ndjson`  | One agent session: its settings and its events                |
 | `scratch/<name>`        | Scratch files agents wrote for the board                      |

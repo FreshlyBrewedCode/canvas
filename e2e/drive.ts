@@ -1,20 +1,39 @@
 // Exploratory multi-user drive: a host and a guest in separate browser
 // contexts against the running dev server + `canvas serve`. Screenshots land
 // in $OUT (default /tmp/canvas-shots).
-import { chromium, type Page } from "playwright";
+//
+// The host is a browser paired with `canvas serve` (ADR 0011): its profile
+// lives in $HOST_PROFILE (default /tmp/canvas-e2e-host), so the link with a
+// pairing code `serve` prints pairs it once, and the link without the code
+// works from then on. `pairing` starts from a fresh profile.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chromium, type BrowserContext, type Page } from "playwright";
 
 const hostLink = process.argv[2]!;
 const out = process.env.OUT ?? "/tmp/canvas-shots";
+const step = process.env.STEP ?? "basic";
 const u = new URL(hostLink);
 const f = new URLSearchParams(u.hash.slice(1));
 let guestLink = "";
 
 const browser = await chromium.launch();
-const open = async (url: string, name: string, color: string) => {
-  const context = await browser.newContext({
-    viewport: { width: 1400, height: 900 },
-    colorScheme: "dark",
-  });
+const screen = { viewport: { width: 1400, height: 900 }, colorScheme: "dark" } as const;
+const hostContext = await chromium.launchPersistentContext(
+  step === "pairing"
+    ? mkdtempSync(join(tmpdir(), "canvas-e2e-host-"))
+    : (process.env.HOST_PROFILE ?? "/tmp/canvas-e2e-host"),
+  screen,
+);
+/** `url` in a page of `context`: by default a browser of its own. */
+const open = async (
+  url: string,
+  name: string,
+  color: string,
+  context: BrowserContext | null = null,
+) => {
+  context ??= await browser.newContext(screen);
   // Runs in every frame; sandboxed ones (HTML previews) have no storage.
   await context.addInitScript(
     ([n, c]) => {
@@ -38,8 +57,15 @@ const open = async (url: string, name: string, color: string) => {
 };
 const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${name}.png` });
 
-const host = await open(hostLink, "Karl", "#f97316");
-await host.getByText("connected to canvas serve").waitFor({ timeout: 15000 });
+const host = await open(hostLink, "Karl", "#f97316", hostContext);
+await host
+  .getByText("connected to canvas serve")
+  .or(host.locator("[data-host-refused]"))
+  .waitFor({ timeout: 15000 });
+if (await host.locator("[data-host-refused]").isVisible())
+  throw new Error(
+    `${await host.locator("[data-host-refused]").innerText()}\n(this profile, ${process.env.HOST_PROFILE ?? "/tmp/canvas-e2e-host"}, needs a link with a fresh pairing code: canvas pair)`,
+  );
 // The guest link as a host shares it. On a relay (ADR 0008) it carries a
 // guest token only `canvas serve` can sign.
 await host.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -103,7 +129,6 @@ async function newAgent(page: Page, kind: string) {
   return frame;
 }
 
-const step = process.env.STEP ?? "basic";
 if (step === "approve") await approveUntilIdle(host, guest);
 if (step === "basic") {
   // Its own frame, by id: frames earlier steps left are on the board too.
@@ -2048,7 +2073,7 @@ if (step === "takeover") {
   const connected = (page: Page) => page.getByText("connected to canvas serve");
   const replaced = (page: Page) => page.locator("[data-host-elsewhere]");
 
-  const second = await open(hostLink, "Karl", "#f97316");
+  const second = await open(hostLink, "Karl", "#f97316", hostContext);
   await connected(second).waitFor({ timeout: 15000 });
   await replaced(host).waitFor({ timeout: 10000 });
   check(true, "the first tab steps down when a second one opens");
@@ -2075,6 +2100,63 @@ if (step === "takeover") {
   check(await replaced(second).isVisible(), "the second tab still waits");
   await guest.getByText("host online").waitFor({ timeout: 30000 });
   check(true, "the guest sees the host again");
+}
+// Host pairing (ADR 0011): the first browser pairs with the code, reloads
+// without it, and other browsers holding the link are refused. With DIR (the
+// served project), `canvas pair` pairs another one while `serve` runs.
+if (step === "pairing") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const connected = (page: Page) => page.getByText("connected to canvas serve");
+  const refused = (page: Page) => page.locator("[data-host-refused]");
+  check(f.has("pair"), "the host link carries a pairing code");
+  check(true, "the first browser paired with it");
+  check(!host.url().includes("pair="), "the address bar drops the used code");
+  await host.reload();
+  await connected(host).waitFor({ timeout: 15000 });
+  check(true, "the host reloads without the code");
+
+  const strangers: BrowserContext[] = [];
+  const stranger = async (url: string) => {
+    const context = await browser.newContext(screen);
+    strangers.push(context);
+    return open(url, "Mallory", "#ef4444", context);
+  };
+  const withCode = await stranger(hostLink);
+  await refused(withCode).waitFor({ timeout: 15000 });
+  const why = await refused(withCode).innerText();
+  check(why.includes("used up"), `another browser with the old link is refused: "${why}"`);
+  check(
+    await withCode.getByText("not paired with canvas serve").isVisible(),
+    "its connection label says it isn't paired",
+  );
+  await shot(withCode, "pairing-refused");
+  const without = new URL(hostLink);
+  const fragment = new URLSearchParams(without.hash.slice(1));
+  fragment.delete("pair");
+  without.hash = fragment.toString();
+  const noCode = await stranger(without.href);
+  await refused(noCode).waitFor({ timeout: 15000 });
+  check((await refused(noCode).innerText()).includes("isn't paired"), "and so is one without a code");
+  await new Promise((r) => setTimeout(r, 1000));
+  check(await connected(host).isVisible(), "the refused browsers didn't unseat the host");
+
+  if (process.env.DIR) {
+    const run = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "pair", "--dir", process.env.DIR]);
+    const printed = run.stdout.toString().match(/https?:\/\/\S+/)?.[0] ?? "";
+    check(printed.includes("pair="), "canvas pair prints a link with a fresh code");
+    const device = await stranger(printed);
+    await connected(device).waitFor({ timeout: 15000 });
+    check(true, "the running serve takes canvas pair's code: a second browser pairs");
+    await host.locator("[data-host-elsewhere]").waitFor({ timeout: 10000 });
+    check(true, "and becomes the host tab, as a second tab would");
+    const late = await stranger(printed);
+    await refused(late).waitFor({ timeout: 15000 });
+    check(true, "its code is used up for a third browser");
+  }
+  for (const context of strangers) await context.close();
 }
 // Links to places on the board (ADR 0007): chips in markdown, lines and
 // headings for the one who clicks, Back, web links in a new tab, linked HTML
@@ -2217,7 +2299,7 @@ if (step === "connection") {
     const text = await page.evaluate(() => navigator.clipboard.readText());
     const parsed = JSON.parse(text) as { peers: unknown[]; log: unknown[] };
     check(parsed.peers.length === 1 && parsed.log.length > 0, `${name}: the report has peers and the log`);
-    const secrets = [f.get("k")!, f.get("token")!, f.get("pk")!];
+    const secrets = [f.get("k"), f.get("pair"), f.get("pk")].filter((s): s is string => !!s);
     check(!secrets.some((secret) => text.includes(secret)), `${name}: the report has no keys or tokens`);
     await shot(page, `96-${name}-connection`);
     await page.keyboard.press("Escape");
@@ -4138,4 +4220,5 @@ if (step === "history") {
   );
   await shot(host, "200-history-reuse");
 }
+await hostContext.close();
 await browser.close();

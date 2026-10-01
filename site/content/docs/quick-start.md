@@ -26,10 +26,10 @@ bunx @frebreco/canvas serve
 ```
 canvas serving /home/you/src/shop
 
-  open the board as host:
-  https://ui.canvas.frebreco.de/?room=LEXuANjizGUi#k=…&pk=…&server=ws%3A%2F%2F127.0.0.1%3A4418&token=…
+  pair this browser as host, and open the board:
+  https://ui.canvas.frebreco.de/?room=LEXuANjizGUi#k=…&pk=…&server=ws%3A%2F%2F127.0.0.1%3A4418&pair=…
 
-  keep this link to yourself — it controls agents on this machine.
+  the link pairs one browser, within 10 minutes; keep it to yourself.
   share the guest link from the board instead.
 ```
 
@@ -38,10 +38,14 @@ add that to your `.gitignore`.
 
 ## 2. Open the host link
 
-Open the printed link in a browser on the same machine. The top bar says **connected to canvas
-serve**. You are the host.
+Open the printed link in a browser on the same machine, within 10 minutes. The top bar says
+**connected to canvas serve**. You are the host.
 
-The host link carries the token that controls `canvas serve`. Never share it.
+The first time, the link carries a **pairing code**: the first browser to open it is paired with
+`canvas serve` as the host, and the code is used up. From then on `canvas serve` knows that browser
+by its key: reloading, or opening the host link again later, needs no code. The same link in
+another browser is refused. To be the host from another browser or device too, run `canvas pair`
+in the project and open the link it prints there.
 
 One tab is the host at a time. Open the link in another tab and the board moves there; the first
 tab says so and offers **Use here** to take it back.

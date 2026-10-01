@@ -14,9 +14,12 @@ order: 2
 canvas runs agents and shells on the host's machine and lets other people reach them. So the
 design is about **who can make `canvas serve` act, and through what**:
 
-1. **Only the host's browser talks to `canvas serve`.** It proves itself with the token in the host
-   link. Without `--tls-host`, `canvas serve` only listens on `127.0.0.1`. The token is also what
-   keeps other websites off that local port: WebSockets are not protected by CORS.
+1. **Only the host's browser talks to `canvas serve`.** The host pairs a browser once, with the
+   pairing code in the first host link: good for 10 minutes and one browser. From then on that
+   browser proves itself on every connection by signing a one-time challenge from `canvas serve`
+   with its key; a connection that hasn't gets nothing else. Without `--tls-host`, `canvas serve`
+   only listens on `127.0.0.1`. The challenge is also what keeps other websites off that local
+   port: WebSockets are not protected by CORS.
 2. **Guests reach the machine only through the host's browser**, which checks every request
    against the [guest access](/docs/guests): view (refused), edit (the host approves), trusted
    (runs).
@@ -35,11 +38,13 @@ design is about **who can make `canvas serve` act, and through what**:
 
 | Link        | Holds                                          | Gives                              |
 | ----------- | ---------------------------------------------- | ---------------------------------- |
-| Host link   | Room id, room key, host public key, server URL, token | Control of `canvas serve`: agents, shells, files |
+| Host link   | Room id, room key, host public key, server URL; a pairing code until a browser pairs | In a paired browser, control of `canvas serve`: agents, shells, files. Elsewhere, a seat as a guest at most |
 | Guest link  | Room id, room key, host public key; with a relay, its URL and a relay token | A seat on the board, with the guest access |
 
 Secrets travel in the URL fragment, which the browser never sends to the server hosting the web
-app. The room key also encrypts the signalling that goes through the public Nostr relays. Anyone
+app. A leaked host link is useless once the host has paired; a leaked pairing code is good for
+minutes, and once. `canvas pair` pairs another browser; `.canvas/owners.json` lists the paired
+ones. The room key also encrypts the signalling that goes through the public Nostr relays. Anyone
 holding the guest link can join; there are no per-person accounts or roles.
 
 ## With a canvas relay
