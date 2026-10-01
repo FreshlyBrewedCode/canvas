@@ -26,7 +26,7 @@ instead of pasting code into its reply.
 
 ## What an agent can do
 
-An agent has the board powers of a guest with edit access, without approvals. Nothing it does on
+An agent has the board powers of a guest with the edit role, without approvals. Nothing it does on
 the board runs anything by itself:
 
 - A **terminal frame** it opens is an idle shell. The agent cannot type into it.

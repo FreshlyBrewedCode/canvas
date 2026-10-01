@@ -63,6 +63,15 @@ canvas
   `.canvas/pairing.json`, read on every attempt, so `canvas pair` reaches a running `serve`
   (`server/owners.ts`; `serve.json` is the link base `canvas pair` prints). Refused: close
   `AUTH_REFUSED`, status `refused`, no retry (`web/lib/server-link.ts`)
+- members and the lobby (ADR 0011, decision 2): `canvas serve` keeps members (key, full
+  fingerprint, name, role `view`|`edit`) in `.canvas/members.json` (`server/members.ts`); the
+  host tab gets them in `welcome`/`members` and changes them with `member-*`. A verified peer
+  (`identify`, which also carries the name it knocks with) that is a member's is in, else it
+  knocks (`web/lib/admission.ts`: `Admissions`, `check`, `mayEdit` — found by full fingerprint and
+  key, never the short form). Until in, the host sends it only `hello` and `admission` messages
+  and drops its updates, requests and presence; every host→guest send targets `admitted()` only.
+  Guests: `Room.admission`, `Room.access`; the lobby replaces the board (`components/members.tsx`).
+  Trusted (decision 4) goes on top in `Admissions.access`
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends. A file frame's tree panel follows too
@@ -118,8 +127,9 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host (a paired browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the
-    first link must carry a pairing code — `canvas pair` — later ones need none) and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    first link must carry a pairing code — `canvas pair` — later ones need none) and a guest,
+    which the host admits when it knocks (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
+    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|lobby|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/

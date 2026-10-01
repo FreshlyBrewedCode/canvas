@@ -25,8 +25,11 @@ canvas is a prototype. These are known, and not bugs to report.
 
 ## Guests
 
-- **One guest access per board**, no per-person roles.
-- **No way to revoke a guest link** except deleting `.canvas/`, which changes every link.
+- **Roles are view and edit.** No guest runs anything without the host's approval, or types into
+  a terminal.
+- **A guest link can't be changed** except by deleting `.canvas/`, which changes every link. Whoever
+  holds it can knock, a removed member included, and sees other guests' cursors while waiting in
+  the lobby.
 - **Late joiners receive whole threads**, shortest first, each in one message: a very long thread
   takes a while to appear, and closed frames' threads are not sent.
 

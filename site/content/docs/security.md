@@ -21,31 +21,36 @@ design is about **who can make `canvas serve` act, and through what**:
    only listens on `127.0.0.1`. The challenge is also what keeps other websites off that local
    port: WebSockets are not protected by CORS.
 2. **Guests reach the machine only through the host's browser**, which checks every request
-   against the [guest access](/docs/guests): view (refused), edit (the host approves), trusted
-   (runs).
-3. **Agent permissions are answered by the host only**, whatever the guest access.
+   against the requesting member's [role](/docs/guests#members-and-roles): view (refused), edit
+   (the host approves). Someone the host hasn't let in gets refused.
+3. **Agent permissions are answered by the host only**, whatever the guest's role.
 4. **Guests verify the host.** `canvas serve` makes a key pair per board. The public key is in
    every link; the private key reaches only the host's browser, which signs its peer id with it.
-   Guests take the board, agent output and the guest access only from the peer whose signature
+   Guests take the board, agent output and their role only from the peer whose signature
    verifies.
 5. **The host verifies everyone else.** Each browser has its own key, kept where the page can use
    it but not read it out. On joining, a guest signs its peer id with it, over a one-time challenge
    from the host; the host checks it and tells everyone each peer's verified
    [fingerprint](/docs/board#presence). A fingerprint says which browser someone is on, not who
-   they are: names are what people typed. It doesn't change what anyone may do yet.
+   they are: names are what people typed.
+6. **The host lets each browser in.** The guest link is an invite. A browser whose key isn't a
+   member's waits in the [lobby](/docs/guests#the-lobby): the host sends it nothing of the board,
+   agents, terminals or files, and drops what it sends, until the host admits it with a role.
+   Members are found by their whole key, not the short fingerprint people see. `canvas serve`
+   keeps them in `.canvas/members.json`; removing one cuts them off at once.
 
 ## The links
 
 | Link        | Holds                                          | Gives                              |
 | ----------- | ---------------------------------------------- | ---------------------------------- |
 | Host link   | Room id, room key, host public key, server URL; a pairing code until a browser pairs | In a paired browser, control of `canvas serve`: agents, shells, files. Elsewhere, a seat as a guest at most |
-| Guest link  | Room id, room key, host public key; with a relay, its URL and a relay token | A seat on the board, with the guest access |
+| Guest link  | Room id, room key, host public key; with a relay, its URL and a relay token | A knock: a seat in the lobby, and on the board once the host lets that browser in |
 
 Secrets travel in the URL fragment, which the browser never sends to the server hosting the web
 app. A leaked host link is useless once the host has paired; a leaked pairing code is good for
 minutes, and once. `canvas pair` pairs another browser; `.canvas/owners.json` lists the paired
 ones. The room key also encrypts the signalling that goes through the public Nostr relays. Anyone
-holding the guest link can join; there are no per-person accounts or roles.
+holding the guest link can knock; only browsers the host lets in get the board.
 
 ## With a canvas relay
 
@@ -84,10 +89,8 @@ apart.
 
 ## What guests can still do
 
-Guest access narrows what reaches the machine; it does not make guests harmless.
+Roles narrow what reaches the machine; they do not make guests harmless.
 
-- **Trusted guests** send prompts and type into terminals without approval. A terminal runs as the
-  host's user: a trusted guest can do anything the host can.
 - **Edit guests** can add agent and terminal frames, which start an idle agent process or shell on
   the host's machine, without approval. Prompting an agent needs the host's approval; typing into
   a terminal is not open to edit guests at all.
@@ -113,9 +116,11 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
   pages in it don't load, and its links go through the board's own link handling.
 - **Peers see each other's IP addresses**, as with any WebRTC connection. Through a relay's
   transport they don't; the relay does.
+- **Someone in the lobby holds the room key.** The host sends them nothing, but cursors and other
+  presence go between guests directly, so they may still see other guests' and show their own. A
+  removed member keeps the key too, and with it can decrypt a relay's traffic for the board.
 
 ## Not covered
 
-No audit, no rate limits (except on a canvas relay), no access per person (a guest's fingerprint is
-verified, but guest access is still one for the whole board), no way to revoke a guest link other
-than deleting `.canvas/` for new links. See [Limits](/docs/limits).
+No audit, no rate limits (except on a canvas relay), no way to change the room key of a guest link
+other than deleting `.canvas/` for new links. See [Limits](/docs/limits).
