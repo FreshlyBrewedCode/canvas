@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>Index</h1>
+    <p><a id="two" href="two.html">two</a></p>
+    <p><a id="code" href="../src/a.ts#L60">a.ts line 60</a></p>
+    <p><a id="web" href="https://example.com">web</a></p>
+    <p><a id="anchor" href="#down">down the page</a></p>
+    <div style="height: 1500px"></div>
+    <h2 id="down">Down</h2>
+    <script>
+      // A page's own posts and clicks are not the viewer's (finding 14).
+      setTimeout(() => parent.postMessage({ canvasLink: "../src/b.ts" }, "*"), 800);
+      setTimeout(() => document.getElementById("code").click(), 1200);
+    </script>
+  </body>
+</html>

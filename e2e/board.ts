@@ -92,3 +92,30 @@ export const transform = (page: Page) =>
 
 /** For what moves in time — a glide, the host's tidy, presence — rather than a state to wait for. */
 export const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+
+/** Where a board point is on the page's screen. */
+export const client = (page: Page, x: number, y: number) =>
+  page.evaluate(
+    ([bx, by]) => {
+      const board = document.querySelector("[data-board]")!.getBoundingClientRect();
+      const t = (document.querySelector("[data-board] > div") as HTMLElement).style.transform;
+      const [tx, ty, k] = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/
+        .exec(t)!
+        .slice(1)
+        .map(Number) as [number, number, number];
+      return { x: board.left + tx + bx * k, y: board.top + ty + by * k };
+    },
+    [x, y] as const,
+  );
+
+/** A frame's header: what drags it. */
+export const header = (page: Page, id: string) => frame(page, id).locator("> div").first();
+
+/** Where frames are, as "x,y x,y …", to compare a whole arrangement at once. */
+export const positions = async (page: Page, ...ids: string[]) => {
+  const all = await frames(page);
+  return ids
+    .map((id) => all.find((f) => f.id === id))
+    .map((f) => (f ? `${f.x},${f.y}` : "gone"))
+    .join(" ");
+};
