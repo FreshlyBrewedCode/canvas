@@ -110,6 +110,14 @@ async function setTrusted(on: boolean, page: Page = guest) {
   await host.keyboard.press("Escape");
   await page.locator(`[data-access="${on ? "trusted" : access}"]`).waitFor({ timeout: 10000 });
 }
+/**
+ * The guest link the host's board gives now: after a reset of the invite
+ * link (ADR 0011, decision 6), not the one we started with.
+ */
+async function copyGuestLink() {
+  await host.getByRole("button", { name: "Copy guest link" }).click();
+  return host.evaluate(() => navigator.clipboard.readText());
+}
 if (step !== "lobby") {
   await letIn(guest, "Ada");
   console.log("guest let in");
@@ -3012,10 +3020,12 @@ if (step === "lobby") {
   check(!(await reaches(host, guest)), "the host's edits no longer reach it");
   await shot(guest, "lobby-03-guest-removed");
 
-  await guest.reload();
+  // Removing resets the invite link: the old one leads to an empty room.
+  await host.waitForFunction((old) => (window as any).room.link.roomId !== old, new URL(guestLink).searchParams.get("room"));
+  await guest.goto(await copyGuestLink());
   await lobby("lobby").waitFor({ timeout: 30000 });
   await knock.waitFor({ timeout: 10000 });
-  check(true, "coming again, it knocks again");
+  check(true, "coming again with the new link, it knocks again");
   await knock.getByRole("button", { name: "Deny" }).click();
   await lobby("denied").waitFor({ timeout: 10000 });
   check(true, "denied, it is told so");
@@ -3170,8 +3180,9 @@ if (step === "presence-members") {
   check(!(await pointerAt(bob, "Ada", 131)), "nor does Ada's pointer reach him");
   check(await pointerAt(host, "Ada", 131), "Ada and the host still see each other");
 
-  // As told, he leaves, and drops everyone's.
-  await bob.reload();
+  // As told, he leaves, and drops everyone's. He comes back with the new
+  // link: removing him reset it, and his old one leads nowhere.
+  await bob.goto(await copyGuestLink());
   await letIn(bob, "Bob");
   await point(bob, 141);
   check(await pointerAt(guest, "Bob", 141), "back in, Ada sees Bob again");
@@ -3183,6 +3194,154 @@ if (step === "presence-members") {
     () => !(window as any).room.peerList.some((p: any) => p.user.name === "Bob"),
     "and Ada none of his",
   );
+}
+// ADR 0011, decision 6: resetting the invite link moves the members to a new
+// room; the lobby, removed members and old links are left behind. On whatever
+// transport `canvas serve` is on: run it with and without --relay.
+if (step === "rotate") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const roomOf = (page: Page) => page.evaluate(() => (window as any).room.link.roomId as string);
+  const urlRoom = (page: Page) => new URL(page.url()).searchParams.get("room");
+  const hostOnline = (page: Page) => page.evaluate(() => (window as any).room.hostOnline as boolean);
+  const fingerprintOf = async (page: Page) =>
+    (await page.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self"))!;
+  /** Set a key in the doc from `page`; whether `other`'s doc has it within `ms`. */
+  const reaches = async (page: Page, other: Page, ms = 10000) => {
+    const key = `rotate-${Math.random().toString(36).slice(2, 8)}`;
+    await page.evaluate((k) => (window as any).room.doc.getMap("e2e").set(k, 1), key);
+    return other
+      .waitForFunction((k) => (window as any).room.doc.getMap("e2e").has(k), key, { timeout: ms })
+      .then(() => true)
+      .catch(() => false);
+  };
+  /** Until `page` is in the room the host is in now. */
+  const followed = (page: Page, what: string) =>
+    roomOf(host)
+      .then((room) =>
+        page.waitForFunction((r) => (window as any).room.link.roomId === r && (window as any).room.hostOnline, room, {
+          timeout: 30000,
+        }),
+      )
+      .then(() => check(true, what))
+      .catch(() => check(false, what));
+  /** Until the host has moved off `room`. */
+  const moved = (from: string) =>
+    host.waitForFunction((r) => (window as any).room.link.roomId !== r, from, { timeout: 15000 });
+  /** What reaches `page`, by channel: to show a removed member gets no handover. */
+  const listen = (page: Page) =>
+    page.evaluate(() => {
+      const room = (window as any).room;
+      const got: string[] = ((window as any).received = []);
+      for (const [name, channel] of Object.entries<any>(room.actions)) {
+        const handler = channel.onMessage;
+        if (handler)
+          channel.onMessage = (data: any, context: { peerId: string }) => {
+            got.push(name === "admission" ? `admission:${data?.t}` : name);
+            return handler(data, context);
+          };
+      }
+    });
+  const transport = await host.evaluate(() => (window as any).room.transportKind());
+  console.log(`transport: ${transport}`);
+
+  // Ada (a member, trusted this session), Bob (a member), Cy (knocking).
+  await setTrusted(true);
+  const bob = await open(guestLink, "Bob", "#22c55e");
+  await letIn(bob, "Bob");
+  const bobPrint = await fingerprintOf(bob);
+  const cy = await open(guestLink, "Cy", "#a855f7");
+  await host.locator('[data-knock="Cy"]').first().waitFor({ timeout: 30000 });
+  const first = await roomOf(host);
+  const firstLink = guestLink;
+
+  await host.locator("[data-members-button]").click();
+  await host.locator("[data-reset-link]").click();
+  await host.keyboard.press("Escape");
+  await moved(first);
+  check(true, "Reset invite link: the host moves to a new room");
+  const second = await roomOf(host);
+  check(urlRoom(host) === second, "the host's address bar shows it");
+  await followed(guest, "Ada moves along");
+  await followed(bob, "and Bob");
+  check(urlRoom(guest) === second && urlRoom(bob) === second, "their address bars show it too");
+  await guest.locator('[data-access="trusted"]').waitFor({ timeout: 15000 });
+  check(true, "Ada is still trusted: the host's session goes on");
+  check(await reaches(guest, host), "Ada's edits reach the host in the new room");
+  check(await reaches(host, bob), "the host's reach Bob");
+  const newLink = await copyGuestLink();
+  check(new URL(newLink).searchParams.get("room") === second, "the board's guest link is the new one");
+  check(
+    new URLSearchParams(new URL(newLink).hash.slice(1)).get("k") !==
+      new URLSearchParams(new URL(firstLink).hash.slice(1)).get("k"),
+    "with a new key",
+  );
+  if (g.get("rt"))
+    check(
+      new URLSearchParams(new URL(newLink).hash.slice(1)).get("rt") !== g.get("rt"),
+      "and a relay token for the new relay room",
+    );
+  check((await roomOf(cy)) === first, "Cy, knocking, is left behind");
+  await host.waitForTimeout(2000);
+  check(!(await hostOnline(cy)), "with no host");
+  await shot(guest, "rotate-01-ada-moved");
+
+  // Removing Bob resets it again; he ignores being removed, as a tampered client would.
+  await bob.evaluate(() => {
+    (window as any).room.leaveRoom = () => {};
+  });
+  await listen(bob);
+  await host.locator("[data-members-button]").click();
+  await host.locator(`[data-member][data-fingerprint="${bobPrint}"]`).getByRole("button", { name: /^Remove/ }).click();
+  await host.keyboard.press("Escape");
+  await moved(second);
+  check(true, "removing Bob resets the invite link");
+  await followed(guest, "Ada moves along again");
+  check((await roomOf(bob)) === second, "Bob stays in the old room");
+  const received = await bob.evaluate(() => (window as any).received as string[]);
+  check(!received.includes("admission:moved"), `no handover reached him: ${JSON.stringify(received)}`);
+  await bob.waitForFunction(() => !(window as any).room.hostOnline, null, { timeout: 15000 }).catch(() => {});
+  check(!(await hostOnline(bob)), "the host is gone from his room");
+  check(!(await reaches(host, bob, 3000)), "the host's edits no longer reach him");
+  check(
+    await bob.evaluate(() => (window as any).room.peerIds().length === 0),
+    "nobody is in his room any more",
+  );
+
+  // The old links: a fresh browser with them gets nowhere.
+  for (const [what, link] of [
+    ["the first guest link", firstLink],
+    ["Bob's", newLink],
+  ] as const) {
+    const stranger = await open(link, "Mallory", "#ef4444");
+    await stranger.locator("[data-lobby]").waitFor({ timeout: 15000 });
+    await stranger.waitForTimeout(8000);
+    check(
+      !(await hostOnline(stranger)) && (await stranger.locator("[data-board]").count()) === 0,
+      `${what} no longer reaches the board: "${await stranger.locator("[data-lobby]").innerText()}"`,
+    );
+    if (what === "Bob's") await shot(stranger, "rotate-02-old-link");
+    await stranger.context().close();
+  }
+
+  // Reloads stay in: a member's, and the host's — even from the link from before.
+  const third = await roomOf(host);
+  await guest.reload();
+  await followed(guest, "Ada reloads into the new room");
+  await guest.locator("[data-board]").waitFor({ timeout: 30000 });
+  await host.goto(hostLink);
+  await host.getByText("connected to canvas serve").waitFor({ timeout: 15000 });
+  await host
+    .waitForFunction((r) => (window as any).room.link.roomId === r, third, { timeout: 15000 })
+    .catch(() => {});
+  check((await roomOf(host)) === third, "the host link from before opens the board in the new room");
+  check(urlRoom(host) === third, "and the address bar shows it");
+  await followed(guest, "Ada sees the host again");
+  check(await reaches(guest, host), "and her edits reach it");
+  await bob.context().close();
+  await cy.context().close();
 }
 // ADR 0011: each browser proves its key; the host tells everyone whose fingerprint each peer has.
 if (step === "identity") {
