@@ -235,11 +235,17 @@ test.describe("on a long file", () => {
       "Open src/big.ts at lines 400-410 on the board, then explain those lines in about 300 words.",
     );
     const occupied = guest.locator("[data-frame-type=file][data-occupant]");
-    await expect(occupied, "the guest sees the agent in the frame it opened").toHaveCount(1, {
-      timeout: 60_000,
-    });
     const title = await frame(host, self).getByLabel("Frame title").inputValue();
-    expect(await occupied.getAttribute("data-occupant")).toBe(title);
+    // Who is in a file frame, read at once: the agent leaves when its turn ends.
+    await expect
+      .poll(
+        () => occupied.evaluateAll((els) => els.map((el) => el.getAttribute("data-occupant"))),
+        {
+          message: "the guest sees the agent in the frame it opened",
+          timeout: 60_000,
+        },
+      )
+      .toEqual([title]);
     await idle(host, self, { turn });
     await expect(occupied, "the agent left the frame when its turn ended").toHaveCount(0);
 
