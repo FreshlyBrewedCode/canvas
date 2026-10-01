@@ -28,6 +28,15 @@ reading the same thread, looking at the same files.
 - **Agents** are frames on the board. Anyone with edit access writes their prompts; agents can
   open and arrange frames themselves with the [board tools](/docs/board-tools).
 
+## The layout
+
+The board is not a free canvas: frames **snap into place**. A frame goes beside another in a row,
+into a new row above or below, or into a cluster of its own, and the rest make room. Nothing
+overlaps, nothing gets lost off to the side, and agents arrange their frames by the same rules. The
+idea comes from tiling window managers like [niri](https://github.com/YaLTeR/niri), and like them the
+board is best moved through with the keyboard: frame to frame, cluster to cluster, a row in full
+screen. See [Layout](/docs/board#layout).
+
 ## Frames
 
 | Frame                        | Shows                                                         |

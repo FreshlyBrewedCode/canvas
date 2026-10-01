@@ -1,12 +1,47 @@
 ---
 title: Board
-description: Frames, layout, navigation and presence.
+description: Layout, navigation, frames and presence.
 section: Features
 order: 1
 ---
 
-The board is one shared surface. Every frame's position, size and title is shared: when someone
+The board is one shared surface. Every frame's place, size and title is shared: when someone
 moves a frame, everyone sees it move.
+
+## Layout
+
+The board is not a free canvas. Frames don't sit wherever they are dropped: they **snap into
+place**, side by side, never overlapping and never lost somewhere off to the side. The idea comes
+from scrolling tiling window managers like [niri](https://github.com/YaLTeR/niri): you say where a
+frame goes next to the others, and the board works out the rest.
+
+- **A row** is frames side by side, sharing a height and their borders.
+- **A cluster** is rows of frames stacked top to bottom: one piece of work, like an agent with the
+  files and terminal it uses. It can have a name. A frame on its own is a cluster of one.
+- **Lines** hold the clusters, left to right, with space between them; lines go top to bottom.
+
+Drag a frame by its header and it snaps: **beside a frame**, into its row; **above or below a
+row**, into a new row of that cluster; **between clusters**, into a cluster of its own. The others
+make room, and a dashed outline shows where it will land before you let go; others see a ghost of
+it in your colour. Hold **Alt** to drop it into a new cluster wherever the pointer is; **Esc** calls
+the drag off.
+
+![Dragging a frame over another's edge: the others make room, the outline shows where it lands](./screenshots/snap.webp)
+
+- **Clusters move** by the grip left of their name, or by any of their frames with **Shift** held.
+  Click the name field above a cluster to name it.
+- **Edges resize**: a vertical edge sets the width of the frame left of it, a horizontal one the
+  height of the row above it. The rest moves along.
+- **Gaps close** by themselves when a frame is moved or removed.
+- **Your frame stays put** when someone else changes the layout: the rest of the board moves
+  around it.
+
+Because the board has this shape, the fastest way around it is the [keyboard](#keyboard): go to
+the frame left, right, above or below, move the current one the same way, jump between clusters,
+open a new frame beside the one you are in. [Full screen](#full-screen) shows one row at a time.
+
+Agents arrange frames the same way: they name frames and sides, never coordinates
+([Board tools](/docs/board-tools)).
 
 ## Navigate
 
@@ -137,52 +172,6 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
 - **Move** it by its header, **resize** it by its edges.
 - **Rename** it by clicking its title in the header.
 - **Remove** it with the **×** in its header.
-
-## Layout
-
-The board is **clusters** of frames. A cluster is **rows**, top to bottom, and a row is
-**columns**, left to right, each holding one frame. Frames in a cluster share their borders, with
-no space between them; the frames of a row share its height, and a column's width is its
-frame's. Clusters go in **lines**, top to bottom: a line's clusters go left to right, tops aligned,
-with space between them, however wide the line gets. Nothing is placed freely, and nothing overlaps:
-a frame on its own is a cluster of one. A new cluster goes at the end of the last line.
-
-Where a dragged frame goes is decided by the **pointer** from side to side, and by the **dragged
-frame's middle** up and down: you hold it by its header, at its top, so moving it sideways keeps it
-in its row.
-
-| Where it is                                     | The dragged frame goes                |
-| ----------------------------------------------- | ------------------------------------- |
-| Over a frame's left or right half               | Before or after it, in its row        |
-| Its middle in a frame's top or bottom fifth     | Into a new row above or below its row |
-| Between clusters, or beside a line              | Into a new cluster there, in that line |
-| Between lines, or above or below them all       | Into a new cluster, a line of its own |
-
-Just outside a cluster still counts as its nearest frame's.
-
-- **While you drag**, the board shows the result: the other frames of the cluster make room where
-  it would land, and a dashed outline marks the spot. The clusters themselves stay where they are
-  until you let go, so none moves away from the pointer; a new cluster shows as a bar in the gap
-  it goes to. Nothing changes for anyone else until you let go; they see a ghost of the frame in
-  your colour. **Esc** calls the drag off.
-- **Hold Alt** to drop it into a new cluster where the pointer is, even over other frames.
-- **Moving a cluster:** drag the grip left of its name, above the cluster, or hold **Shift** and
-  drag any of its frames. With its top about level with a line's, it goes into that line, before
-  the cluster the pointer is at, or at the line's end; between lines, above or below them, into a
-  line of its own. A line left empty goes.
-- **Naming a cluster:** click the name field above it (it reads _cluster_ until named).
-- **Moving or removing** a frame closes the gap it leaves.
-- **The frame you are in stays put** on your screen when someone else changes the layout around
-  it; the rest of the board moves instead.
-- **Resizing:** every edge is a handle, one where two frames or two rows meet. Drag a vertical
-  edge to set the width of the frame left of it: the rest of the row moves along. Drag a
-  horizontal edge to set the height of the row above it: the rows below move. A corner does both.
-  A cluster's left and top edges stay where the board arranges it.
-
-![Dragging a frame over another's edge: the others make room, the outline shows where it lands](./screenshots/snap.webp)
-
-Agents use the same rules: they name frames and sides, never coordinates
-([Board tools](/docs/board-tools)).
 
 ## Presence
 
