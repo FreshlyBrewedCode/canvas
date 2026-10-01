@@ -16,7 +16,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.E2E_WORKERS ? Number(process.env.E2E_WORKERS) : process.env.CI ? 3 : 4,
-  timeout: 60_000,
+  // Real agents (`E2E_AGENTS=record|live`) take minutes; their recordings don't.
+  timeout: (process.env.E2E_AGENTS ?? "replay") === "replay" ? 60_000 : 900_000,
   expect: { timeout: 5_000 },
   reporter: process.env.CI
     ? [["github"], ["list"], ["html", { open: "never", outputFolder: "../playwright-report" }]]
@@ -35,7 +36,8 @@ export default defineConfig({
       env: { PORT: String(E2E.webPort) },
       url: E2E.webUrl,
       reuseExistingServer: !process.env.CI,
-      timeout: 60_000,
+      // Real agents (`E2E_AGENTS=record|live`) take minutes; their recordings don't.
+      timeout: (process.env.E2E_AGENTS ?? "replay") === "replay" ? 60_000 : 900_000,
     },
     {
       command: `bun src/cli.ts relay --port ${E2E.relayPort} --host 127.0.0.1`,

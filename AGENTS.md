@@ -148,6 +148,12 @@ canvas
     the test asks for `guest`. `e2e/board.ts` reads and sets up the board through the dev build's
     `window` hooks; `e2e/members.ts` sets members' roles, trust, removal (ADR 0011). One test per feature, `test.step`s
     for its parts; `-g <title>` runs one
+  - agents in e2e replay recordings (`e2e/acp/cassette.ts`): `canvas serve` runs each agent behind
+    `CANVAS_AGENT_WRAPPER`; a recording (`e2e/cassettes/<spec>/<test>/<kind>-<n>.jsonl`) is the ACP
+    traffic both ways and the agent's board MCP calls, which the replay makes again on this run's
+    board, its ids swapped for this run's (`e2e/acp/ids.ts`). `bun run e2e:record -g <title>`
+    records anew with the real agents (`E2E_AGENTS=live` runs them unrecorded); a prompt that
+    differs from the recording fails, saying so
   - fixture projects (`e2e/projects/`): `basic` (long files, nested folders, an HTML page),
     `files` (finding 05), `comments` (finding 13), `links` (finding 14). What must not be in a repo
     (secrets, binaries, a 1 MiB file) a test writes into its copy (`serve.dir`)

@@ -15,9 +15,9 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { E2E } from "./env";
 
 /** Playwright's `expect`, and positions on screen give or take a pixel or two. */
@@ -67,6 +67,7 @@ export const test = base.extend<Options & Fixtures>({
 
   serve: async ({ project, serveEnv, via }, use, testInfo) => {
     const dir = mkdtempSync(join(tmpdir(), "canvas-e2e-"));
+    const agents = agentWrapper(testInfo);
     cpSync(join(ROOT, "e2e/projects", project), dir, { recursive: true });
     // A repo, as projects are: the shared set follows git (ADR 0002).
     for (const args of [
@@ -88,7 +89,11 @@ export const test = base.extend<Options & Fixtures>({
           ...["--dir", dir, "--port", String(port), "--web-url", E2E.webUrl],
           ...["--relay", E2E.relayUrl, "--relay-key", E2E.relayKey, "--relay-via", via],
         ],
-        { cwd: ROOT, env: { ...process.env, ...serveEnv }, stdio: ["ignore", "pipe", "pipe"] },
+        {
+          cwd: ROOT,
+          env: { ...process.env, ...agents.env, ...serveEnv },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
       );
       log(child, "serve", testInfo);
       link = await new Promise<string>((done, fail) => {
@@ -115,6 +120,7 @@ export const test = base.extend<Options & Fixtures>({
     });
     await stop(child!);
     rmSync(dir, { recursive: true, force: true });
+    agents.done();
   },
 
   // A fresh browser each test: the link's pairing code makes it the board's owner (ADR 0011).
@@ -190,6 +196,36 @@ export async function open(
   });
   await page.goto(url);
   return page;
+}
+
+/**
+ * How the test's agents run (`E2E_AGENTS`): `replay` (the default) plays the
+ * test's recordings back in their place, `record` runs the real agents and
+ * records them anew, `live` runs them as they are. A test's recordings are in
+ * `e2e/cassettes/<spec>/<test>/` (`e2e/acp/cassette.ts`).
+ */
+function agentWrapper(testInfo: TestInfo) {
+  const mode = process.env.E2E_AGENTS ?? "replay";
+  if (mode === "live") return { env: {}, done: () => {} };
+  if (mode !== "replay" && mode !== "record")
+    throw new Error(`E2E_AGENTS is replay, record or live, not ${mode}`);
+  const spec = basename(testInfo.file).replace(/\.spec\.ts$/, "");
+  const name = testInfo.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const cassettes = join(ROOT, "e2e/cassettes", spec, name);
+  if (mode === "record") {
+    rmSync(cassettes, { recursive: true, force: true });
+    mkdirSync(cassettes, { recursive: true });
+  }
+  // Which recordings this run's agent processes took.
+  const state = mkdtempSync(join(tmpdir(), "canvas-e2e-agents-"));
+  const wrapper = ["bun", join(ROOT, "e2e/acp/cassette.ts"), mode, cassettes, state];
+  return {
+    env: { CANVAS_AGENT_WRAPPER: JSON.stringify(wrapper) },
+    done: () => rmSync(state, { recursive: true, force: true }),
+  };
 }
 
 function log(child: ChildProcess, name: string, testInfo: TestInfo) {
