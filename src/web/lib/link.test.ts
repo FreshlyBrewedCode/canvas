@@ -5,11 +5,11 @@ const link: BoardLink = {
   roomId: "r1",
   key: "k1",
   hostPublicKey: "pk1",
-  host: { server: "ws://127.0.0.1:4418", token: "secret" },
+  host: { server: "ws://127.0.0.1:4418", pair: "secret" },
   relay: null,
 };
 
-test("a guest link carries the room but never the host's server or token", () => {
+test("a guest link carries the room but never the host's server or pairing code", () => {
   expect(guestLink(link, "https://ui.canvas.frebreco.de/")).toBe(
     "https://ui.canvas.frebreco.de/?room=r1#k=k1&pk=pk1",
   );
@@ -37,4 +37,18 @@ test("a guest link from a relay link keeps its relay", () => {
     via: "signal",
     token: "g",
   });
+});
+
+test("a host link makes you the host, with or without its pairing code", () => {
+  const read = (fragment: string) =>
+    readLink(new URL(`https://ui.canvas.frebreco.de/?room=r1#${fragment}`) as unknown as Location);
+  expect(read("k=k1&pk=pk1&server=ws%3A%2F%2F127.0.0.1%3A4418&pair=c0de")?.host).toEqual({
+    server: "ws://127.0.0.1:4418",
+    pair: "c0de",
+  });
+  expect(read("k=k1&pk=pk1&server=ws%3A%2F%2F127.0.0.1%3A4418")?.host).toEqual({
+    server: "ws://127.0.0.1:4418",
+    pair: null,
+  });
+  expect(read("k=k1&pk=pk1")?.host).toBeNull();
 });

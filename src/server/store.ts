@@ -1,7 +1,10 @@
 /**
  * Everything `canvas serve` persists lives in `<dir>/.canvas/`:
  *
- *   room.json              room id, trystero key, host keypair, host token
+ *   room.json              room id, trystero key, host keypair
+ *   owners.json            the browsers paired as host (`owners.ts`)
+ *   pairing.json           the pending pairing code, if any (`owners.ts`)
+ *   serve.json             the host link's base, for `canvas pair`
  *   board.bin              the latest Yjs state of the board
  *   sessions/<id>.ndjson   one agent session: a meta line, then its events
  *
@@ -20,16 +23,19 @@ import {
 import { join } from "node:path";
 import type { AgentEvent, RoomSecrets, SessionMeta, SessionSnapshot } from "../shared/protocol";
 
-export interface RoomFile extends RoomSecrets {
-  /** Proves a WebSocket client is the host's browser. */
-  readonly token: string;
+export type RoomFile = RoomSecrets;
+
+/** Where the running `canvas serve` is reached: what a host link is made of besides the room. */
+export interface ServeInfo {
+  readonly webUrl: string;
+  readonly server: string;
 }
 
 const randomId = (bytes: number) =>
   Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url");
 
 export class Store {
-  private readonly root: string;
+  readonly root: string;
 
   constructor(dir: string) {
     this.root = join(dir, ".canvas");
@@ -50,10 +56,18 @@ export class Store {
       key: randomId(18),
       hostPublicKey: Buffer.from(raw).toString("base64url"),
       hostPrivateKey: await crypto.subtle.exportKey("jwk", pair.privateKey),
-      token: randomId(24),
     };
     writeFileSync(path, JSON.stringify(room, null, 2), { mode: 0o600 });
     return room;
+  }
+
+  serveInfo(): ServeInfo | null {
+    const path = join(this.root, "serve.json");
+    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as ServeInfo) : null;
+  }
+
+  saveServeInfo(info: ServeInfo): void {
+    writeFileSync(join(this.root, "serve.json"), JSON.stringify(info, null, 2));
   }
 
   board(): Uint8Array | null {

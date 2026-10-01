@@ -72,9 +72,10 @@ export function Board() {
   const { wrapRef, canvasRef, scale, ...viewport } = useBoardViewport(
     `canvas.viewport.${room.link.roomId}`,
   );
-  // A host tab another tab took over reaches no one until it takes the board back.
+  // A host tab another tab took over reaches no one until it takes the board back;
+  // one canvas serve refused, never.
   const readOnly = room.isHost
-    ? room.serverStatus === "replaced"
+    ? room.serverStatus === "replaced" || room.serverStatus === "refused"
     : room.roomState?.access === "view";
   const go = useBoardNavigation(room, viewport, readOnly);
   const { followed, toggle: toggleFollow } = useFollowView(viewport);
@@ -291,6 +292,7 @@ export function Board() {
           {!readOnly && !row && <Toolbar onCreate={create} />}
           <Approvals />
           <HostElsewhere />
+          <HostRefused />
           {frames.length === 0 && <EmptyBoard readOnly={readOnly} />}
 
           <div
@@ -753,6 +755,25 @@ function HostElsewhere() {
       <Button size="sm" onClick={() => room.takeOver()}>
         Use here
       </Button>
+    </div>
+  );
+}
+
+/** Host link, but `canvas serve` doesn't know this browser (ADR 0011): say how to pair. */
+function HostRefused() {
+  const room = useRoomState();
+  if (room.serverStatus !== "refused") return null;
+  return (
+    <div
+      data-hud=""
+      data-host-refused=""
+      data-status="blocked"
+      className="bg-card border-status-blocked/45 absolute top-3 left-1/2 w-[28rem] -translate-x-1/2 border border-l-[3px] border-l-[var(--status)] p-3 shadow-md"
+    >
+      <p className="text-xs leading-relaxed">
+        canvas serve refused this browser: {room.serverRefusal}. A host link opens the board as host
+        only in browsers paired with it.
+      </p>
     </div>
   );
 }

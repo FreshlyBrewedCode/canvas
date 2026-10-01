@@ -1,14 +1,17 @@
 /**
  * `canvas serve`: the local half of canvas. One WebSocket endpoint that only
- * the host's browser may use (it presents the token from the printed link),
- * in one tab at a time: a newer tab takes over from an older one.
- * Nothing here knows about guests — the host's browser is the relay.
+ * the host's browser may use, in one tab at a time: a newer tab takes over
+ * from an older one. Each socket first answers a challenge with a paired
+ * browser's key, or pairs it with a code (`owners.ts`); until then it gets
+ * nothing else. Nothing here knows about guests — the host's browser is the relay.
  */
 
 import type { ServerWebSocket } from "bun";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { nonce } from "../shared/identity";
 import {
+  AUTH_REFUSED,
   HOST_REPLACED,
   type ClientToServer,
   type RelayVia,
@@ -19,6 +22,7 @@ import { relayRoom } from "../shared/relay-room";
 import { AgentManager, detectAgents } from "./agents";
 import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
+import { Owners } from "./owners";
 import { Scratch } from "./scratch";
 import { canvasSkills } from "./skills";
 import { Store } from "./store";
@@ -34,7 +38,19 @@ export interface ServeOptions {
   readonly version?: string;
   /** Guests reach the board through this `canvas relay` (ADR 0008). */
   readonly relay?: ServeRelay;
+  /** Print a fresh pairing code even if a browser is paired already. */
+  readonly pair?: boolean;
 }
+
+/** A socket's state: the nonce it must sign, then whether it did. */
+interface Conn {
+  readonly nonce: string;
+  state: "challenged" | "checking" | "owner";
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** How long a socket has to answer its challenge. */
+const AUTH_MS = 15_000;
 
 export interface ServeRelay {
   readonly url: string;
@@ -47,6 +63,9 @@ export async function serve(options: ServeOptions) {
   const store = new Store(options.dir);
   excludeFromGit(options.dir);
   const room = await store.room();
+  const owners = new Owners(store.root);
+  // A new code at every start while nobody is paired, and on request.
+  const pairing = options.pair || owners.list().length === 0 ? owners.pair() : null;
   const relayRoomName = options.relay ? await relayRoom(room.key) : null;
   // Signed for every host tab that connects: its token and the one its guest
   // links carry are good for 30 days from then.
@@ -60,7 +79,7 @@ export async function serve(options: ServeOptions) {
         }
       : null;
   // The host tab: the board, and so every board tool call, lives there.
-  let host: ServerWebSocket<unknown> | null = null;
+  let host: ServerWebSocket<Conn> | null = null;
   const broadcast = (message: ServerToClient) => host?.send(JSON.stringify(message));
 
   // Scratch files are written by agents' board tools; `files` mirrors them.
@@ -110,8 +129,45 @@ export async function serve(options: ServeOptions) {
     (id, code) => broadcast({ t: "term-exit", id, code }),
   );
 
-  const handle = (ws: ServerWebSocket<unknown>, message: ClientToServer) => {
+  const welcome = (ws: ServerWebSocket<Conn>) => {
+    if (host) {
+      files.drop(host);
+      host.close(HOST_REPLACED, "opened in another tab");
+    }
+    host = ws;
+    const board = store.board();
+    ws.send(
+      JSON.stringify({
+        t: "welcome",
+        version: options.version ?? null,
+        room,
+        cwd: options.dir,
+        agents: agentDefinitions.map(({ kind, label }) => ({ kind, label })),
+        board: board ? Buffer.from(board).toString("base64") : null,
+        sessions: agents.snapshots(),
+        relay: relaySetup(),
+      } satisfies ServerToClient),
+    );
+  };
+
+  /** A socket's first message: its answer to the challenge, and nothing else. */
+  const authenticate = async (ws: ServerWebSocket<Conn>, message: ClientToServer) => {
+    if (message.t !== "auth" || ws.data.state !== "challenged")
+      return ws.close(AUTH_REFUSED, "authenticate first");
+    ws.data.state = "checking";
+    const result = await owners.authenticate(room.roomId, ws.data.nonce, message);
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (!result.ok) return ws.close(AUTH_REFUSED, result.reason);
+    clearTimeout(ws.data.timer);
+    ws.data.state = "owner";
+    if (result.paired) console.log(`  paired a browser: ${result.owner.fingerprint}`);
+    welcome(ws);
+  };
+
+  const handle = (ws: ServerWebSocket<Conn>, message: ClientToServer) => {
     switch (message.t) {
+      case "auth":
+        return;
       case "board-save":
         return store.saveBoard(Buffer.from(message.state, "base64"));
       case "agent-create":
@@ -158,7 +214,7 @@ export async function serve(options: ServeOptions) {
     }
   };
 
-  const server = Bun.serve({
+  const server = Bun.serve<Conn>({
     port: options.port,
     hostname: options.hostname,
     ...(options.tls && {
@@ -171,35 +227,28 @@ export async function serve(options: ServeOptions) {
           status: 404,
         });
       // A WebSocket is not subject to CORS: any page could open one to
-      // localhost. The token is what keeps other sites out.
-      if (url.searchParams.get("token") !== room.token)
-        return new Response("bad token", { status: 401 });
-      return server.upgrade(req) ? undefined : new Response("upgrade failed", { status: 400 });
+      // localhost. The challenge is what keeps other sites out.
+      const data: Conn = { nonce: nonce(), state: "challenged" };
+      return server.upgrade(req, { data })
+        ? undefined
+        : new Response("upgrade failed", { status: 400 });
     },
     websocket: {
       maxPayloadLength: 64 * 1024 * 1024,
       open(ws) {
-        if (host) {
-          files.drop(host);
-          host.close(HOST_REPLACED, "opened in another tab");
-        }
-        host = ws;
-        const board = store.board();
-        const { token: _, ...secrets } = room;
-        ws.send(
-          JSON.stringify({
-            t: "welcome",
-            version: options.version ?? null,
-            room: secrets,
-            cwd: options.dir,
-            agents: agentDefinitions.map(({ kind, label }) => ({ kind, label })),
-            board: board ? Buffer.from(board).toString("base64") : null,
-            sessions: agents.snapshots(),
-            relay: relaySetup(),
-          } satisfies ServerToClient),
-        );
+        ws.data.timer = setTimeout(() => ws.close(AUTH_REFUSED, "no answer"), AUTH_MS);
+        ws.send(JSON.stringify({ t: "challenge", nonce: ws.data.nonce } satisfies ServerToClient));
       },
       message(ws, data) {
+        if (ws.data.state !== "owner") {
+          let message: ClientToServer;
+          try {
+            message = JSON.parse(String(data)) as ClientToServer;
+          } catch {
+            return ws.close(AUTH_REFUSED, "authenticate first");
+          }
+          return void authenticate(ws, message);
+        }
         // Still in flight from a tab that was just replaced.
         if (ws !== host) return;
         try {
@@ -209,16 +258,17 @@ export async function serve(options: ServeOptions) {
         }
       },
       close(ws) {
+        clearTimeout(ws.data.timer);
         if (ws === host) host = null;
         files.drop(ws);
       },
     },
   });
 
-  return { server, room };
+  return { server, room, pairing };
 }
 
-function sendError(ws: ServerWebSocket<unknown>, error: unknown) {
+function sendError(ws: ServerWebSocket<Conn>, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   ws.send(JSON.stringify({ t: "error", message } satisfies ServerToClient));
 }

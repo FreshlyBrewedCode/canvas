@@ -202,7 +202,26 @@ export interface WelcomeRelay {
  */
 export const HOST_REPLACED = 4001;
 
+/**
+ * Close code of a socket that didn't authenticate as an owner (ADR 0011,
+ * decision 3); the reason says why. Retrying can't help.
+ */
+export const AUTH_REFUSED = 4003;
+
+/**
+ * Every socket's first message, and the only one `canvas serve` takes before
+ * it: the answer to `challenge`. `signature` is over `ownerStatement` (`shared/identity.ts`)
+ * with this browser's key; `pair` a pairing code, which makes the key an owner.
+ */
+export interface AuthMessage {
+  readonly t: "auth";
+  readonly publicKey: string;
+  readonly signature: string;
+  readonly pair?: string;
+}
+
 export type ClientToServer =
+  | AuthMessage
   | { readonly t: "board-save"; readonly state: string }
   | { readonly t: "agent-create"; readonly id: string; readonly agent: AgentKind }
   | {
@@ -255,6 +274,8 @@ export interface ToolImage {
 }
 
 export type ServerToClient =
+  /** Every socket's first message: sign this to show you are an owner. */
+  | { readonly t: "challenge"; readonly nonce: string }
   | {
       readonly t: "welcome";
       /** The version `canvas serve` runs as; null for a checkout. */
