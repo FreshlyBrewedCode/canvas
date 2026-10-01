@@ -25,6 +25,11 @@ design is about **who can make `canvas serve` act, and through what**:
    every link; the private key reaches only the host's browser, which signs its peer id with it.
    Guests take the board, agent output and the guest access only from the peer whose signature
    verifies.
+5. **The host verifies everyone else.** Each browser has its own key, kept where the page can use
+   it but not read it out. On joining, a guest signs its peer id with it, over a one-time challenge
+   from the host; the host checks it and tells everyone each peer's verified
+   [fingerprint](/docs/board#presence). A fingerprint says which browser someone is on, not who
+   they are: names are what people typed. It doesn't change what anyone may do yet.
 
 ## The links
 
@@ -106,6 +111,6 @@ Guest access narrows what reaches the machine; it does not make guests harmless.
 
 ## Not covered
 
-No audit, no rate limits (except on a canvas relay), no per-guest identity (peer ids are not cryptographically bound; the
-host signature binds only the host role), no way to revoke a guest link other than deleting
-`.canvas/` for new links. See [Limits](/docs/limits).
+No audit, no rate limits (except on a canvas relay), no access per person (a guest's fingerprint is
+verified, but guest access is still one for the whole board), no way to revoke a guest link other
+than deleting `.canvas/` for new links. See [Limits](/docs/limits).
