@@ -6,17 +6,12 @@
  * take board state, agent output and room policy from the peer that verifies.
  */
 
-const ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
-const SIGNATURE = { name: "ECDSA", hash: "SHA-256" } as const;
-
-const toBase64Url = (bytes: ArrayBuffer) =>
-  btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
-
-const fromBase64Url = (text: string) =>
-  Uint8Array.from(atob(text.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
+import {
+  KEY_ALGORITHM as ALGORITHM,
+  SIGNATURE,
+  fromBase64Url,
+  toBase64Url,
+} from "../../shared/identity";
 
 const statement = (roomId: string, peerId: string) =>
   new TextEncoder().encode(`canvas-host:${roomId}:${peerId}`);
