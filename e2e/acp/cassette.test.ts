@@ -17,12 +17,12 @@ describe("Ids", () => {
   test("pairs the ids in the same places, and puts this run's in", () => {
     const ids = new Ids();
     ids.learn(
-      { url: "http://127.0.0.1:1/mcp/a1b2c3d4", text: "frame 0f0f0f0f in cluster 12345678" },
-      { url: "http://127.0.0.1:2/mcp/ffff0000", text: "frame 9a9a9a9a in cluster 87654321" },
+      { url: "http://127.0.0.1:1/mcp/a1b2c3d4", text: "frame 0f0f0f0f at x 120" },
+      { url: "http://127.0.0.1:2/mcp/ffff0000", text: "frame 9a9a9a9a at x 121" },
     );
-    expect(ids.apply({ frame: "a1b2c3d4", list: ["0f0f0f0f", "12345678"] })).toEqual({
+    expect(ids.apply({ frame: "a1b2c3d4", list: ["0f0f0f0f", "x 120"] })).toEqual({
       frame: "ffff0000",
-      list: ["9a9a9a9a", "12345678"],
+      list: ["9a9a9a9a", "x 120"],
     });
   });
 
@@ -33,6 +33,18 @@ describe("Ids", () => {
     expect(ids.apply("abcdef01-2345-6789-abcd-ef0123456789 0a0a0a0a")).toBe(
       "fedcba98-7654-3210-fedc-ba9876543210 0a0a0a0a",
     );
+  });
+
+  test("Excalidraw's ids, line by line where a line's numbers differ", () => {
+    const ids = new Ids();
+    ids.learn(
+      "rectangle kX3_9aBcD1 at 10,20\narrow Qe7-zz81Lm from kX3_9aBcD1",
+      "rectangle P0o9I8u7Y6 at 10.5,20\narrow Mn4-b5V6c7 from P0o9I8u7Y6",
+    );
+    expect(ids.apply({ start: "kX3_9aBcD1", end: "Qe7-zz81Lm" })).toEqual({
+      start: "P0o9I8u7Y6",
+      end: "Mn4-b5V6c7",
+    });
   });
 
   test("withoutIds blanks ids, not numbers", () => {
