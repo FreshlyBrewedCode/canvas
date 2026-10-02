@@ -123,3 +123,6 @@ canvas
 - docs: `docs/adr/` decisions, `docs/findings/` spike and validation evidence; `site/` the public
   landing page and user docs (Astro, own package, see `site/README.md`). A user-visible change
   updates the page in `site/content/docs/` that describes it, in the terms of its Glossary
+- issue tracker: GitHub issues, through `gh`; types as labels (`tracker`, `epic`, `task`), epics
+  as sub-issues of their tracker. Conventions: the `issue-tracker` skill
+  (`.agents/skills/`, not the shipped `skills/`)
