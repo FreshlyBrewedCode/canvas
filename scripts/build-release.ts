@@ -119,6 +119,14 @@ async function install(work: string, dependencies: Record<string, string>): Prom
 }
 
 /**
+ * Kills `child` if it hasn't printed what a smoke test waits for in time: that
+ * ends its stdout, so the test fails with what it got instead of hanging.
+ */
+function killAfter(child: Bun.Subprocess, ms = 30_000): Timer {
+  return setTimeout(() => child.kill(), ms);
+}
+
+/**
  * Runs `canvas serve` from the installed copy in a scratch project and checks
  * the host link it prints opens the web app of this release's channel.
  */
@@ -139,7 +147,7 @@ async function smokeTestServe(installed: string, work: string): Promise<void> {
     let stdout = "";
     for await (const bytes of child.stdout as ReadableStream<Uint8Array>) {
       stdout += new TextDecoder().decode(bytes);
-      if (stdout.includes("keep this link")) break;
+      if (stdout.includes("share the guest link")) break;
     }
     const link = /^\s*(https?:\/\/\S+\?room=\S+)$/m.exec(stdout)?.[1];
     if (link === undefined) return `\`canvas serve\` printed no host link.\n${stdout}`;
@@ -150,9 +158,11 @@ async function smokeTestServe(installed: string, work: string): Promise<void> {
 
   // Carried out of the try so the server is down before `fail` exits.
   let problem: string | undefined;
+  const timeout = killAfter(child);
   try {
     problem = await inspect();
   } finally {
+    clearTimeout(timeout);
     child.kill();
     await child.exited;
   }
@@ -194,9 +204,11 @@ async function smokeTestRelay(installed: string, work: string): Promise<void> {
   }
 
   let problem: string | undefined;
+  const timeout = killAfter(child);
   try {
     problem = await inspect();
   } finally {
+    clearTimeout(timeout);
     child.kill();
     await child.exited;
   }
