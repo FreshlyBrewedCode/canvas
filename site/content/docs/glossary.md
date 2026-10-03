@@ -22,6 +22,7 @@ order: 7
 | **drawing frame** | An Excalidraw whiteboard everyone draws on, agents included. [Drawing](/docs/drawing) |
 | **file list**     | Files an agent picked for a files frame's tree, at display paths it chose. [Files](/docs/files#lists) |
 | **files frame**   | A frame showing one project file, read-only and live. [Files](/docs/files)  |
+| **fingerprint**   | A short code, like `ab12 cd34`, for one browser's key; the host verifies it as people join. [Board](/docs/board#presence) |
 | **follow**        | Scrolling with a frame's occupant. [Focus](/docs/focus)                     |
 | **follow a view** | Your board showing what someone else's shows, until you pan or zoom. [Board](/docs/board#presence) |
 | **frame**         | One thing on the board: an agent, a file, a terminal, a browser or a drawing |

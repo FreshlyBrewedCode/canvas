@@ -1,5 +1,6 @@
 import { Board } from "@/components/board";
 import { allFrames, moveFrame, resizeLayout } from "@/lib/board";
+import { loadBrowserKey } from "@/lib/identity-key";
 import { loadIdentity, readLink } from "@/lib/link";
 import { Room } from "@/lib/room";
 import { RoomContext } from "@/lib/room-context";
@@ -7,8 +8,9 @@ import { RoomContext } from "@/lib/room-context";
 // One room per page load: the link cannot change without a navigation, and
 // trystero hands back the same (possibly already left) room for a repeated
 // `joinRoom` — so this must not live in an effect StrictMode can re-run.
+// The browser's key is in IndexedDB: everything that says who we are waits for it.
 const link = readLink();
-const room = link ? new Room(link, loadIdentity()) : null;
+const room = link ? new Room(link, loadIdentity(), await loadBrowserKey()) : null;
 // For e2e/drive.ts: the room, the frames with their derived rects, and moves over the tree.
 if (room && import.meta.env.DEV)
   Object.assign(window, {

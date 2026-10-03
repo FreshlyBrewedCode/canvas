@@ -109,13 +109,3 @@ export function loadIdentity(): Identity {
 export function saveIdentity(identity: Identity): void {
   localStorage.setItem("canvas.identity", JSON.stringify(identity));
 }
-
-/**
- * Says which comments are ours (`comments.ts`), across renames and reloads.
- * Per browser, like the identity; never shown.
- */
-export function loadAuthorId(): string {
-  let id = localStorage.getItem("canvas.author");
-  if (!id) localStorage.setItem("canvas.author", (id = crypto.randomUUID()));
-  return id;
-}

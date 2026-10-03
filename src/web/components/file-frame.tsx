@@ -151,7 +151,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   // Comments (ADR 0006): the frame's, whatever file it shows.
   const comments = useComments(room.doc, frame.id);
   const me = useMemo<Editor>(
-    () => ({ kind: "person", id: room.authorId, host: room.isHost }),
+    () => ({ kind: "person", id: room.fingerprint, host: room.isHost }),
     [room],
   );
   const text = file?.kind === "text" ? file.text : file?.kind === "missing" ? "" : null;
@@ -519,7 +519,7 @@ function CommentedSource({
               body,
               author: {
                 kind: "person",
-                id: room.authorId,
+                id: room.fingerprint,
                 name: room.identity.name,
                 color: room.identity.color,
               },

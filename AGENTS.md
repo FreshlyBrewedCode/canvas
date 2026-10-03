@@ -50,6 +50,12 @@ canvas
   The relay admits tokens `canvas serve` signs with an issuer key (`server/relay-token.ts`), sent
   to the host tab in `welcome`. Settings are environment variables (`server/relay-config.ts`);
   `Dockerfile` is the relay alone. User docs: `site/content/docs/relay.md`
+- identity (ADR 0011, decision 1): a key per browser, non-extractable in IndexedDB
+  (`web/lib/identity-key.ts`); its fingerprint (`shared/identity.ts`) is who we are — comment
+  authorship, shown in presence. The host's `hello` carries a nonce, each guest answers with a
+  signed `canvas-peer:` statement (`identify`), the host checks it (`PeerIdentities`) and hostcasts
+  `identities`. Presence is matched to them by the transport's peer id, never the one it claims
+  (`Room.fingerprintOf`, host: `Room.verifiedPeer`)
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends. A file frame's tree panel follows too
@@ -105,7 +111,7 @@ canvas
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
     a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/

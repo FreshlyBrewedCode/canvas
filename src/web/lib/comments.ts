@@ -18,7 +18,7 @@ import type { LineRange } from "./board";
 export type CommentAuthor =
   | {
       readonly kind: "person";
-      /** Stable per browser (`link.ts`): says whose a comment is across renames and reloads. */
+      /** The browser's fingerprint (`identity-key.ts`): says whose a comment is across renames and reloads. */
       readonly id: string;
       readonly name: string;
       readonly color: string;
