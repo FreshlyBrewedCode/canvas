@@ -171,5 +171,9 @@ In the Caddyfile, `reverse_proxy relay:4419`.
 - It **can drop or delay** traffic. Everyone on a relayed board depends on it.
 - There's **no forward secrecy**: someone who records a relay's traffic and later gets a guest link
   can decrypt what they recorded.
+- When the host [resets the invite link](/docs/guests#reset-invite-link), the board moves to a new
+  relay room, with new tokens. The relay sees the members leave one room for another, but not the
+  new key: the host seals it to each member, so not even a removed member's old key, with the
+  relay's help, opens it.
 - With `--relay-via signal`, the guest token is part of the relay URL, where proxies may log it.
   It admits only that one board, and the board's key still guards it.

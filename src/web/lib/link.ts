@@ -10,6 +10,10 @@
  * how to use it and, `rt`, the guest token it takes; the host gets its own
  * from `canvas serve`. Secrets are in the fragment, which never leaves the
  * browser — the web host serving this app does not see them.
+ *
+ * `room` and `k` change when the host resets the invite link (ADR 0011,
+ * decision 6): members are handed the new ones, and the address bar shows
+ * them (`showLink`), so a reload comes back to the board.
  */
 
 import type { RelayVia } from "../../shared/protocol";
@@ -58,13 +62,32 @@ export function guestLink(
   app: string = new URL(import.meta.env.BASE_URL, window.location.origin).href,
   relay: RelayLink | null = null,
 ): string {
+  return `${app.replace(/\/$/, "")}/?room=${link.roomId}#${fragment({ ...link, host: null, relay })}`;
+}
+
+/** The address bar shows `link`: a reload comes back to it. */
+export function showLink(link: BoardLink, location: Location = window.location): void {
+  history.replaceState(history.state, "", address(link, location.pathname));
+}
+
+/** `link` as the address of this app at `path`, its pairing code left out (it is used once). */
+export function address(link: BoardLink, path: string): string {
+  const shown = { ...link, host: link.host && { ...link.host, pair: null } };
+  return `${path}?room=${encodeURIComponent(link.roomId)}#${fragment(shown)}`;
+}
+
+function fragment(link: BoardLink): URLSearchParams {
   const fragment = new URLSearchParams({ k: link.key, pk: link.hostPublicKey });
-  if (relay) {
-    fragment.set("relay", relay.url);
-    fragment.set("via", relay.via);
-    fragment.set("rt", relay.token);
+  if (link.host) {
+    fragment.set("server", link.host.server);
+    if (link.host.pair) fragment.set("pair", link.host.pair);
   }
-  return `${app.replace(/\/$/, "")}/?room=${link.roomId}#${fragment}`;
+  if (link.relay) {
+    fragment.set("relay", link.relay.url);
+    fragment.set("via", link.relay.via);
+    fragment.set("rt", link.relay.token);
+  }
+  return fragment;
 }
 
 // ---------------------------------------------------------------------------

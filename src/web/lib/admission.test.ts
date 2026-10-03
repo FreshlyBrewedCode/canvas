@@ -3,11 +3,12 @@ import { describe, expect, test } from "bun:test";
 import type { GuestRequest, Member, MemberRole } from "../../shared/protocol";
 import { Admissions, check, mayEdit } from "./admission";
 
-const ada = { publicKey: "key-ada", fingerprint: "a".repeat(32) };
-const bob = { publicKey: "key-bob", fingerprint: "b".repeat(32) };
+const ada = { publicKey: "key-ada", fingerprint: "a".repeat(32), sealKey: "seal-ada" };
+const bob = { publicKey: "key-bob", fingerprint: "b".repeat(32), sealKey: "seal-bob" };
 const who = { name: "Ada", color: "#3b82f6" };
-const member = (id: typeof ada, role: MemberRole): Member => ({
-  ...id,
+const member = ({ publicKey, fingerprint }: typeof ada, role: MemberRole): Member => ({
+  publicKey,
+  fingerprint,
   name: "x",
   role,
   admitted: "2026-10-01T00:00:00.000Z",
@@ -45,6 +46,7 @@ describe("admission", () => {
     const lookalike = {
       publicKey: "key-eve",
       fingerprint: `${ada.fingerprint.slice(0, 8)}${"e".repeat(24)}`,
+      sealKey: "seal-eve",
     };
     book.setMembers([member(ada, "edit")]);
     expect(book.arrive("p1", lookalike, who)[0]!.t).toBe("knock");
@@ -159,6 +161,38 @@ describe("trusted for one host session (decision 4)", () => {
     // Stepping down (another tab is the host) ends the session too.
     book.clear();
     expect(book.isTrusted(ada.fingerprint)).toBe(false);
+  });
+});
+
+describe("resetting the invite link (decision 6)", () => {
+  test("the new room goes to the members in, each to its own seal key; nobody else", () => {
+    const eve = { publicKey: "key-eve", fingerprint: "e".repeat(32), sealKey: "seal-eve" };
+    const cy = { publicKey: "key-cy", fingerprint: "c".repeat(32), sealKey: "seal-cy" };
+    const book = new Admissions();
+    book.setMembers([member(ada, "view"), member(bob, "edit"), member(cy, "edit")]);
+    book.arrive("p1", ada, who);
+    book.arrive("p2", bob, who);
+    book.arrive("p3", eve, who);
+    book.arrive("p4", { ...eve, sealKey: "seal-eve-2" }, who);
+    book.deny("p4");
+    book.arrive("p5", cy, who);
+    // Cy is removed: cut off, and left behind.
+    book.setMembers([member(ada, "view"), member(bob, "edit")]);
+    expect(book.moving()).toEqual([
+      { peerId: "p1", sealKey: "seal-ada" },
+      { peerId: "p2", sealKey: "seal-bob" },
+    ]);
+  });
+
+  test("moved: everyone comes again; trust stays, for the session goes on", () => {
+    const book = new Admissions();
+    book.setMembers([member(ada, "edit")]);
+    book.trust(ada.fingerprint, true);
+    book.arrive("p1", ada, who);
+    book.moved();
+    expect(book.admitted()).toEqual([]);
+    expect(book.moving()).toEqual([]);
+    expect(book.arrive("p1", ada, who)).toEqual([{ t: "admit", peerId: "p1", access: "trusted" }]);
   });
 });
 

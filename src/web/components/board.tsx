@@ -86,7 +86,7 @@ function BoardView() {
     [board.tree, frames, drag],
   );
   const { wrapRef, canvasRef, scale, ...viewport } = useBoardViewport(
-    `canvas.viewport.${room.link.roomId}`,
+    `canvas.viewport.${room.link.hostPublicKey}`,
   );
   // A host tab another tab took over reaches no one until it takes the board back;
   // one canvas serve refused, never.
@@ -1007,7 +1007,7 @@ function TopBar({
             variant="outline"
             onClick={() => {
               void navigator.clipboard.writeText(
-                guestLink(room.link, undefined, room.guestRelay()),
+                guestLink(room.inviteRoom(), undefined, room.guestRelay()),
               );
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);

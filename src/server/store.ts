@@ -1,7 +1,8 @@
 /**
  * Everything `canvas serve` persists lives in `<dir>/.canvas/`:
  *
- *   room.json              room id, trystero key, host keypair
+ *   room.json              room id, trystero key, host keypair; a new id and key
+ *                          when the invite link is reset
  *   owners.json            the browsers paired as host (`owners.ts`)
  *   pairing.json           the pending pairing code, if any (`owners.ts`)
  *   serve.json             the host link's base, for `canvas pair`
@@ -9,7 +10,7 @@
  *   sessions/<id>.ndjson   one agent session: a meta line, then its events
  *
  * Keeping the room stable across restarts keeps the links people already
- * have working.
+ * have working, until the host resets the invite link (`rotateRoom`).
  */
 
 import {
@@ -18,6 +19,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -58,6 +60,20 @@ export class Store {
       hostPrivateKey: await crypto.subtle.exportKey("jwk", pair.privateKey),
     };
     writeFileSync(path, JSON.stringify(room, null, 2), { mode: 0o600 });
+    return room;
+  }
+
+  /**
+   * Reset the invite link (ADR 0011, decision 6): a new room id and key, the
+   * same host key — it is the board's, and in every host link. Saved before
+   * anyone is told: a host tab that reloads meanwhile comes back to the new one.
+   */
+  async rotateRoom(): Promise<RoomFile> {
+    const room: RoomFile = { ...(await this.room()), roomId: randomId(9), key: randomId(18) };
+    const path = join(this.root, "room.json");
+    const temp = `${path}.${process.pid}`;
+    writeFileSync(temp, JSON.stringify(room, null, 2), { mode: 0o600 });
+    renameSync(temp, path);
     return room;
   }
 

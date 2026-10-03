@@ -85,11 +85,12 @@ export class Owners {
    * Check a socket's answer to `nonce`: an owner's key, or any key with the
    * pending code, which pairs it (and uses the code up). An owner's answer
    * leaves a code it carries alone: reloading a pairing link burns nothing.
+   * `board`: the board's host public key, which the statement names.
    */
-  async authenticate(roomId: string, nonce: string, answer: OwnerAnswer): Promise<AuthResult> {
+  async authenticate(board: string, nonce: string, answer: OwnerAnswer): Promise<AuthResult> {
     if (typeof answer?.publicKey !== "string" || typeof answer.signature !== "string")
       return { ok: false, reason: "malformed answer" };
-    if (!(await verify(answer.publicKey, ownerStatement(roomId, nonce), answer.signature)))
+    if (!(await verify(answer.publicKey, ownerStatement(board, nonce), answer.signature)))
       return { ok: false, reason: "the signature doesn't verify" };
     const id = await fingerprint(answer.publicKey);
     // From here on synchronous: two sockets can't both use one code.

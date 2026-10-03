@@ -20,10 +20,8 @@ import type { PeerIdentity } from "../../shared/identity";
 import type { Identity } from "./link";
 
 /** A verified browser that isn't a member, waiting for the host. */
-export interface Knock extends Identity {
+export interface Knock extends Identity, PeerIdentity {
   readonly peerId: string;
-  readonly publicKey: string;
-  readonly fingerprint: string;
 }
 
 /** What the host owes a peer after a change. */
@@ -120,6 +118,25 @@ export class Admissions {
     this.peers.clear();
     this.dropped.clear();
     this.trusted.clear();
+  }
+
+  /**
+   * Who gets the new room when the invite link is reset (decision 6): the
+   * peers that are in, with the seal key each proved. Nobody knocking,
+   * denied or removed.
+   */
+  moving(): { readonly peerId: string; readonly sealKey: string }[] {
+    return [...this.peers].flatMap(([peerId, entry]) =>
+      entry.access ? [{ peerId, sealKey: entry.knock.sealKey }] : [],
+    );
+  }
+
+  /**
+   * We moved to the new room: everyone comes again there, as members or
+   * knocking. The session goes on, and its trust with it.
+   */
+  moved() {
+    this.peers.clear();
   }
 
   /** What `peerId` may do now; null unless it is in. */

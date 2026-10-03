@@ -3,10 +3,12 @@
  * fingerprint. Plain WebCrypto, for both halves: the host's browser checks
  * guests with it, and `canvas serve` can check the host's browser.
  *
- * A peer proves its key on join by signing `canvas-peer:<room>:<peer id>:<nonce>`
- * with a nonce the host gave it, which binds the peer id to the key the way
- * `web/lib/host-key.ts` binds the host's. The browser half — making and
- * keeping the key — is `web/lib/identity-key.ts`.
+ * A peer proves its key on join by signing
+ * `canvas-peer:<room>:<peer id>:<nonce>:<seal key>` with a nonce the host gave
+ * it, which binds the peer id to the key the way `web/lib/host-key.ts` binds
+ * the host's. The seal key, an ECDH key of the page's own, goes along so the
+ * host can hand it a new room key that nobody else reads (`web/lib/handover.ts`).
+ * The browser half — making and keeping the key — is `web/lib/identity-key.ts`.
  */
 
 export const KEY_ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
@@ -45,11 +47,16 @@ export const readable = (fingerprint: string) =>
  */
 export const readableFull = (fingerprint: string) => fingerprint.match(/.{1,4}/g)?.join(" ") ?? "";
 
-export const peerStatement = (roomId: string, peerId: string, nonce: string) =>
-  `canvas-peer:${roomId}:${peerId}:${nonce}`;
+export const peerStatement = (roomId: string, peerId: string, nonce: string, sealKey: string) =>
+  `canvas-peer:${roomId}:${peerId}:${nonce}:${sealKey}`;
 
-/** What the host's browser signs for `canvas serve`'s challenge (ADR 0011, decision 3). */
-export const ownerStatement = (roomId: string, nonce: string) => `canvas-owner:${roomId}:${nonce}`;
+/**
+ * What the host's browser signs for `canvas serve`'s challenge (ADR 0011,
+ * decision 3). For the board, by its host public key, not its room: the room
+ * changes when the invite link is reset, and the host link must keep working.
+ */
+export const ownerStatement = (hostPublicKey: string, nonce: string) =>
+  `canvas-owner:${hostPublicKey}:${nonce}`;
 
 /** Whether `signature` (base64url) is `publicKey`'s over `text`; false for anything malformed. */
 export async function verify(publicKey: string, text: string, signature: string): Promise<boolean> {
@@ -76,11 +83,14 @@ export async function verify(publicKey: string, text: string, signature: string)
 export interface PeerProof {
   readonly publicKey: string;
   readonly signature: string;
+  /** The page's ECDH public key (base64url raw point), for sealing a handover to it. */
+  readonly sealKey: string;
 }
 
 export interface PeerIdentity {
   readonly publicKey: string;
   readonly fingerprint: string;
+  readonly sealKey: string;
 }
 
 /**
@@ -106,15 +116,21 @@ export class PeerIdentities {
   /** Check `peerId`'s answer to its challenge; its identity if it holds. */
   async prove(peerId: string, proof: PeerProof): Promise<PeerIdentity | null> {
     const value = this.nonces.get(peerId);
-    if (!value || typeof proof?.publicKey !== "string" || typeof proof.signature !== "string")
+    if (
+      !value ||
+      typeof proof?.publicKey !== "string" ||
+      typeof proof.signature !== "string" ||
+      typeof proof.sealKey !== "string"
+    )
       return null;
     this.nonces.delete(peerId);
     this.checking.set(peerId, value);
-    const statement = peerStatement(this.roomId, peerId, value);
+    const statement = peerStatement(this.roomId, peerId, value, proof.sealKey);
     const ok = await verify(proof.publicKey, statement, proof.signature);
     const identity = ok && {
       publicKey: proof.publicKey,
       fingerprint: await fingerprint(proof.publicKey),
+      sealKey: proof.sealKey,
     };
     // Unless it left, or was challenged again, meanwhile.
     const current = this.checking.get(peerId) === value;

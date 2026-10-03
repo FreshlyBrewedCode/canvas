@@ -46,16 +46,18 @@ export async function loadBrowserKey(store: KeyStore = indexedDbStore()): Promis
   };
 }
 
-/** Answer the host's join challenge: we are `peerId` in `roomId`. */
+/** Answer the host's join challenge: we are `peerId` in `roomId`, with this page's `sealKey`. */
 export async function provePeer(
   key: BrowserKey,
   roomId: string,
   peerId: string,
   nonce: string,
+  sealKey: string,
 ): Promise<PeerProof> {
   return {
     publicKey: key.publicKey,
-    signature: await key.sign(peerStatement(roomId, peerId, nonce)),
+    signature: await key.sign(peerStatement(roomId, peerId, nonce, sealKey)),
+    sealKey,
   };
 }
 

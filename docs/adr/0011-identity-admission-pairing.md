@@ -58,7 +58,32 @@ The relay is not where the risk is; the link's lifecycle is.
    `canvas serve` mints a new room key (and with it the relay room and tokens) and saves it in
    `room.json`. The host hands it to admitted members over the current channels, and everyone
    moves to the new room. Anyone else, removed members included, is left in the old one. Old
-   links lead to an empty room.
+   links lead to an empty room. In detail:
+   - **The room id changes too, not only the key.** trystero meets by app id and room id; the key
+     only encrypts signalling. With the id kept, holders of the old key would still meet the
+     members on Nostr (or a relay's `/signal`), see who is there and fail handshakes with them.
+     On a relay's transport the relay room and the seal already come from the key. The host key
+     stays: it is the board's, and in every link. So the owner's statement names the board by
+     its host public key, not the room, and a host link from before still authenticates; the
+     welcome carries the current room, and the host tab moves there.
+   - **Saved, then handed over.** `canvas serve` saves the new room before it tells the host tab.
+     A host tab that dies mid-handover comes back to the new room; members it hadn't told yet
+     are like members who were away.
+   - **Sealed to each member.** On WebRTC a targeted message is per peer already. On the relay
+     transport it is sealed with the old board key, which removed members hold: a relay that
+     forwards the handover to one of them, or records it for them, would let them follow. So
+     each page makes an ECDH P-256 key of its own (the browser key is ECDSA, for signing only),
+     sends its public half with its join proof, under the browser key's signature, and the host
+     seals the move to it (ephemeral ECDH, HKDF, AES-GCM), signed with the host key for that peer
+     in that room. A key per page, not per browser: nothing more to keep in IndexedDB, and it is
+     proven anew at every join.
+   - **Members move first, the host follows.** The host sends each member its move, then waits
+     until they left the old room (at most a few seconds), so leaving doesn't cut off what it
+     sent. A member's board stays up while it waits for the host in the new room; trust and the
+     session go on, as the host tab is the same.
+   - **Members who are away** come back with the old link to an empty room. They need the new
+     guest link; as members they come in without knocking. So does anyone in the lobby at the
+     time. Address bars, the host's and members', show the new link, so reloads stay in.
 7. **No migration.** Boards from before start over with a new `room.json`; there is no
    compatibility code for the old token or room-wide access.
 

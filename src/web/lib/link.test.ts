@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { guestLink, readLink, type BoardLink } from "./link";
+import { address, guestLink, readLink, type BoardLink } from "./link";
 
 const link: BoardLink = {
   roomId: "r1",
@@ -51,4 +51,21 @@ test("a host link makes you the host, with or without its pairing code", () => {
     pair: null,
   });
   expect(read("k=k1&pk=pk1")?.host).toBeNull();
+});
+
+test("the address bar after a reset reads back as the link we are on, without the used code", () => {
+  const read = (path: string) =>
+    readLink(new URL(path, "https://ui.canvas.frebreco.de") as unknown as Location);
+  const moved = { ...link, roomId: "r2", key: "k2" };
+  expect(read(address(moved, "/next/"))).toEqual({
+    ...moved,
+    host: { server: "ws://127.0.0.1:4418", pair: null },
+  });
+  const guest: BoardLink = {
+    ...moved,
+    host: null,
+    relay: { url: "wss://relay.corp", via: "signal", token: "g2" },
+  };
+  expect(address(guest, "/")).toStartWith("/?room=r2#k=k2&pk=pk1&relay=");
+  expect(read(address(guest, "/"))).toEqual(guest);
 });

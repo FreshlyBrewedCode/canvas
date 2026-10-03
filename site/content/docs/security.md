@@ -39,6 +39,13 @@ design is about **who can make `canvas serve` act, and through what**:
    agents, terminals or files, and drops what it sends, until the host admits it with a role.
    Members are found by their whole key, not the short fingerprint people see. `canvas serve`
    keeps them in `.canvas/members.json`; removing one cuts them off at once.
+8. **Resetting the invite link shuts the old one.** On **Reset invite link**, and whenever a member
+   is removed, `canvas serve` makes the board a new room id and room key (and, on a relay, a new
+   relay room and tokens) and saves them in `.canvas/room.json`. The host's tab hands them to each
+   member on the board, sealed to a key that member's page made and signed with its browser key
+   when it joined, and signed by the host: nobody else can read it, not even someone holding the
+   old room key with a relay passing it on. Then everyone moves to the new room. Old links lead
+   to an empty one.
 7. **Presence only among members.** The host signs the list of who is in (their peer ids and
    fingerprints, and a version) with the board's key and sends it to them whenever it changes.
    Guests take only a list that verifies against the host key in their link and is newer than
@@ -50,7 +57,7 @@ design is about **who can make `canvas serve` act, and through what**:
 | Link        | Holds                                          | Gives                              |
 | ----------- | ---------------------------------------------- | ---------------------------------- |
 | Host link   | Room id, room key, host public key, server URL; a pairing code until a browser pairs | In a paired browser, control of `canvas serve`: agents, shells, files. Elsewhere, a seat as a guest at most |
-| Guest link  | Room id, room key, host public key; with a relay, its URL and a relay token | A knock: a seat in the lobby, and on the board once the host lets that browser in |
+| Guest link  | Room id, room key, host public key; with a relay, its URL and a relay token | A knock: a seat in the lobby, and on the board once the host lets that browser in; nothing once the host resets it |
 
 Secrets travel in the URL fragment, which the browser never sends to the server hosting the web
 app. A leaked host link is useless once the host has paired; a leaked pairing code is good for
@@ -126,10 +133,11 @@ Roles narrow what reaches the machine; they do not make guests harmless.
   transport they don't; the relay does.
 - **Someone in the lobby holds the room key.** Nobody sends them anything but the host's answers
   to their knock, yet they can still tell how many others are in the room, and on WebRTC their IP
-  addresses. A
-  removed member keeps the key too, and with it can decrypt a relay's traffic for the board.
+  addresses. A removed member keeps the old key: what a relay carried before the
+  [reset](/docs/guests#reset-invite-link) stays readable to them if they recorded it, or can get it
+  from the relay's operator.
 
 ## Not covered
 
-No audit, no rate limits (except on a canvas relay), no way to change the room key of a guest link
-other than deleting `.canvas/` for new links. See [Limits](/docs/limits).
+No audit, no rate limits (except on a canvas relay), no expiring or one-time guest links: a guest
+link lasts until the host resets it. See [Limits](/docs/limits).

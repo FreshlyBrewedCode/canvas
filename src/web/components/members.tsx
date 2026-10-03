@@ -1,4 +1,4 @@
-import { DoorOpen, ShieldCheck, Trash2, Users } from "lucide-react";
+import { DoorOpen, RotateCcw, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -146,7 +146,7 @@ export function MembersButton() {
                     size="icon-sm"
                     variant="ghost"
                     aria-label={`Remove ${member.name}`}
-                    title="Remove: cut off now; they knock again if they come back"
+                    title="Remove: cut off now, and the invite link is reset; with a new link they knock again"
                     onClick={() => room.removeMember(member.fingerprint)}
                   >
                     <Trash2 />
@@ -156,6 +156,20 @@ export function MembersButton() {
             })}
           </ul>
         )}
+        <div className="mt-3 flex items-center gap-2 border-t pt-3">
+          <p className="text-muted-foreground flex-1 leading-relaxed">
+            A new guest link: members here move along, links from before lead to an empty board.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            data-reset-link=""
+            title="Members who aren't here need the new guest link; they come in without knocking"
+            onClick={() => room.resetInviteLink()}
+          >
+            <RotateCcw /> Reset invite link
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   );

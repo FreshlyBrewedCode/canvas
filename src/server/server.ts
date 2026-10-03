@@ -5,6 +5,8 @@
  * browser's key, or pairs it with a code (`owners.ts`); until then it gets
  * nothing else. Guests never reach it — the host's browser is the relay; it
  * keeps their membership here (`members.ts`), as the host tab changes it.
+ * Resetting the invite link, and removing a member, mints the board a new
+ * room (ADR 0011, decision 6): the host tab hands it to the members in.
  */
 
 import type { ServerWebSocket } from "bun";
@@ -64,12 +66,12 @@ export interface ServeRelay {
 export async function serve(options: ServeOptions) {
   const store = new Store(options.dir);
   excludeFromGit(options.dir);
-  const room = await store.room();
+  let room = await store.room();
   const owners = new Owners(store.root);
   const members = new Members(store.root);
   // A new code at every start while nobody is paired, and on request.
   const pairing = options.pair || owners.list().length === 0 ? owners.pair() : null;
-  const relayRoomName = options.relay ? await relayRoom(room.key) : null;
+  let relayRoomName = options.relay ? await relayRoom(room.key) : null;
   // Signed for every host tab that connects: its token and the one its guest
   // links carry are good for 30 days from then.
   const relaySetup = (): WelcomeRelay | null =>
@@ -85,6 +87,13 @@ export async function serve(options: ServeOptions) {
   let host: ServerWebSocket<Conn> | null = null;
   const broadcast = (message: ServerToClient) => host?.send(JSON.stringify(message));
   const sendMembers = () => broadcast({ t: "members", members: members.list() });
+  /** A new room id and key, saved, then the host tab told (with the relay's tokens for it). */
+  const resetRoom = async () => {
+    room = await store.rotateRoom();
+    relayRoomName = options.relay ? await relayRoom(room.key) : null;
+    console.log("  the invite link was reset: links from before lead to an empty room");
+    broadcast({ t: "room", room, relay: relaySetup() });
+  };
 
   // Scratch files are written by agents' board tools; `files` mirrors them.
   const scratch = new Scratch(options.dir, (path) => files.scratchChanged(path));
@@ -160,7 +169,7 @@ export async function serve(options: ServeOptions) {
     if (message.t !== "auth" || ws.data.state !== "challenged")
       return ws.close(AUTH_REFUSED, "authenticate first");
     ws.data.state = "checking";
-    const result = await owners.authenticate(room.roomId, ws.data.nonce, message);
+    const result = await owners.authenticate(room.hostPublicKey, ws.data.nonce, message);
     if (ws.readyState !== WebSocket.OPEN) return;
     if (!result.ok) return ws.close(AUTH_REFUSED, result.reason);
     clearTimeout(ws.data.timer);
@@ -224,8 +233,12 @@ export async function serve(options: ServeOptions) {
         members.setRole(message.fingerprint, message.role);
         return sendMembers();
       case "member-remove":
-        members.remove(message.fingerprint);
-        return sendMembers();
+        if (!members.remove(message.fingerprint)) return;
+        // The member list first: the host tab cuts them off before it hands the room over.
+        sendMembers();
+        return void resetRoom().catch((error: unknown) => sendError(ws, error));
+      case "room-reset":
+        return void resetRoom().catch((error: unknown) => sendError(ws, error));
     }
   };
 
