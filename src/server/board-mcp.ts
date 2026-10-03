@@ -150,7 +150,7 @@ export class BoardMcp {
               : LATEST_PROTOCOL,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: BOARD_SERVER_NAME, version: "0.0.0" },
-          instructions: boardInstructions(this.frameOf(sessionId), this.options.skills),
+          instructions: boardInstructions(this.options.skills),
         });
       case "ping":
         return reply({});

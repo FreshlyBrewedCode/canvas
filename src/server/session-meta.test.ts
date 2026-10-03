@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentEvent } from "../shared/protocol";
-import { lastFrame, newMeta, sessionTitle, withDefaults } from "./session-meta";
+import { newMeta, sessionTitle, withDefaults } from "./session-meta";
 
 const author = { name: "Ada", color: "#000" };
 
@@ -59,15 +59,4 @@ test("what a meta says stays", () => {
   };
   const events: AgentEvent[] = [{ kind: "turn", turnId: "t", text: "other", author, at: 7 }];
   expect(withDefaults(meta, events, 99)).toEqual(meta);
-});
-
-test("the agent acts as its last turn's frame, else where it began", () => {
-  const meta = newMeta("s1", { frameId: "f1", agent: "claude" }, 0);
-  expect(lastFrame(meta, [])).toBe("f1");
-  const events: AgentEvent[] = [
-    { kind: "turn", turnId: "a", text: "x", author, at: 1, frameId: "f2" },
-    { kind: "turn-end", turnId: "a" },
-    { kind: "turn", turnId: "b", text: "x", author, at: 2 },
-  ];
-  expect(lastFrame(meta, events)).toBe("f2");
 });

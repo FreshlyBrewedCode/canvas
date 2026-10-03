@@ -100,8 +100,11 @@ test("the occupant drives a frame's scroll", async ({ host, guest }) => {
   });
 
   await test.step("a person takes a frame over from an agent", async () => {
-    // As the host does for a board tool call.
-    await host.evaluate(([id]) => (window as any).room.claimForAgent("agent-x", id), [a]);
+    // As the host does for a board tool call: session, the frame it acts as, the frame it works on.
+    await host.evaluate(
+      ([id]) => (window as any).room.claimForAgent("agent-x", "agent-x", id),
+      [a],
+    );
     await expect.poll(() => occupant(guest, a)).toBe("agent");
     expect(await following(guest, a), "the guest follows the agent").toBe(true);
     await press(guest, a);
