@@ -22,6 +22,7 @@ import { FRAME_KINDS } from "@/components/frame-shell";
 import { Edges } from "@/components/edges";
 import { FullscreenBar } from "@/components/fullscreen";
 import { Inserts } from "@/components/inserts";
+import { AccessBadge, KnockCard, Lobby, MembersButton } from "@/components/members";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
@@ -41,11 +42,13 @@ import {
   type Frame,
   type FrameType,
 } from "@/lib/board";
+import { mayEdit } from "@/lib/admission";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
 import { guestLink, saveIdentity } from "@/lib/link";
 import type { Approval, Peer, Presence } from "@/lib/room";
 import {
   useApprovals,
+  useKnocks,
   usePeers,
   useRoom,
   useRoomState,
@@ -57,9 +60,22 @@ import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
 import { readable } from "../../shared/identity";
 import { MIN_H, MIN_W, type Beside, type Box, type ResolvedCluster } from "../../shared/layout";
-import type { AgentConfigOption, AgentConfigValue, GuestAccess } from "../../shared/protocol";
+import type { AgentConfigOption, AgentConfigValue } from "../../shared/protocol";
 
+/** A guest sees the board once the host lets it in (ADR 0011); until then, the lobby. */
 export function Board() {
+  const room = useRoomState();
+  if (!room.isHost && room.admission !== "admitted")
+    return (
+      <div className="flex h-full flex-col">
+        <TopBar following={null} onFollow={() => {}} fullscreen={null} />
+        <Lobby />
+      </div>
+    );
+  return <BoardView />;
+}
+
+function BoardView() {
   const room = useRoomState();
   const board = useBoard(room.doc);
   const { frames } = board;
@@ -76,7 +92,7 @@ export function Board() {
   // one canvas serve refused, never.
   const readOnly = room.isHost
     ? room.serverStatus === "replaced" || room.serverStatus === "refused"
-    : room.roomState?.access === "view";
+    : !mayEdit(room.access);
   const go = useBoardNavigation(room, viewport, readOnly);
   const { followed, toggle: toggleFollow } = useFollowView(viewport);
   const fullscreen = useFullscreen(room, frames, viewport);
@@ -778,11 +794,16 @@ function HostRefused() {
   );
 }
 
+/** Host: who knocks (ADR 0011), and what guests ask to run. */
 function Approvals() {
   const approvals = useApprovals();
-  if (!approvals.length) return null;
+  const knocks = useKnocks();
+  if (!approvals.length && !knocks.length) return null;
   return (
     <div data-hud="" className="absolute top-3 right-3 flex w-80 flex-col gap-2">
+      {knocks.map((knock) => (
+        <KnockCard key={knock.peerId} knock={knock} />
+      ))}
       {approvals.map((approval) => (
         <ApprovalCard key={approval.id} approval={approval} />
       ))}
@@ -911,10 +932,13 @@ function TopBar({
   /** Whose view we follow. */
   following: string | null;
   onFollow: (peerId: string) => void;
-  fullscreen: Fullscreen;
+  /** None in the lobby. */
+  fullscreen: Fullscreen | null;
 }) {
   const room = useRoomState();
-  const peers = usePeers();
+  const all = usePeers();
+  const inside = room.isHost || room.admission === "admitted";
+  const peers = inside ? all : [];
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState(room.identity.name);
 
@@ -928,7 +952,7 @@ function TopBar({
         {room.roomState?.cwd}
       </span>
       <ConnectionIndicator />
-      <FullscreenBar fullscreen={fullscreen} />
+      {fullscreen && <FullscreenBar fullscreen={fullscreen} />}
       <WaitingCount />
 
       <div className="ml-auto flex items-center gap-2">
@@ -976,18 +1000,22 @@ function TopBar({
         >
           {readable(room.fingerprint)}
         </span>
-        {room.isHost ? <AccessSelect /> : <AccessBadge access={room.roomState?.access} />}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            void navigator.clipboard.writeText(guestLink(room.link, undefined, room.guestRelay()));
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-        >
-          {copied ? <Check /> : <Link2 />} {copied ? "Copied" : "Copy guest link"}
-        </Button>
+        {room.isHost ? <MembersButton /> : <AccessBadge access={room.access} />}
+        {inside && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              void navigator.clipboard.writeText(
+                guestLink(room.link, undefined, room.guestRelay()),
+              );
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? <Check /> : <Link2 />} {copied ? "Copied" : "Copy guest link"}
+          </Button>
+        )}
       </div>
     </header>
   );
@@ -997,38 +1025,4 @@ function TopBar({
 function who(peer: Peer) {
   const fingerprint = peer.fingerprint ? readable(peer.fingerprint) : "not verified";
   return `${peer.user.name} · ${fingerprint}${peer.user.host ? " (host)" : ""}`;
-}
-
-const ACCESS: Record<GuestAccess, string> = {
-  view: "Guests: view only",
-  edit: "Guests: edit, I approve runs",
-  trusted: "Guests: trusted",
-};
-
-function AccessSelect() {
-  const room = useRoom();
-  return (
-    <select
-      aria-label="Guest access"
-      className="bg-muted/60 rounded-md px-2 py-1 text-xs outline-none"
-      value={room.roomState?.access ?? "edit"}
-      onChange={(event) => room.setAccess(event.target.value as GuestAccess)}
-    >
-      {Object.entries(ACCESS).map(([value, label]) => (
-        <option key={value} value={value}>
-          {label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function AccessBadge({ access }: { access: GuestAccess | undefined }) {
-  if (!access) return null;
-  const label = { view: "view only", edit: "can edit · runs need approval", trusted: "trusted" }[
-    access
-  ];
-  return (
-    <span className={cn("bg-secondary rounded-md px-2 py-1 font-mono text-[11px]")}>{label}</span>
-  );
 }

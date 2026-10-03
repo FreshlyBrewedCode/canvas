@@ -23,9 +23,9 @@ reading the same thread, looking at the same files.
 - **The host** runs `canvas serve` in a project directory and opens the host link it prints.
   Agents, terminals and files live on the host's machine. The host's browser is the only thing
   that talks to `canvas serve`.
-- **Guests** open the guest link the host shares. What they can do is set by the host's
-  [guest access](/docs/guests): view, edit (the host approves every run) or trusted.
-- **Agents** are frames on the board. Anyone with edit access writes their prompts; agents can
+- **Guests** open the guest link the host shares and knock; the host lets each one in, with a
+  [role](/docs/guests#members-and-roles): view, or edit (the host approves every run).
+- **Agents** are frames on the board. Anyone with the edit role writes their prompts; agents can
   open and arrange frames themselves with the [board tools](/docs/board-tools).
 
 ## The layout

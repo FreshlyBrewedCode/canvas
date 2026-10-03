@@ -3,10 +3,10 @@
  *
  *   guest browser ──trystero──▶ host browser ──WebSocket──▶ `canvas serve`
  *
- * Only the host's browser talks to the server (it holds the token from the
- * link the CLI printed). Guests talk to the host over trystero and never reach
- * the machine directly: every action that would touch it is a request the
- * host's browser checks against the room's access policy before relaying.
+ * Only the host's browser talks to the server (a browser paired with it, ADR
+ * 0011). Guests talk to the host over trystero and never reach the machine
+ * directly: every action that would touch it is a request the host's browser
+ * checks against the requesting member's role before relaying.
  */
 
 // ---------------------------------------------------------------------------
@@ -264,7 +264,16 @@ export type ClientToServer =
       readonly ok: boolean;
       readonly text: string;
       readonly images?: ReadonlyArray<ToolImage>;
-    };
+    }
+  /** Admit a browser by its key (a member's again: its new role and name). */
+  | {
+      readonly t: "member-admit";
+      readonly publicKey: string;
+      readonly name: string;
+      readonly role: MemberRole;
+    }
+  | { readonly t: "member-role"; readonly fingerprint: string; readonly role: MemberRole }
+  | { readonly t: "member-remove"; readonly fingerprint: string };
 
 /** An image a board tool shows the agent, e.g. a drawing (ADR 0009). */
 export interface ToolImage {
@@ -288,7 +297,10 @@ export type ServerToClient =
       readonly sessions: ReadonlyArray<SessionSnapshot>;
       /** The board's `canvas relay`, if it uses one (ADR 0008). */
       readonly relay?: WelcomeRelay | null;
+      readonly members: ReadonlyArray<Member>;
     }
+  /** The member list, after every change. */
+  | { readonly t: "members"; readonly members: ReadonlyArray<Member> }
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage
@@ -313,20 +325,66 @@ export type ServerToClient =
 // Peer ⇄ peer (trystero actions)
 
 /**
- * What a guest may do, set by the host for the whole room.
+ * A member's saved role (ADR 0011, decision 2), set by the host per member.
  * - `view`: read-only — board edits are dropped, requests refused; sees the
  *   files others open, but not the file tree.
  * - `edit`: edit the board and prompt drafts, open shared files and browse the
  *   tree (ADR 0002); anything that runs on the host's machine (send a prompt,
- *   start an agent, type into a terminal) waits for the host to approve it.
- * - `trusted`: as `edit`, without the approval step. Tool-call permissions the
- *   agent asks for still go to the host only.
+ *   start an agent) waits for the host to approve it.
  */
-export type GuestAccess = "view" | "edit" | "trusted";
+export type MemberRole = "view" | "edit";
+
+/**
+ * What a guest may do now: its member's role, or `trusted` on top of it for
+ * one host session (decision 4, not grantable yet): as `edit`, without the
+ * approval step, and typing into terminals. Tool-call permissions the agent
+ * asks for still go to the host only.
+ */
+export type GuestAccess = MemberRole | "trusted";
+
+/** A browser the host admitted, as `canvas serve` saves it (`.canvas/members.json`). */
+export interface Member {
+  readonly publicKey: string;
+  /** The full fingerprint of `publicKey` (`shared/identity.ts`): what members are found by. */
+  readonly fingerprint: string;
+  /** The name it had when admitted. */
+  readonly name: string;
+  readonly role: MemberRole;
+  /** ISO time it was admitted. */
+  readonly admitted: string;
+}
+
+/**
+ * Host → one guest, once it proved its key: whether it is in. Until
+ * `admitted` the host sends it nothing else and refuses what it sends.
+ */
+export type Admission =
+  /** Not a member: wait for the host to let you in. */
+  | { readonly t: "lobby" }
+  /** In: the room, and the host's state vector to sync against. */
+  | {
+      readonly t: "admitted";
+      readonly access: GuestAccess;
+      readonly state: RoomState;
+      readonly vector: ReadonlyArray<number>;
+    }
+  /**
+   * The host changed what this member may do. Made able to edit, it gets the
+   * host's state vector: what it changed meanwhile was dropped, and later
+   * updates of its own wait on it.
+   */
+  | {
+      readonly t: "access";
+      readonly access: GuestAccess;
+      readonly vector?: ReadonlyArray<number>;
+    }
+  /** Not let in; the host drops this peer. */
+  | { readonly t: "denied" }
+  /** No longer a member; the host drops this peer. Coming again is knocking again. */
+  | { readonly t: "removed" };
 
 export interface RoomState {
   readonly hostPeerId: string;
-  readonly access: GuestAccess;
   readonly cwd: string;
   readonly agents: ReadonlyArray<AgentInfo>;
   /** `canvas serve`'s version, null for a checkout; absent from hosts older than it. */

@@ -10,7 +10,7 @@ its output live.
 
 ![A terminal frame running the project's dev server](./screenshots/terminal.webp)
 
-- **Who types**: the host, and guests with trusted access. Everyone else reads.
+- **Who types**: the host. Everyone else reads.
 - **Size**: the shell follows the size of the host's frame. In
   [full screen](/docs/board#full-screen) a terminal keeps a height of its own: half the host's
   screen to begin with; drag its bottom edge there to change it. Everyone's full screen shows the
@@ -24,5 +24,5 @@ its output live.
 - It keeps running until `canvas serve` stops, even if the frame is removed.
 - After a restart of `canvas serve`, the frame starts a new shell. The old output is gone.
 
-A trusted guest with a terminal can do anything the host's user can. See
+A terminal runs as the host's user: whoever types into it can do anything the host can. See
 [Security](/docs/security).

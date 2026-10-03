@@ -39,7 +39,7 @@ the list of shapes only, and don't see freehand strokes.
 
 ## Guests
 
-Guests with edit access draw like the host. **View** guests see the drawing but get no **Edit**.
+Guests with the edit role draw like the host. **View** guests see the drawing but get no **Edit**.
 
 ## Limits
 

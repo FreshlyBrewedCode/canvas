@@ -28,19 +28,21 @@ order: 7
 | **frame**         | One thing on the board: an agent, a file, a terminal, a browser or a drawing |
 | **full screen**   | Your own view of one row at 100%, its frames as tall as your screen. [Board](/docs/board#full-screen) |
 | **guest**         | Anyone on the board who opened the guest link                               |
-| **guest access**  | What guests may do, set by the host per board: view, edit or trusted        |
-| **guest link**    | The link that joins a board as a guest. Safe to share with the people you invite |
+| **guest link**    | The invite to a board: whoever opens it knocks, and the host lets them in. Share it with the people you invite |
 | **issuer key**    | A name and secret a relay's operator gives a host or team; `canvas serve` signs relay tokens with it. [Relay](/docs/relay) |
 | **line**          | Clusters side by side, left to right, tops aligned; lines go top to bottom. [Board](/docs/board#layout) |
+| **lobby**         | Where someone who opened the guest link waits until the host lets them in. [Guests](/docs/guests#the-lobby) |
 | **link**          | A markdown or HTML link to a place on the board: a frame, a file, lines, a heading, a comment. [Board](/docs/board#links) |
 | **host**          | The person who runs `canvas serve` and opens the host link                  |
 | **host link**     | The link `canvas serve` prints. Opens the board as host in a paired browser; keep it to yourself |
+| **member**        | A browser the host let in, by its fingerprint, with a role. [Guests](/docs/guests#members-and-roles) |
 | **occupant**      | The person or agent holding a frame. [Focus](/docs/focus)                   |
 | **outdated comment** | A comment whose lines are gone from the file. It shows above the first line, with what they read. [Files](/docs/files#comments) |
 | **pairing code**  | A one-time code in the host link, good for 10 minutes: the first browser to open the link is paired with `canvas serve` as the host. `canvas pair` prints a new one. [Quick start](/docs/quick-start#2-open-the-host-link) |
 | **permission**    | An agent asking before a tool call. Only the host answers                   |
 | **prompt draft**  | The shared composer of an agent frame, written by several people at once    |
 | **relay token**   | Admits one board to a canvas relay for 30 days; the host's tab and guest links carry one. [Relay](/docs/relay) |
+| **role**          | What a member may do, set by the host per member: view or edit. [Guests](/docs/guests#members-and-roles) |
 | **row**           | Frames side by side in a cluster, left to right; they share a height. [Board](/docs/board#layout) |
 | **scratch file**  | A file an agent wrote for the board only, kept in `.canvas/scratch/`, shown as `canvas:scratch/<name>`. [Board tools](/docs/board-tools#scratch-files) |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |

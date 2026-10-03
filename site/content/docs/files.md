@@ -83,8 +83,8 @@ comment on all of them. Comments are markdown. Each shows below its last line, w
 - You edit and delete your own comments, and the host edits and deletes anyone's. Agents read
   them with [`view_frame`](/docs/board-tools#comments) and can write their own.
 
-## Guest access
+## Guests' roles
 
-- **edit** and **trusted** guests open files, browse the tree and comment, without approval.
+- **edit** guests open files, browse the tree and comment, without approval.
 - **view** guests see the files others open, but get no tree and cannot open files. They see a
   frame's list, but can't pick from it. They read comments, but can't write them.

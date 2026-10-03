@@ -57,13 +57,16 @@ an agent, write a prompt and press **Send** (⌘/Ctrl-Enter).
 
 ## 4. Invite a guest
 
-1. Pick the [guest access](/docs/guests) in the top bar. The default is **edit, I approve runs**.
-2. Press **Copy guest link** and send it.
+1. Press **Copy guest link** and send it.
+2. When they open it, a card says they **want to join**, with their name and their browser's
+   fingerprint. Press **Admit to edit** (or **Admit to view**, or **Deny**). See
+   [Guests](/docs/guests#the-lobby).
 
-The guest's browser finds the host's peer to peer and shows **host online** once connected.
-Anything a guest wants to run on your machine appears as an approval card for you.
+The guest's browser finds the host's peer to peer and waits in the lobby until you let it in; next
+time, the same browser comes straight in. Anything a guest wants to run on your machine appears as
+an approval card for you.
 
-![The host's top bar: guest access, and the guest link to copy](./screenshots/topbar-host.webp)
+![The host's top bar: members, and the guest link to copy](./screenshots/topbar-host.webp)
 
 ## Restarting
 

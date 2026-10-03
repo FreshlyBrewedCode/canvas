@@ -22,7 +22,7 @@ The choice is made once per frame, and the frame is renamed after it: `agent-1` 
 
 ## Prompt drafts
 
-The composer at the bottom is a shared **prompt draft**: everyone with edit access types into it at
+The composer at the bottom is a shared **prompt draft**: everyone with the edit role types into it at
 once and sees each other's carets. **Send** (⌘/Ctrl-Enter) sends the draft as one prompt, signed
 with the sender's name.
 
@@ -30,8 +30,8 @@ with the sender's name.
 
 Who can send:
 
-- the host, and trusted guests, directly;
-- guests with edit access, after the host approves ([Guests](/docs/guests#approvals)).
+- the host, directly;
+- guests with the edit role, after the host approves ([Guests](/docs/guests#approvals)).
 
 **Stop** ends the agent's turn.
 
@@ -85,7 +85,7 @@ settings.
 Agents ask before some tool calls: Claude Code in its **Manual** mode, opencode by its own
 permission settings (by default, before touching files outside the project; your `opencode.json`
 can change that). The request appears in the thread, under the tool call it gates. **Only the host
-can answer it**, whatever the guest access; guests see that it waits for the host.
+can answer it**, whatever the guest's role; guests see that it waits for the host.
 
 A waiting agent is hard to miss: its frame is outlined, and its header says **needs you** (for
 guests, **needs host**); a click scrolls to the request. The top bar counts the agents waiting, and

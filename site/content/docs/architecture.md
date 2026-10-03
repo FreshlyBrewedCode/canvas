@@ -83,11 +83,12 @@ Running one: [Relay](/docs/relay).
 ## Authority is a star, presence is a mesh
 
 - **The board** is a [Yjs](https://yjs.dev) document. Guests send their board updates to the host
-  only; the host applies what the guest's access allows and passes it on.
+  only; the host applies what the guest's role allows and passes it on.
 - **Agent threads, terminal output and open files** exist only on the host's side and are mirrored
   out by the host's browser.
 - **Anything that would run** on the host's machine is a request to the host's browser, checked
-  against the guest access ([Guests](/docs/guests)).
+  against the requesting member's role ([Guests](/docs/guests)). Someone the host hasn't let in
+  waits in the lobby and gets none of this.
 - **Presence** (pointers, views, selections, frame focus) goes peer to peer, since it carries no
   authority. On a canvas relay's transport it goes from every browser to every other through the
   relay.

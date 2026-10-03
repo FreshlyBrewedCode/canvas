@@ -3,7 +3,8 @@
  * the host's browser may use, in one tab at a time: a newer tab takes over
  * from an older one. Each socket first answers a challenge with a paired
  * browser's key, or pairs it with a code (`owners.ts`); until then it gets
- * nothing else. Nothing here knows about guests — the host's browser is the relay.
+ * nothing else. Guests never reach it — the host's browser is the relay; it
+ * keeps their membership here (`members.ts`), as the host tab changes it.
  */
 
 import type { ServerWebSocket } from "bun";
@@ -22,6 +23,7 @@ import { relayRoom } from "../shared/relay-room";
 import { AgentManager, detectAgents } from "./agents";
 import { BoardMcp } from "./board-mcp";
 import { Files } from "./files";
+import { Members } from "./members";
 import { Owners } from "./owners";
 import { Scratch } from "./scratch";
 import { canvasSkills } from "./skills";
@@ -64,6 +66,7 @@ export async function serve(options: ServeOptions) {
   excludeFromGit(options.dir);
   const room = await store.room();
   const owners = new Owners(store.root);
+  const members = new Members(store.root);
   // A new code at every start while nobody is paired, and on request.
   const pairing = options.pair || owners.list().length === 0 ? owners.pair() : null;
   const relayRoomName = options.relay ? await relayRoom(room.key) : null;
@@ -81,6 +84,7 @@ export async function serve(options: ServeOptions) {
   // The host tab: the board, and so every board tool call, lives there.
   let host: ServerWebSocket<Conn> | null = null;
   const broadcast = (message: ServerToClient) => host?.send(JSON.stringify(message));
+  const sendMembers = () => broadcast({ t: "members", members: members.list() });
 
   // Scratch files are written by agents' board tools; `files` mirrors them.
   const scratch = new Scratch(options.dir, (path) => files.scratchChanged(path));
@@ -146,6 +150,7 @@ export async function serve(options: ServeOptions) {
         board: board ? Buffer.from(board).toString("base64") : null,
         sessions: agents.snapshots(),
         relay: relaySetup(),
+        members: members.list(),
       } satisfies ServerToClient),
     );
   };
@@ -211,6 +216,16 @@ export async function serve(options: ServeOptions) {
         return terminals.resize(message.id, message.cols, message.rows);
       case "board-result":
         return boardMcp.result(message.callId, message.ok, message.text, message.images);
+      case "member-admit":
+        return void members
+          .admit(message.publicKey, message.name, message.role)
+          .then(sendMembers, (error: unknown) => sendError(ws, error));
+      case "member-role":
+        members.setRole(message.fingerprint, message.role);
+        return sendMembers();
+      case "member-remove":
+        members.remove(message.fingerprint);
+        return sendMembers();
     }
   };
 

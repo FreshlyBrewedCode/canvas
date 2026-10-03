@@ -16,7 +16,7 @@ export function useRoomState() {
   useSyncExternalStore(
     (onChange) => room.subscribe("room", onChange),
     () =>
-      `${room.serverStatus}:${room.hostOnline}:${room.roomState?.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}`,
+      `${room.serverStatus}:${room.hostOnline}:${room.admission}:${room.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}`,
   );
   return room;
 }
@@ -27,6 +27,24 @@ export function useConnectionLog() {
   return useSyncExternalStore(
     (onChange) => room.subscribe("connection", onChange),
     () => room.log,
+  );
+}
+
+/** Host: the members `canvas serve` keeps. */
+export function useMembers() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("members", onChange),
+    () => room.members,
+  );
+}
+
+/** Host: who waits in the lobby. */
+export function useKnocks() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("members", onChange),
+    () => room.knocks,
   );
 }
 
