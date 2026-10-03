@@ -10,15 +10,16 @@
  * A cassette is one agent process's traffic, `<cassettes>/<kind>-<n>.jsonl`,
  * in the order it happened: ACP messages each way (`in` from canvas, `out`
  * from the agent) and the agent's calls to the board's MCP server (`mcp`),
- * which canvas hands it in `session/new`. Recording runs the real agent, its
- * MCP server swapped for a proxy here that writes each call down. Replaying
- * answers canvas as the agent did, waits for what canvas sent, asks the
- * permissions the agent asked, and makes the agent's MCP calls itself —
- * against this run's board, with this run's ids (`ids.ts`) — so the board
- * changes as it did.
+ * which canvas hands it in `session/new` (or `/load`, `/resume`). Recording
+ * runs the real agent, its MCP server swapped for a proxy here that writes
+ * each call down. Replaying answers canvas as the agent did, waits for what
+ * canvas sent, asks the permissions the agent asked, and makes the agent's MCP
+ * calls itself — against this run's board, with this run's ids (`ids.ts`) —
+ * so the board changes as it did.
  *
  * Processes take their cassettes in the order they start, per kind; `<state>`
- * holds which are taken, and is the run's own.
+ * holds which are taken, and is the run's own. The process `canvas serve`
+ * starts only to list a kind's settings (its probe) is one like any other.
  */
 import { appendFileSync, existsSync, openSync, readFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
@@ -54,6 +55,9 @@ export function scrub(line: string): string {
   if (user.length >= 3) out = out.replace(new RegExp(`\\b${RegExp.escape(user)}\\b`, "g"), "user");
   return out;
 }
+
+/** The ACP requests that hand the agent its MCP servers. */
+const OPENS_SESSION = new Set(["session/new", "session/load", "session/resume"]);
 
 /** How long a replay waits between the agent's messages at most, in ms. */
 const GAP = Number(process.env.CANVAS_REPLAY_GAP_MS ?? 25);
@@ -114,7 +118,7 @@ async function record(cassettes: string, state: string, kind: string, command: s
     for await (const line of lines(Bun.stdin.stream())) {
       const msg = JSON.parse(line) as Rpc;
       let sent = msg;
-      if (msg.method === "session/new" || msg.method === "session/load") {
+      if (OPENS_SESSION.has(msg.method ?? "")) {
         const mcp = (msg.params?.mcpServers ?? []) as Server[];
         // The MCP server's secret is the run's own: not one for the repo.
         write({
@@ -199,7 +203,7 @@ async function replay(cassettes: string, state: string, kind: string) {
       const actual = await take((m) => m.method === msg.method);
       ids.learn(msg.params, actual.params);
       if (msg.id !== undefined) requests.set(msg.id, actual.id);
-      if (msg.method === "session/new" || msg.method === "session/load")
+      if (OPENS_SESSION.has(msg.method ?? ""))
         for (const server of (actual.params?.mcpServers ?? []) as Server[])
           if ("url" in server) servers.set(server.name, server);
       if (msg.method === "session/prompt") {

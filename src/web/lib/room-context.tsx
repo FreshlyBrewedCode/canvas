@@ -16,7 +16,7 @@ export function useRoomState() {
   useSyncExternalStore(
     (onChange) => room.subscribe("room", onChange),
     () =>
-      `${room.serverStatus}:${room.hostOnline}:${room.admission}:${room.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}`,
+      `${room.serverStatus}:${room.hostOnline}:${room.admission}:${room.access}:${room.roomState?.hostPeerId}:${room.roomState?.version}:${room.sessionsKnown}`,
   );
   return room;
 }
@@ -91,6 +91,15 @@ export function useSession(id: string) {
     // `signal` is the change signal for the mutable session record.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [session, signal],
+  );
+}
+
+/** The settings a kind of agent offers a new session; undefined until the host knows them. */
+export function useKindOptions(agent: string) {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("sessions", onChange),
+    () => room.kindOptions(agent),
   );
 }
 

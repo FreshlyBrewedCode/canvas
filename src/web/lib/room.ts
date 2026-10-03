@@ -47,6 +47,7 @@ import type {
   Admission,
   AgentConfigOption,
   AgentEvent,
+  AgentKind,
   FileContent,
   GuestAccess,
   GuestReply,
@@ -60,11 +61,12 @@ import type {
   SignedMemberList,
   SessionHead,
   SessionMeta,
+  SessionStart,
   ToolImage,
   WelcomeRelay,
 } from "../../shared/protocol";
 import { Admissions, check, mayEdit, type Knock, type Step } from "./admission";
-import { allFrames, tidy, type Frame } from "./board";
+import { allFrames, shownSession, tidy, type Frame } from "./board";
 import type { DragGhost } from "./drag";
 import {
   CLOSED_TREE,
@@ -185,7 +187,7 @@ type Topic =
   | "peers"
   | "focus"
   | "tree"
-  /** Any session's status. */
+  /** Any session's status, and what each kind of agent offers a new session. */
   | "sessions"
   | `session:${string}`
   | `term:${string}`
@@ -212,6 +214,8 @@ export class Room {
   hostOnline = false;
   /** Guests: whether the host let us in. */
   admission: AdmissionStatus = "connecting";
+  /** Whether every session's head is here (the welcome's, or the host's `sessions`). */
+  sessionsKnown = false;
   /** Guests: what the host lets us do; null until we are in. */
   access: GuestAccess | null = null;
   approvals: Approval[] = [];
@@ -231,6 +235,10 @@ export class Room {
   private relaySetup: WelcomeRelay | null = null;
 
   private readonly sessions = new Map<string, MirroredSession>();
+  /** The settings each kind of agent offers a new session (ADR 0012). */
+  private readonly kinds = new Map<AgentKind, ReadonlyArray<AgentConfigOption>>();
+  /** Host: the sessions frames showed at the last sync; one none shows any more is released. */
+  private shown = new Set<string>();
   private readonly terminals = new Map<string, string>();
   private readonly files = new Map<string, FileContent>();
   /** The shared set's file list; null until the host sends it (never to `view` guests). */
@@ -259,7 +267,10 @@ export class Room {
   /** Paths opened with the server since the link came up. */
   private readonly watched = new Set<string>();
   private treeWatched = false;
-  /** Terminals opened and agent sessions ensured since the server link came up. */
+  /**
+   * Terminals opened, session logs asked for (`log:<id>`) and kinds probed
+   * (`kind:<agent>`) since the server link came up.
+   */
   private readonly opened = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private tidyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -366,6 +377,17 @@ export class Room {
 
   session(id: string) {
     return this.sessions.get(id);
+  }
+
+  /** The settings a kind of agent offers a new session; undefined until known. */
+  kindOptions(agent: AgentKind): ReadonlyArray<AgentConfigOption> | undefined {
+    return this.kinds.get(agent);
+  }
+
+  /** A session's settings; for one not begun, those its frame's agent offers. */
+  optionsFor(sessionId: string): ReadonlyArray<AgentConfigOption> | undefined {
+    const start = this.sessions.has(sessionId) ? undefined : this.startOf(sessionId);
+    return start ? this.kinds.get(start.agent) : this.sessions.get(sessionId)?.options;
   }
 
   /** Sessions blocked on a permission only the host can answer. */
@@ -954,6 +976,8 @@ export class Room {
     this.hostOnline = false;
     this.leaveTransport();
     this.sessions.clear();
+    this.sessionsKnown = false;
+    this.kinds.clear();
     this.terminals.clear();
     this.files.clear();
     this.treePaths = null;
@@ -1128,18 +1152,18 @@ export class Room {
   }
 
   /**
-   * Host: bring a guest up to date. Session heads go first, then each
-   * session's history, shortest first, then terminals, files and the tree —
-   * one message at a time, as messages sent together share the channel and
-   * all arrive late.
+   * Host: bring a guest up to date. Every session's head goes first (ADR
+   * 0012), then the history of each one a frame shows, shortest first — those
+   * whose log we have; the others follow as we get them — then what each kind
+   * of agent offers, terminals, files and the tree, one message at a time, as
+   * messages sent together share the channel and all arrive late.
    */
   private async sendSnapshot(peerId: string) {
     const actions = this.actions;
     const access = this.admissions.access(peerId);
     if (!actions || !access) return;
-    // A closed frame's session stays with the host: nothing on the board shows it.
-    const onBoard = new Set(this.frames().flatMap((f) => (f.type === "agent" ? [f.id] : [])));
-    const sessions = [...this.sessions.values()].filter((s) => onBoard.has(s.meta.id));
+    const shown = this.shownSessions();
+    const sessions = [...this.sessions.values()];
     // All taken now: what changes from here on reaches the guest live.
     const messages: HostBroadcast[] = [
       {
@@ -1147,9 +1171,15 @@ export class Room {
         sessions: sessions.map(({ meta, options }) => ({ meta, ...(options && { options }) })),
       },
       ...sessions
+        .filter((s) => shown.has(s.meta.id) && s.pending === null)
         .map((s) => ({ sessionId: s.meta.id, events: s.events.slice() }))
         .sort((a, b) => a.events.length - b.events.length)
         .map(({ sessionId, events }) => ({ t: "session-history" as const, sessionId, events })),
+      ...[...this.kinds].map(([agent, options]) => ({
+        t: "kind-options" as const,
+        agent,
+        options,
+      })),
       ...[...this.terminals].map(([id, data]) => ({ t: "term-data" as const, id, data })),
       ...[...this.files].map(([path, file]) => ({ t: "file" as const, path, file })),
       ...(this.treePaths && access !== "view"
@@ -1195,11 +1225,15 @@ export class Room {
     switch (message.t) {
       case "sessions":
         this.sessions.clear();
+        this.sessionsKnown = true;
         for (const head of message.sessions) this.putSession(head, null);
         this.emit("sessions");
+        this.emit("room");
         return;
       case "session-history":
         return this.putHistory(message.sessionId, message.events);
+      case "kind-options":
+        return this.putKind(message.agent, message.options);
       case "agent-meta":
         return this.putMeta(message.meta);
       case "agent-event":
@@ -1254,14 +1288,23 @@ export class Room {
     this.emit("sessions");
   }
 
-  /** A session's history arrived: it comes before what arrived live meanwhile. */
+  /**
+   * A session's history arrived. Guests: it comes before what arrived live
+   * meanwhile (the host holds back a session's events until it has its log).
+   * Host: `canvas serve` sent it after everything before, so it is all.
+   */
   private putHistory(sessionId: string, events: ReadonlyArray<AgentEvent>) {
     const session = this.sessions.get(sessionId);
     if (!session?.pending) return;
-    session.events = [...events, ...session.pending];
+    session.events = this.isHost ? [...events] : [...events, ...session.pending];
     session.pending = null;
     session.version++;
     this.emit(`session:${sessionId}`);
+  }
+
+  private putKind(agent: AgentKind, options: ReadonlyArray<AgentConfigOption>) {
+    this.kinds.set(agent, options);
+    this.emit("sessions");
   }
 
   private putMeta(meta: SessionMeta) {
@@ -1289,13 +1332,19 @@ export class Room {
     this.emit(`session:${sessionId}`);
   }
 
-  private pushEvent(sessionId: string, event: AgentEvent) {
+  /** An event, live; false if it was held or dropped instead. */
+  private pushEvent(sessionId: string, event: AgentEvent): boolean {
     const session = this.sessions.get(sessionId);
-    if (!session) return;
-    if (session.pending) return void session.pending.push(event);
+    if (!session) return false;
+    if (session.pending) {
+      // The host's log of it, when it comes, has this already.
+      if (!this.isHost) session.pending.push(event);
+      return false;
+    }
     session.events.push(event);
     session.version++;
     this.emit(`session:${sessionId}`);
+    return true;
   }
 
   private pushTerm(id: string, data: string) {
@@ -1333,8 +1382,13 @@ export class Room {
           );
         // Boards from before the tree are migrated before anyone joins.
         tidy(this.doc, { screen: boardHeight() });
+        // Heads only: the logs of the sessions frames show are asked for (`syncResources`).
         this.sessions.clear();
-        for (const snapshot of message.sessions) this.putSession(snapshot, snapshot.events);
+        this.sessionsKnown = true;
+        for (const head of message.sessions) this.putSession(head, null);
+        this.kinds.clear();
+        for (const [agent, options] of Object.entries(message.kindOptions))
+          this.kinds.set(agent, options);
         this.emit("sessions");
         this.roomState = {
           hostPeerId: selfId,
@@ -1371,10 +1425,17 @@ export class Room {
         if (message.meta.status === "idle") this.releaseAgent(message.meta.id);
         return this.hostcast(message);
       case "agent-event":
-        this.pushEvent(message.sessionId, message.event);
-        return this.hostcast(message);
+        // Guests get a session's events once we have its log, after it.
+        if (this.pushEvent(message.sessionId, message.event)) this.hostcast(message);
+        return;
       case "agent-options":
         this.putOptions(message.sessionId, message.options);
+        return this.hostcast(message);
+      case "session-history":
+        this.putHistory(message.sessionId, message.events);
+        return this.hostcast(message);
+      case "kind-options":
+        this.putKind(message.agent, message.options);
         return this.hostcast(message);
       case "term-data":
         this.pushTerm(message.id, message.data);
@@ -1436,9 +1497,10 @@ export class Room {
       const result = runBoardTool(
         {
           doc: this.doc,
-          self: message.sessionId,
+          // The frame the agent acts as: its turn's (ADR 0012, decision 3).
+          self: message.frameId,
           agents: this.roomState?.agents ?? [],
-          status: (id) => this.sessions.get(id)?.meta.status,
+          status: (frameId) => this.statusOf(frameId),
         },
         message.tool,
         args,
@@ -1453,11 +1515,43 @@ export class Room {
     this.server?.send({ t: "board-result", callId: message.callId, ok, text, images });
   }
 
+  /** The status of the session an agent frame shows, if it has begun. */
+  private statusOf(frameId: string) {
+    const frame = this.frames().find((f) => f.id === frameId);
+    return frame?.type === "agent"
+      ? this.sessions.get(shownSession(frame))?.meta.status
+      : undefined;
+  }
+
+  /** The sessions agent frames show, begun or not. */
+  private shownSessions(): Set<string> {
+    return new Set(
+      this.frames().flatMap((f) => (f.type === "agent" && f.agent ? [shownSession(f)] : [])),
+    );
+  }
+
   /**
-   * Host: make sure exactly the files the board shows are open, every
-   * terminal is running and every agent frame that has its agent picked has
-   * a session (which also brings up the agent, so its settings can be
-   * listed).
+   * How the session an agent frame shows begins, if `canvas serve` hasn't
+   * begun it yet: in that frame, with its agent. The seam for a new
+   * conversation's own settings (ADR 0012, decision 4).
+   */
+  private startIn(frame: Extract<Frame, { type: "agent" }>): SessionStart {
+    return { frameId: frame.id, agent: frame.agent };
+  }
+
+  /** How `sessionId` begins, if a frame shows it. */
+  private startOf(sessionId: string): SessionStart | undefined {
+    const frame = this.frames().find(
+      (f) => f.type === "agent" && !!f.agent && shownSession(f) === sessionId,
+    );
+    return frame?.type === "agent" ? this.startIn(frame) : undefined;
+  }
+
+  /**
+   * Host: make sure exactly the files the board shows are open and every
+   * terminal is running; get the logs of the sessions agent frames show, and
+   * what a kind of agent offers where a frame's session hasn't begun (ADR
+   * 0012). A session no frame shows any more is released: its agent stops.
    */
   private syncResources() {
     if (!this.isHost || this.server?.status !== "open") return;
@@ -1484,9 +1578,19 @@ export class Room {
       this.server.send({ t: "tree-watch" });
     }
     for (const frame of frames) {
-      if (frame.type === "agent" && frame.agent && !this.opened.has(frame.id)) {
-        this.opened.add(frame.id);
-        this.server.send({ t: "agent-create", id: frame.id, agent: frame.agent });
+      if (frame.type === "agent" && frame.agent) {
+        const sessionId = shownSession(frame);
+        const session = this.sessions.get(sessionId);
+        if (session?.pending && !this.opened.has(`log:${sessionId}`)) {
+          this.opened.add(`log:${sessionId}`);
+          this.server.send({ t: "session-open", sessionId });
+        }
+        // Settings to show before its agent runs: what the kind offers.
+        const unknown = !session?.options && !this.kinds.has(frame.agent);
+        if (unknown && !this.opened.has(`kind:${frame.agent}`)) {
+          this.opened.add(`kind:${frame.agent}`);
+          this.server.send({ t: "kind-probe", agent: frame.agent });
+        }
       }
       if (frame.type === "terminal" && !this.opened.has(frame.id)) {
         this.opened.add(frame.id);
@@ -1494,6 +1598,11 @@ export class Room {
         this.server.send({ t: "term-open", id: frame.id, cols: 80, rows: 24 });
       }
     }
+    const shown = this.shownSessions();
+    for (const sessionId of this.shown)
+      if (!shown.has(sessionId) && this.sessions.has(sessionId))
+        this.server.send({ t: "agent-release", sessionId });
+    this.shown = shown;
   }
 
   // -------------------------------------------------------------------------
@@ -1515,25 +1624,34 @@ export class Room {
     if (!this.server || this.server.status !== "open")
       throw new Error("not connected to canvas serve");
     switch (request.t) {
-      case "agent-create":
-        this.server.send({ t: "agent-create", id: request.frameId, agent: request.agent });
-        return;
       case "agent-prompt": {
-        const frame = this.frames().find((f) => f.id === request.sessionId);
-        if (frame?.type !== "agent") throw new Error("no such agent frame");
-        if (!this.sessions.has(frame.id))
-          this.server.send({ t: "agent-create", id: frame.id, agent: frame.agent });
-        const status = this.sessions.get(frame.id)?.meta.status;
+        const { sessionId, frameId, text } = request;
+        const frame = this.frames().find((f) => f.id === frameId);
+        if (frame?.type !== "agent" || !frame.agent) throw new Error("no such agent frame");
+        if (shownSession(frame) !== sessionId)
+          throw new Error("the frame shows another conversation now");
+        const status = this.sessions.get(sessionId)?.meta.status;
         if (status && status !== "idle") throw new Error("the agent is still busy");
-        this.server.send({ t: "agent-prompt", sessionId: frame.id, text: request.text, author });
+        // The first prompt begins the session (ADR 0012, decision 4).
+        this.server.send({ t: "agent-prompt", sessionId, ...this.startIn(frame), text, author });
         return;
       }
       case "agent-cancel":
         this.server.send({ t: "agent-cancel", sessionId: request.sessionId });
         return;
-      case "agent-config":
-        this.server.send({ ...request, t: "agent-config" });
+      case "agent-config": {
+        const { sessionId, configId, value } = request;
+        // Not begun yet: the change begins it, as the frame showing it says.
+        const start = this.sessions.has(sessionId) ? undefined : this.startOf(sessionId);
+        this.server.send({
+          t: "agent-config",
+          sessionId,
+          configId,
+          value,
+          ...(start && { start }),
+        });
         return;
+      }
       case "term-input":
         this.server.send({ t: "term-input", id: request.id, data: request.data });
         return;

@@ -26,10 +26,22 @@ export interface Author {
 
 export type SessionStatus = "idle" | "running" | "waiting";
 
+/**
+ * A session is a conversation, kept by `canvas serve` for the whole board
+ * (ADR 0012); frames show one. Its meta is enough to list it without its log.
+ */
 export interface SessionMeta {
+  /** Its own id; a frame's first session has the frame's id (boards from before too). */
   readonly id: string;
   readonly agent: AgentKind;
   readonly status: SessionStatus;
+  /** The frame it began in (logs from before it was kept: the session's id). */
+  readonly frameId: string;
+  /** When it began, and when a turn last started or ended (ms since epoch). */
+  readonly createdAt: number;
+  readonly lastAt: number;
+  /** Its first prompt, shortened (`sessionTitle`); none until it has one. */
+  readonly title?: string;
   /** The agent's own session id, used to resume the conversation next turn. */
   readonly acpSessionId?: string;
   /**
@@ -106,6 +118,11 @@ export type AgentEvent =
       readonly text: string;
       readonly author: Author;
       readonly at: number;
+      /**
+       * The frame it was sent from: the agent acts as that frame until the
+       * turn ends (ADR 0012, decision 3). Absent in logs from before.
+       */
+      readonly frameId?: string;
     }
   | { readonly kind: "chunk"; readonly turnId: string; readonly chunk: unknown }
   | {
@@ -151,8 +168,21 @@ export interface SessionSnapshot {
   readonly options?: ReadonlyArray<AgentConfigOption>;
 }
 
-/** A session without its event log: what a guest sees before the history arrives. */
+/** A session without its event log: what browsers get first; logs come when shown (ADR 0012). */
 export type SessionHead = Omit<SessionSnapshot, "events">;
+
+/** The settings each kind of agent offered last for a new session (`.canvas/agents.json`). */
+export type KindOptions = Readonly<Record<AgentKind, ReadonlyArray<AgentConfigOption>>>;
+
+/**
+ * How a session `canvas serve` doesn't have yet begins: in which frame, with
+ * which agent, from which settings (a new conversation's, ADR 0012 decision 4).
+ */
+export interface SessionStart {
+  readonly frameId: string;
+  readonly agent: AgentKind;
+  readonly settings?: ReadonlyArray<Pick<AgentSetting, "id" | "value">>;
+}
 
 // ---------------------------------------------------------------------------
 // Files
@@ -227,20 +257,34 @@ export interface AuthMessage {
 export type ClientToServer =
   | AuthMessage
   | { readonly t: "board-save"; readonly state: string }
-  | { readonly t: "agent-create"; readonly id: string; readonly agent: AgentKind }
-  | {
+  /**
+   * A prompt, sent from `frameId`. The first one begins the session (with
+   * `agent` and `settings`); later ones keep its agent.
+   */
+  | ({
       readonly t: "agent-prompt";
       readonly sessionId: string;
       readonly text: string;
       readonly author: Author;
-    }
+    } & SessionStart)
   | { readonly t: "agent-cancel"; readonly sessionId: string }
+  /**
+   * Change a setting. The agent answers which settings follow, so a session
+   * not begun yet begins here, as `start` says, and its process runs.
+   */
   | {
       readonly t: "agent-config";
       readonly sessionId: string;
       readonly configId: string;
       readonly value: AgentConfigValue;
+      readonly start?: SessionStart;
     }
+  /** No frame shows this session any more: stop its agent, unless it is busy. */
+  | { readonly t: "agent-release"; readonly sessionId: string }
+  /** List this kind of agent's settings (`kind-options`), if not known yet: it runs once to say. */
+  | { readonly t: "kind-probe"; readonly agent: AgentKind }
+  /** Send a session's log (`session-history`): a frame shows it. */
+  | { readonly t: "session-open"; readonly sessionId: string }
   | {
       readonly t: "agent-permission";
       readonly sessionId: string;
@@ -301,7 +345,9 @@ export type ServerToClient =
       readonly agents: ReadonlyArray<AgentInfo>;
       /** base64 Yjs update of the persisted board, if any. */
       readonly board: string | null;
-      readonly sessions: ReadonlyArray<SessionSnapshot>;
+      /** Every session, without its log: `session-open` asks for one. */
+      readonly sessions: ReadonlyArray<SessionHead>;
+      readonly kindOptions: KindOptions;
       /** The board's `canvas relay`, if it uses one (ADR 0008). */
       readonly relay?: WelcomeRelay | null;
       readonly members: ReadonlyArray<Member>;
@@ -320,18 +366,22 @@ export type ServerToClient =
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage
+  | SessionHistoryMessage
+  | KindOptionsMessage
   | FileMessage
   | TreeMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | { readonly t: "term-exit"; readonly id: string; readonly code: number | null }
   /**
    * An agent called a board tool (`shared/board-tools.ts`); the board is in
-   * the browser, so the browser runs it. `sessionId` is the agent's frame.
+   * the browser, so the browser runs it. `frameId` is the frame the agent
+   * acts as: its running turn's, else the one it was last prompted from.
    */
   | {
       readonly t: "board-call";
       readonly callId: string;
       readonly sessionId: string;
+      readonly frameId: string;
       readonly tool: string;
       readonly args: unknown;
     }
@@ -414,8 +464,13 @@ export interface RoomState {
 
 /** Requests a guest sends the host; the host answers `{ok}` or `{ok:false, error}`. */
 export type GuestRequest =
-  | { readonly t: "agent-create"; readonly frameId: string; readonly agent: AgentKind }
-  | { readonly t: "agent-prompt"; readonly sessionId: string; readonly text: string }
+  /** A prompt into the session `frameId` shows. */
+  | {
+      readonly t: "agent-prompt";
+      readonly sessionId: string;
+      readonly frameId: string;
+      readonly text: string;
+    }
   | { readonly t: "agent-cancel"; readonly sessionId: string }
   | {
       readonly t: "agent-config";
@@ -432,16 +487,14 @@ export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly 
  * the file tree (not to `view` guests).
  *
  * A joining guest gets `sessions` first — every session on the board, without
- * its log — then one `session-history` per session, shortest first, so a long
- * thread holds up nobody else's.
+ * its log — then one `session-history` per session a frame shows that the
+ * host has the log of, shortest first, so a long thread holds up nobody
+ * else's; the rest as the host gets them. Then each kind's `kind-options`.
  */
 export type HostBroadcast =
   | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionHead> }
-  | {
-      readonly t: "session-history";
-      readonly sessionId: string;
-      readonly events: ReadonlyArray<AgentEvent>;
-    }
+  | SessionHistoryMessage
+  | KindOptionsMessage
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
   | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
   | AgentOptionsMessage
@@ -476,5 +529,19 @@ export interface TreeMessage {
 export interface AgentOptionsMessage {
   readonly t: "agent-options";
   readonly sessionId: string;
+  readonly options: ReadonlyArray<AgentConfigOption>;
+}
+
+/** A session's log, up to now: what came after arrives live. */
+export interface SessionHistoryMessage {
+  readonly t: "session-history";
+  readonly sessionId: string;
+  readonly events: ReadonlyArray<AgentEvent>;
+}
+
+/** The settings a kind of agent offers a new session, as it listed them last. */
+export interface KindOptionsMessage {
+  readonly t: "kind-options";
+  readonly agent: AgentKind;
   readonly options: ReadonlyArray<AgentConfigOption>;
 }

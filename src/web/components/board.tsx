@@ -817,13 +817,11 @@ function ApprovalCard({ approval }: { approval: Approval }) {
   const what =
     request.t === "agent-prompt"
       ? "wants to send a prompt"
-      : request.t === "agent-create"
-        ? `wants to start ${request.agent}`
-        : request.t === "agent-config"
-          ? `wants to set ${describeConfig(room.session(request.sessionId)?.options, request)}`
-          : request.t === "term-input"
-            ? "wants to type in a terminal"
-            : "wants to stop an agent";
+      : request.t === "agent-config"
+        ? `wants to set ${describeConfig(room.optionsFor(request.sessionId), request)}`
+        : request.t === "term-input"
+          ? "wants to type in a terminal"
+          : "wants to stop an agent";
   return (
     <div
       className="bg-card border-status-ready/45 border border-l-[3px] p-3 shadow-md"

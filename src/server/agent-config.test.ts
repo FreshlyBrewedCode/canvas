@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { fromAcp, pendingChanges, settingsOf } from "./agent-config";
+import { fromAcp, pendingChanges, seededSettings, settingsOf } from "./agent-config";
 
 // Shapes as Claude Code (via claude-agent-acp) and opencode report them.
 const acp: SessionConfigOption[] = [
@@ -75,4 +75,21 @@ test("pending changes put the model first and skip what cannot apply", () => {
     { id: "model", value: "glm" },
     { id: "effort", value: "high" },
   ]);
+});
+
+test("a new session's settings: its kind's, with what was asked for where offered", () => {
+  const options = fromAcp(acp);
+  const seeded = seededSettings(options, [
+    { id: "model", value: "glm" },
+    { id: "effort", value: "extreme" },
+    { id: "fast", value: true },
+    { id: "gone", value: "x" },
+  ]);
+  expect(seeded.map((s) => [s.id, s.value, s.label])).toEqual([
+    ["mode", "default", "Manual"],
+    ["effort", "default", "Default"],
+    ["model", "glm", "GLM"],
+    ["fast", true, "on"],
+  ]);
+  expect(seededSettings(options)).toEqual(settingsOf(options));
 });
