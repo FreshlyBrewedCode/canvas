@@ -480,6 +480,16 @@ export type GuestRequest =
     }
   | { readonly t: "term-input"; readonly id: string; readonly data: string };
 
+/**
+ * Reads a guest asks the host for, on the same channel as `GuestRequest`:
+ * any member that is in may, `view` too — it shows what the board already
+ * shows them. Not approved, and never for the lobby (ADR 0011).
+ *
+ * `session-open`: a frame shows a session whose log we lack (ADR 0012,
+ * decision 6). The log comes as a `session-history`, now or once the host has it.
+ */
+export type GuestRead = { readonly t: "session-open"; readonly sessionId: string };
+
 export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly error: string };
 
 /**
@@ -489,14 +499,27 @@ export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly 
  * A joining guest gets `sessions` first — every session on the board, without
  * its log — then one `session-history` per session a frame shows that the
  * host has the log of, shortest first, so a long thread holds up nobody
- * else's; the rest as the host gets them. Then each kind's `kind-options`.
+ * else's; the rest as the host gets them, or as the guest asks (`GuestRead`).
+ * Then each kind's `kind-options`.
+ *
+ * A live `agent-event` carries its `index` in the session's log: a guest puts
+ * it after a history that came by another path, drops one it has, and asks
+ * for the log again if some are missing — so every guest's log converges on
+ * the host's, also when the host's link to `canvas serve` dropped meanwhile.
+ * A `session-history` always replaces what a guest has, up to its length.
  */
 export type HostBroadcast =
   | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionHead> }
   | SessionHistoryMessage
   | KindOptionsMessage
   | { readonly t: "agent-meta"; readonly meta: SessionMeta }
-  | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
+  | {
+      readonly t: "agent-event";
+      readonly sessionId: string;
+      readonly event: AgentEvent;
+      /** Its place in the session's log. */
+      readonly index: number;
+    }
   | AgentOptionsMessage
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | FileMessage

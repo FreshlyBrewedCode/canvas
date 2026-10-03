@@ -55,12 +55,3 @@ export function withDefaults(
     ...(meta.title === undefined && first?.kind === "turn" && { title: sessionTitle(first.text) }),
   };
 }
-
-/** The frame a session's agent acts as: its last turn's, else the one it began in. */
-export function lastFrame(meta: SessionMeta, events: ReadonlyArray<AgentEvent>): string {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]!;
-    if (event.kind === "turn" && event.frameId) return event.frameId;
-  }
-  return meta.frameId;
-}

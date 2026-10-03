@@ -463,10 +463,11 @@ export const BOARD_TOOLS: ReadonlyArray<{
 
 /** The agent's standing context, sent as MCP server instructions. */
 export function boardInstructions(
-  frameId: string,
   skills: ReadonlyArray<{ readonly name: string; readonly description: string }> = [],
 ): string {
-  return `You are running inside canvas: a shared, multiplayer board that people are looking at together, live. Its frames are coding-agent sessions, files of this project, browser previews, terminals and drawings. You are the agent in frame ${frameId}; people write prompts into it and read your replies there. Several people may prompt you.
+  // No frame id here: a conversation can move between frames, and these are
+  // read once. view_board says which frame is "you" now (ADR 0012, decision 3).
+  return `You are running inside canvas: a shared, multiplayer board that people are looking at together, live. Its frames are coding-agent sessions, files of this project, browser previews, terminals and drawings. You are the agent in an agent frame: the one your latest prompt was sent from, which view_board marks as "you". People write prompts into it and read your replies there. Several people may prompt you.
 
 Frames that sit close together form a cluster: people keep related work together that way, and your own cluster is your workspace. Within a cluster frames sit in rows; frames in a row share a height.
 

@@ -52,7 +52,7 @@ import {
   usePeers,
   useRoom,
   useRoomState,
-  useWaitingAgents,
+  useWaitingFrames,
 } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -671,7 +671,7 @@ function PeerMarkers({
 /** Agent frames waiting for the host, when the host is there to answer. */
 function useWaiting(frames?: ReadonlyArray<Frame>) {
   const room = useRoomState();
-  const waiting = useWaitingAgents();
+  const waiting = useWaitingFrames();
   const all = useFrames(room.doc);
   if (!room.hostOnline) return [];
   return (frames ?? all).filter((frame) => waiting.has(frame.id));

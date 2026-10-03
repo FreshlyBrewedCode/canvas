@@ -57,6 +57,9 @@ export interface Focus {
 /** What the host publishes for each agent that is working on a frame. */
 export interface AgentClaim {
   readonly sessionId: string;
+  /** The agent frame it acts as (ADR 0012, decision 3): its name is that frame's title. */
+  readonly agentFrame?: string;
+  /** The frame it works on. */
   readonly frameId: string;
   readonly since: number;
 }
@@ -83,7 +86,7 @@ export interface Occupant {
 /** Every occupied frame and its occupant, from everyone's presence (ours included). */
 export function resolveOccupants(
   states: Iterable<readonly [number, FocusState]>,
-  agentName: (sessionId: string) => string | undefined = () => undefined,
+  agentName: (agentFrame: string) => string | undefined = () => undefined,
 ): Map<string, Occupant> {
   const occupants = new Map<string, Occupant>();
   const offer = (frameId: string, candidate: Occupant) => {
@@ -107,7 +110,7 @@ export function resolveOccupants(
       offer(claim.frameId, {
         key: `a:${claim.sessionId}`,
         kind: "agent",
-        name: agentName(claim.sessionId) ?? "agent",
+        name: agentName(claim.agentFrame ?? claim.sessionId) ?? "agent",
         color: agentColor(claim.sessionId),
         since: claim.since,
         clientId,

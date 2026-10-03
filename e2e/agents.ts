@@ -55,3 +55,21 @@ export async function idle(host: Page, id: string, { turn = 0, allow = true } = 
 export async function ask(host: Page, id: string, text: string) {
   await idle(host, id, { turn: await send(host, id, text) });
 }
+
+/**
+ * A new conversation in an agent frame, through the dev build's `room` (ADR
+ * 0012): until the header has a menu for it. The id of the session it shows.
+ */
+export const newConversation = (page: Page, id: string): Promise<string> =>
+  page.evaluate((id) => (window as any).room.newConversation(id), id);
+
+/** An agent frame shows another of the board's sessions, through the dev build's `room`. */
+export const showConversation = (page: Page, id: string, sessionId: string): Promise<void> =>
+  page.evaluate(([id, sessionId]) => (window as any).room.showConversation(id, sessionId), [
+    id,
+    sessionId,
+  ] as const);
+
+/** The board's sessions, the last active first: their metas (`room.sessionMetas`). */
+export const sessions = (page: Page): Promise<Array<Record<string, any>>> =>
+  page.evaluate(() => (window as any).room.sessionMetas());

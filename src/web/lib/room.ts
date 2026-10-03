@@ -50,6 +50,7 @@ import type {
   AgentKind,
   FileContent,
   GuestAccess,
+  GuestRead,
   GuestReply,
   GuestRequest,
   HostBroadcast,
@@ -61,12 +62,19 @@ import type {
   SignedMemberList,
   SessionHead,
   SessionMeta,
-  SessionStart,
   ToolImage,
   WelcomeRelay,
 } from "../../shared/protocol";
 import { Admissions, check, mayEdit, type Knock, type Step } from "./admission";
-import { allFrames, shownSession, tidy, type Frame } from "./board";
+import {
+  allFrames,
+  newConversation,
+  showConversation,
+  shownSession,
+  tidy,
+  type AgentFrame,
+  type Frame,
+} from "./board";
 import type { DragGhost } from "./drag";
 import {
   CLOSED_TREE,
@@ -78,6 +86,20 @@ import {
   type TreeView,
 } from "./focus";
 import { runBoardTool } from "./board-tools";
+import {
+  boardSessions,
+  framesShowing,
+  mergeLog,
+  nextSettings,
+  place,
+  promptFrame,
+  Releases,
+  shownSessions,
+  startIn,
+  unbegunOptions,
+  type Placed,
+} from "./sessions";
+import { lastFrame } from "../../shared/sessions";
 import { drawingImage, prepareDrawCall } from "./drawing-kit";
 import type { ConnectionEvent, RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
@@ -237,8 +259,18 @@ export class Room {
   private readonly sessions = new Map<string, MirroredSession>();
   /** The settings each kind of agent offers a new session (ADR 0012). */
   private readonly kinds = new Map<AgentKind, ReadonlyArray<AgentConfigOption>>();
-  /** Host: the sessions frames showed at the last sync; one none shows any more is released. */
-  private shown = new Set<string>();
+  /** Host: which sessions' agents may stop, as frames stop showing them (ADR 0012). */
+  private readonly releases = new Releases();
+  /**
+   * Guests: the sessions frames showed when the host last sent every head
+   * (their logs come with them), then since; a session newly shown whose log
+   * we lack is asked for. Null until the heads are here.
+   */
+  private shownHere: Set<string> | null = null;
+  /** Guests: sessions whose log we asked the host for, until it comes. */
+  private readonly asked = new Set<string>();
+  /** Every session's meta, the last active first; rebuilt after a change. */
+  private metaList: SessionMeta[] | null = null;
   private readonly terminals = new Map<string, string>();
   private readonly files = new Map<string, FileContent>();
   /** The shared set's file list; null until the host sends it (never to `view` guests). */
@@ -372,6 +404,8 @@ export class Room {
   }
 
   private emit(topic: Topic) {
+    // Any session's meta may have changed.
+    if (topic === "sessions") this.metaList = null;
     for (const listener of this.listeners.get(topic) ?? []) listener();
   }
 
@@ -384,17 +418,53 @@ export class Room {
     return this.kinds.get(agent);
   }
 
-  /** A session's settings; for one not begun, those its frame's agent offers. */
+  /**
+   * A session's settings; for one not begun, those its frame's agent offers,
+   * at the values the frame starts it with.
+   */
   optionsFor(sessionId: string): ReadonlyArray<AgentConfigOption> | undefined {
-    const start = this.sessions.has(sessionId) ? undefined : this.startOf(sessionId);
-    return start ? this.kinds.get(start.agent) : this.sessions.get(sessionId)?.options;
+    const session = this.sessions.get(sessionId);
+    if (session) return session.options;
+    const frame = framesShowing(this.frames(), sessionId)[0];
+    return frame && unbegunOptions(this.kinds.get(frame.agent), frame);
   }
 
-  /** Sessions blocked on a permission only the host can answer. */
-  waitingSessions(): string[] {
+  /**
+   * Every session of the board (ADR 0012), the last active first: heads
+   * only, logs come when a frame shows one. The same array until one changes.
+   * `frameSessions` (`sessions.ts`) picks a frame's.
+   */
+  sessionMetas(): ReadonlyArray<SessionMeta> {
+    return (this.metaList ??= boardSessions([...this.sessions.values()].map((s) => s.meta)));
+  }
+
+  /**
+   * A new conversation in an agent frame (decision 4): a fresh id it shows,
+   * with the settings of the conversation it showed. Nothing runs until its
+   * first prompt. A change of the board, so for whoever may edit it; the new
+   * id, or undefined if there is no such agent frame.
+   */
+  newConversation(frameId: string): string | undefined {
+    const frame = this.agentFrame(frameId);
+    if (!frame) return undefined;
+    const shown = this.sessions.get(shownSession(frame))?.meta;
+    return newConversation(this.doc, frameId, nextSettings(frame, shown));
+  }
+
+  /** An agent frame shows another of the board's sessions (decision 1); a change of the board. */
+  showConversation(frameId: string, sessionId: string) {
+    showConversation(this.doc, frameId, sessionId);
+  }
+
+  /**
+   * Sessions blocked on a permission only the host can answer, with the
+   * frame of their turn: "needs you" points there if no frame shows them
+   * (`waitingFrames`, `sessions.ts`).
+   */
+  waitingSessions(): Array<{ readonly id: string; readonly frameId: string }> {
     return [...this.sessions.values()]
       .filter((s) => s.meta.status === "waiting")
-      .map((s) => s.meta.id);
+      .map((s) => ({ id: s.meta.id, frameId: lastFrame(s.meta, s.events) }));
   }
 
   terminal(id: string): string {
@@ -504,12 +574,15 @@ export class Room {
     this.refreshFocus();
   }
 
-  /** Host: an agent works on a frame now, unless a person occupies it. */
-  claimForAgent(sessionId: string, frameId: string) {
+  /**
+   * Host: an agent works on a frame now, unless a person occupies it. It
+   * acts as `agentFrame` (its turn's, ADR 0012 decision 3), named after it.
+   */
+  claimForAgent(sessionId: string, agentFrame: string, frameId: string) {
     if (!this.isHost) return;
     if (this.occupants.get(frameId)?.kind === "person") return this.releaseAgent(sessionId);
     const others = this.agentClaims.filter((c) => c.sessionId !== sessionId);
-    this.agentClaims = [...others, { sessionId, frameId, since: Date.now() }];
+    this.agentClaims = [...others, { sessionId, agentFrame, frameId, since: Date.now() }];
     this.setPresence({ agents: this.agentClaims });
   }
 
@@ -528,7 +601,7 @@ export class Room {
     const titles = new Map(this.frames().map((f) => [f.id, f.title]));
     this.occupants = resolveOccupants(
       this.awareness.getStates() as Map<number, Presence>,
-      (sessionId) => titles.get(sessionId),
+      (agentFrame) => titles.get(agentFrame),
     );
     this.refreshFocus();
     // Settle claims that lost: ours to an earlier person, an agent's to any person.
@@ -734,8 +807,14 @@ export class Room {
       }
     };
 
-    actions.request.onRequest = async (request, { peerId }) =>
-      json(await this.onGuestRequest(peerId, request as unknown as GuestRequest));
+    actions.request.onRequest = async (request, { peerId }) => {
+      const message = request as unknown as GuestRequest | GuestRead;
+      return json(
+        message.t === "session-open"
+          ? this.onGuestRead(peerId, message)
+          : await this.onGuestRequest(peerId, message),
+      );
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -977,6 +1056,8 @@ export class Room {
     this.leaveTransport();
     this.sessions.clear();
     this.sessionsKnown = false;
+    this.shownHere = null;
+    this.asked.clear();
     this.kinds.clear();
     this.terminals.clear();
     this.files.clear();
@@ -1162,7 +1243,7 @@ export class Room {
     const actions = this.actions;
     const access = this.admissions.access(peerId);
     if (!actions || !access) return;
-    const shown = this.shownSessions();
+    const shown = shownSessions(this.frames());
     const sessions = [...this.sessions.values()];
     // All taken now: what changes from here on reaches the guest live.
     const messages: HostBroadcast[] = [
@@ -1216,8 +1297,10 @@ export class Room {
       if (origin !== "server") this.scheduleSave();
       this.scheduleTidy();
       this.syncResources();
-    } else if (origin !== "host" && this.hostOnline && this.hostPeer && this.access) {
-      void this.actions?.update.send(update, { target: this.hostPeer });
+    } else {
+      if (origin !== "host" && this.hostOnline && this.hostPeer && this.access)
+        void this.actions?.update.send(update, { target: this.hostPeer });
+      this.openShown();
     }
   }
 
@@ -1225,19 +1308,23 @@ export class Room {
     switch (message.t) {
       case "sessions":
         this.sessions.clear();
+        this.asked.clear();
         this.sessionsKnown = true;
         for (const head of message.sessions) this.putSession(head, null);
+        // The logs of the sessions frames show now come after this; others as frames show them.
+        this.shownHere = shownSessions(this.frames());
         this.emit("sessions");
         this.emit("room");
         return;
       case "session-history":
+        this.asked.delete(message.sessionId);
         return this.putHistory(message.sessionId, message.events);
       case "kind-options":
         return this.putKind(message.agent, message.options);
       case "agent-meta":
         return this.putMeta(message.meta);
       case "agent-event":
-        return this.pushEvent(message.sessionId, message.event);
+        return void this.pushEvent(message.sessionId, message.event, message.index);
       case "agent-options":
         return this.putOptions(message.sessionId, message.options);
       case "term-data":
@@ -1289,14 +1376,22 @@ export class Room {
   }
 
   /**
-   * A session's history arrived. Guests: it comes before what arrived live
-   * meanwhile (the host holds back a session's events until it has its log).
-   * Host: `canvas serve` sent it after everything before, so it is all.
+   * A session's history arrived. Host: `canvas serve` sent it after
+   * everything before, so it is all. Guests: it replaces the log we have, up
+   * to its length, and what came live continues it by place (`mergeLog`) —
+   * whatever came first, also a history sent again after the host's link to
+   * `canvas serve` came back.
    */
   private putHistory(sessionId: string, events: ReadonlyArray<AgentEvent>) {
     const session = this.sessions.get(sessionId);
-    if (!session?.pending) return;
-    session.events = this.isHost ? [...events] : [...events, ...session.pending];
+    if (!session) return;
+    if (this.isHost) {
+      if (!session.pending) return;
+      session.events = [...events];
+    } else {
+      const live = session.pending ?? session.events.map((event, index) => ({ index, event }));
+      session.events = mergeLog(events, live);
+    }
     session.pending = null;
     session.version++;
     this.emit(`session:${sessionId}`);
@@ -1332,14 +1427,26 @@ export class Room {
     this.emit(`session:${sessionId}`);
   }
 
-  /** An event, live; false if it was held or dropped instead. */
-  private pushEvent(sessionId: string, event: AgentEvent): boolean {
+  /**
+   * An event, live; false if it was held or dropped instead. The host's come
+   * from `canvas serve` in order; a guest's carry their place in the log
+   * (`index`), and one after a gap asks for the log again.
+   */
+  private pushEvent(sessionId: string, event: AgentEvent, index?: number): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
     if (session.pending) {
-      // The host's log of it, when it comes, has this already.
-      if (!this.isHost) session.pending.push(event);
+      // Host: its log, when it comes, has this already.
+      if (!this.isHost) session.pending.push({ index: index ?? Infinity, event });
       return false;
+    }
+    switch (index === undefined ? "append" : place(session.events.length, index)) {
+      case "have":
+        return false;
+      case "gap":
+        session.pending = [{ index: index!, event }];
+        this.askLog(sessionId);
+        return false;
     }
     session.events.push(event);
     session.version++;
@@ -1423,11 +1530,19 @@ export class Room {
         this.putMeta(message.meta);
         // Its turn is over: it leaves the frame it worked on.
         if (message.meta.status === "idle") this.releaseAgent(message.meta.id);
+        // No frame shows it since it ran: its agent stops now.
+        if (this.releases.settle(message.meta.id, message.meta.status))
+          this.server?.send({ t: "agent-release", sessionId: message.meta.id });
         return this.hostcast(message);
-      case "agent-event":
+      case "agent-event": {
         // Guests get a session's events once we have its log, after it.
-        if (this.pushEvent(message.sessionId, message.event)) this.hostcast(message);
+        const { sessionId, event } = message;
+        if (this.pushEvent(sessionId, event)) {
+          const index = this.sessions.get(sessionId)!.events.length - 1;
+          this.hostcast({ t: "agent-event", sessionId, event, index });
+        }
         return;
+      }
       case "agent-options":
         this.putOptions(message.sessionId, message.options);
         return this.hostcast(message);
@@ -1507,7 +1622,7 @@ export class Room {
       );
       text = result.text;
       if (result.image) images = [await drawingImage(this.doc, result.image)];
-      if (result.frame) this.claimForAgent(message.sessionId, result.frame);
+      if (result.frame) this.claimForAgent(message.sessionId, message.frameId, result.frame);
     } catch (error) {
       ok = false;
       text = error instanceof Error ? error.message : String(error);
@@ -1517,34 +1632,13 @@ export class Room {
 
   /** The status of the session an agent frame shows, if it has begun. */
   private statusOf(frameId: string) {
+    const frame = this.agentFrame(frameId);
+    return frame && this.sessions.get(shownSession(frame))?.meta.status;
+  }
+
+  private agentFrame(frameId: string): AgentFrame | undefined {
     const frame = this.frames().find((f) => f.id === frameId);
-    return frame?.type === "agent"
-      ? this.sessions.get(shownSession(frame))?.meta.status
-      : undefined;
-  }
-
-  /** The sessions agent frames show, begun or not. */
-  private shownSessions(): Set<string> {
-    return new Set(
-      this.frames().flatMap((f) => (f.type === "agent" && f.agent ? [shownSession(f)] : [])),
-    );
-  }
-
-  /**
-   * How the session an agent frame shows begins, if `canvas serve` hasn't
-   * begun it yet: in that frame, with its agent. The seam for a new
-   * conversation's own settings (ADR 0012, decision 4).
-   */
-  private startIn(frame: Extract<Frame, { type: "agent" }>): SessionStart {
-    return { frameId: frame.id, agent: frame.agent };
-  }
-
-  /** How `sessionId` begins, if a frame shows it. */
-  private startOf(sessionId: string): SessionStart | undefined {
-    const frame = this.frames().find(
-      (f) => f.type === "agent" && !!f.agent && shownSession(f) === sessionId,
-    );
-    return frame?.type === "agent" ? this.startIn(frame) : undefined;
+    return frame?.type === "agent" ? frame : undefined;
   }
 
   /**
@@ -1598,11 +1692,37 @@ export class Room {
         this.server.send({ t: "term-open", id: frame.id, cols: 80, rows: 24 });
       }
     }
-    const shown = this.shownSessions();
-    for (const sessionId of this.shown)
-      if (!shown.has(sessionId) && this.sessions.has(sessionId))
-        this.server.send({ t: "agent-release", sessionId });
-    this.shown = shown;
+    const shown = shownSessions(frames);
+    const status = (id: string) => this.sessions.get(id)?.meta.status;
+    for (const sessionId of this.releases.show(shown, status))
+      this.server.send({ t: "agent-release", sessionId });
+  }
+
+  /**
+   * Guests: ask the host for the logs of sessions frames came to show since
+   * the heads came (those the frames showed then come by themselves).
+   */
+  private openShown() {
+    if (this.isHost || !this.shownHere) return;
+    const shown = shownSessions(this.frames());
+    for (const sessionId of shown)
+      if (!this.shownHere.has(sessionId) && this.sessions.get(sessionId)?.pending)
+        this.askLog(sessionId);
+    this.shownHere = shown;
+  }
+
+  /** Guests: a session's log, from the host (`GuestRead`): it comes as a `session-history`. */
+  private askLog(sessionId: string) {
+    const host = this.hostPeer;
+    if (this.isHost || !host || !this.actions || this.asked.has(sessionId)) return;
+    this.asked.add(sessionId);
+    const read: GuestRead = { t: "session-open", sessionId };
+    void this.actions.request
+      .request(json(read), { target: host, timeoutMs: 60_000 })
+      .then((reply) => {
+        if (!(reply as unknown as GuestReply).ok) this.asked.delete(sessionId);
+      })
+      .catch(() => this.asked.delete(sessionId));
   }
 
   // -------------------------------------------------------------------------
@@ -1626,14 +1746,12 @@ export class Room {
     switch (request.t) {
       case "agent-prompt": {
         const { sessionId, frameId, text } = request;
-        const frame = this.frames().find((f) => f.id === frameId);
-        if (frame?.type !== "agent" || !frame.agent) throw new Error("no such agent frame");
-        if (shownSession(frame) !== sessionId)
-          throw new Error("the frame shows another conversation now");
-        const status = this.sessions.get(sessionId)?.meta.status;
-        if (status && status !== "idle") throw new Error("the agent is still busy");
-        // The first prompt begins the session (ADR 0012, decision 4).
-        this.server.send({ t: "agent-prompt", sessionId, ...this.startIn(frame), text, author });
+        const frame = promptFrame(this.frames(), frameId, sessionId);
+        const session = this.sessions.get(sessionId);
+        if (session && session.meta.status !== "idle") throw new Error("the agent is still busy");
+        // The first prompt begins the session (ADR 0012, decision 4), as the frame says.
+        const start = startIn(frame, !!session);
+        this.server.send({ t: "agent-prompt", sessionId, ...start, text, author });
         return;
       }
       case "agent-cancel":
@@ -1642,7 +1760,8 @@ export class Room {
       case "agent-config": {
         const { sessionId, configId, value } = request;
         // Not begun yet: the change begins it, as the frame showing it says.
-        const start = this.sessions.has(sessionId) ? undefined : this.startOf(sessionId);
+        const frame = framesShowing(this.frames(), sessionId)[0];
+        const start = frame && !this.sessions.has(sessionId) ? startIn(frame, false) : undefined;
         this.server.send({
           t: "agent-config",
           sessionId,
@@ -1681,6 +1800,26 @@ export class Room {
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  /**
+   * Host: a guest reads what the board shows anyway — any member that is in,
+   * `view` too; nothing for the lobby (ADR 0011). A session's log goes to it
+   * now, or with everyone's once `canvas serve` sends it to us.
+   */
+  private onGuestRead(peerId: string, read: GuestRead): GuestReply {
+    if (!this.admissions.access(peerId)) return { ok: false, error: "the host hasn't let you in" };
+    const session = this.sessions.get(read.sessionId);
+    if (!session) return { ok: false, error: "no such conversation" };
+    if (!session.pending) {
+      const history: HostBroadcast = {
+        t: "session-history",
+        sessionId: read.sessionId,
+        events: session.events.slice(),
+      };
+      void this.actions?.broadcast.send(json(history), { target: peerId });
+    }
+    return { ok: true };
   }
 
   private ask(peerId: string, peer: Identity, request: GuestRequest): Promise<boolean> {
@@ -1794,8 +1933,11 @@ const boardHeight = () =>
 interface MirroredSession {
   meta: SessionMeta;
   events: AgentEvent[];
-  /** Guests: live events held back until the session's history arrives; null once it has. */
-  pending: AgentEvent[] | null;
+  /**
+   * Its log is on its way (null once here). Guests: the live events that
+   * came meanwhile, by place, to follow the history.
+   */
+  pending: Placed[] | null;
   options: ReadonlyArray<AgentConfigOption> | undefined;
   version: number;
 }
