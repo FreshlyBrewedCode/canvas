@@ -108,6 +108,7 @@ export async function serve(options: ServeOptions) {
   const boardMcp = new BoardMcp({
     read: (path) => files.read(path),
     scratch,
+    frameOf: (sessionId) => agents.frameOf(sessionId),
     relay: (call) => {
       if (!host) return false;
       host.send(JSON.stringify({ t: "board-call", ...call } satisfies ServerToClient));
@@ -122,6 +123,7 @@ export async function serve(options: ServeOptions) {
     dir: options.dir,
     agents: agentDefinitions,
     restored: store.sessions(),
+    kindOptions: store.agentOptions(),
     mcpServers: (sessionId) => [boardMcp.serverFor(sessionId)],
     onMeta: (meta) => {
       store.appendMeta(meta);
@@ -133,6 +135,10 @@ export async function serve(options: ServeOptions) {
     },
     // Live state of the agent, not persisted: the meta keeps the values.
     onOptions: (sessionId, options) => broadcast({ t: "agent-options", sessionId, options }),
+    onKindOptions: (agent, options) => {
+      store.saveAgentOptions(agents.kindOptions());
+      broadcast({ t: "kind-options", agent, options });
+    },
     onError: (message) => broadcast({ t: "error", message }),
   });
   process.on("exit", () => agents.close());
@@ -157,7 +163,8 @@ export async function serve(options: ServeOptions) {
         cwd: options.dir,
         agents: agentDefinitions.map(({ kind, label }) => ({ kind, label })),
         board: board ? Buffer.from(board).toString("base64") : null,
-        sessions: agents.snapshots(),
+        sessions: agents.heads(),
+        kindOptions: agents.kindOptions(),
         relay: relaySetup(),
         members: members.list(),
       } satisfies ServerToClient),
@@ -184,16 +191,29 @@ export async function serve(options: ServeOptions) {
         return;
       case "board-save":
         return store.saveBoard(Buffer.from(message.state, "base64"));
-      case "agent-create":
-        return agents.create(message.id, message.agent);
       case "agent-prompt":
-        return agents.prompt(message.sessionId, message.text, message.author);
+        return agents.prompt(message);
       case "agent-cancel":
         return agents.cancel(message.sessionId);
       case "agent-config":
         return void agents
-          .configure(message.sessionId, message.configId, message.value)
+          .configure(message.sessionId, message.configId, message.value, message.start)
           .catch((error: unknown) => sendError(ws, error));
+      case "agent-release":
+        return agents.release(message.sessionId);
+      case "kind-probe":
+        return agents.probe(message.agent);
+      case "session-open": {
+        const events = agents.history(message.sessionId);
+        if (!events) throw new Error(`no session ${message.sessionId}`);
+        return ws.send(
+          JSON.stringify({
+            t: "session-history",
+            sessionId: message.sessionId,
+            events,
+          } satisfies ServerToClient),
+        );
+      }
       case "agent-permission":
         return agents.resolvePermission(
           message.sessionId,

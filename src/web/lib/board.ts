@@ -120,6 +120,12 @@ export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
   drawing: { w: 960, h: 640 },
 };
 
+/**
+ * The agent session a frame shows (ADR 0012): its first conversation has the
+ * frame's id, so boards from before need no migration.
+ */
+export const shownSession = (frame: Extract<Frame, { type: "agent" }>): string => frame.id;
+
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
 export const layoutOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("layout");
 export const promptText = (doc: Y.Doc, frameId: string) => doc.getText(`prompt:${frameId}`);

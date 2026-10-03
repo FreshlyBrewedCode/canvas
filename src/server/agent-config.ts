@@ -13,6 +13,9 @@ import type {
   AgentConfigValue,
   AgentSetting,
 } from "../shared/protocol";
+import { settingsOf, withSettings } from "../shared/agent-settings";
+
+export { labelOf, settingsOf } from "../shared/agent-settings";
 
 export function fromAcp(options: ReadonlyArray<SessionConfigOption>): AgentConfigOption[] {
   return options.map((option) => {
@@ -41,19 +44,15 @@ const choiceOf = (choice: { value: string; name: string; description?: string | 
   ...(choice.description && { description: choice.description }),
 });
 
-export function settingsOf(options: ReadonlyArray<AgentConfigOption>): AgentSetting[] {
-  return options.map((option) => ({
-    id: option.id,
-    name: option.name,
-    ...(option.category && { category: option.category }),
-    value: option.value,
-    label: labelOf(option, option.value),
-  }));
-}
-
-export function labelOf(option: AgentConfigOption, value: AgentConfigValue): string {
-  if (typeof value === "boolean") return value ? "on" : "off";
-  return option.choices.find((choice) => choice.value === value)?.name ?? value;
+/**
+ * What a new session will start with, before its agent runs (ADR 0012): the
+ * settings its kind offered last, with the values asked for where offered.
+ */
+export function seededSettings(
+  options: ReadonlyArray<AgentConfigOption>,
+  wanted: ReadonlyArray<Pick<AgentSetting, "id" | "value">> = [],
+): AgentSetting[] {
+  return settingsOf(withSettings(options, wanted));
 }
 
 /**

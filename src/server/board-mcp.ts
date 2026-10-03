@@ -3,9 +3,10 @@
  *
  * ACP lets a client hand its agent MCP servers in `session/new`; canvas hands
  * each session this one, at `/mcp/<sessionId>` with a secret of its own, so a
- * call says which agent frame it comes from. It speaks the stateless subset of
- * MCP's streamable HTTP transport: one JSON-RPC message (or batch) per POST,
- * answered with JSON; no server-sent stream.
+ * call says which session it comes from, and so (`frameOf`) which frame the
+ * agent acts as: its running turn's (ADR 0012, decision 3). It speaks the
+ * stateless subset of MCP's streamable HTTP transport: one JSON-RPC message
+ * (or batch) per POST, answered with JSON; no server-sent stream.
  *
  * The board lives in the host's browser, so a tool call is relayed there
  * (`board-call`) and its answer (`board-result`) returned to the agent. File
@@ -37,6 +38,8 @@ import type { Skill } from "./skills";
 export interface BoardCall {
   readonly callId: string;
   readonly sessionId: string;
+  /** The frame the agent acts as. */
+  readonly frameId: string;
   readonly tool: string;
   readonly args: unknown;
 }
@@ -45,6 +48,8 @@ export interface BoardMcpOptions {
   /** A file as the shared set lets it out. */
   readonly read: (path: string) => FileContent;
   readonly scratch: Pick<Scratch, "create" | "write" | "read" | "list" | "remove">;
+  /** The frame a session's agent acts as now; without one, the session's id. */
+  readonly frameOf?: (sessionId: string) => string | undefined;
   /** Send a call to the host's browser; false if none is connected. */
   readonly relay: (call: BoardCall) => boolean;
   /** canvas's skills, named in the priming. */
@@ -145,7 +150,7 @@ export class BoardMcp {
               : LATEST_PROTOCOL,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: BOARD_SERVER_NAME, version: "0.0.0" },
-          instructions: boardInstructions(sessionId, this.options.skills),
+          instructions: boardInstructions(this.frameOf(sessionId), this.options.skills),
         });
       case "ping":
         return reply({});
@@ -280,7 +285,8 @@ export class BoardMcp {
       );
       this.pending.set(callId, { resolve, timer });
     });
-    if (!this.options.relay({ callId, sessionId, tool, args })) {
+    const frameId = this.frameOf(sessionId);
+    if (!this.options.relay({ callId, sessionId, frameId, tool, args })) {
       this.result(
         callId,
         false,
@@ -288,6 +294,10 @@ export class BoardMcp {
       );
     }
     return result;
+  }
+
+  private frameOf(sessionId: string): string {
+    return this.options.frameOf?.(sessionId) ?? sessionId;
   }
 
   /** A new scratch file for `content`; its path. Says so in `notes`. */
