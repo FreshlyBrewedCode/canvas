@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { ask, idle, newAgent, send } from "../agents";
 import { add, arrange, at, clear, fit, frame, frames, settle } from "../board";
 import { expect, test } from "../fixtures";
+import { setRole } from "../members";
 
 const gitStatus = (dir: string) =>
   spawnSync("git", ["status", "--porcelain"], { cwd: dir }).stdout.toString().trim();
@@ -207,7 +208,7 @@ test.describe("in the shop", () => {
     });
 
     await test.step("a view guest sees the list, can't click through, gets no full tree", async () => {
-      await host.getByLabel("Guest access").selectOption("view");
+      await setRole(host, guest, "view");
       await settle(1500);
       const other = list.find((e) => e.display !== pick.display)!;
       expect(await rows(guest)).toHaveLength(list.length);
@@ -216,7 +217,7 @@ test.describe("in the shop", () => {
       expect((await at(host, target.id)).path, "a click doesn't change the frame").toBe(pick.path);
       expect(await selected(guest), "the selection snaps back").toBe(pick.display);
       await expect(of(guest).getByTitle("Show all files")).toHaveCount(0);
-      await host.getByLabel("Guest access").selectOption("edit");
+      await setRole(host, guest, "edit");
     });
   });
 });
