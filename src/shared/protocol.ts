@@ -427,8 +427,17 @@ export type HostBroadcast =
   | { readonly t: "term-data"; readonly id: string; readonly data: string }
   | FileMessage
   | TreeMessage
-  /** The fingerprints the host verified (ADR 0011), by peer id, the host's own included. */
-  | { readonly t: "identities"; readonly fingerprints: Readonly<Record<string, string>> };
+  /**
+   * Who is in, with the fingerprints the host verified, signed with the host
+   * key (ADR 0011, decision 5; `web/lib/member-list.ts`).
+   */
+  | ({ readonly t: "member-list" } & SignedMemberList);
+
+/** A member list's JSON, exactly as signed, and the host key's signature over it. */
+export interface SignedMemberList {
+  readonly list: string;
+  readonly signature: string;
+}
 
 export interface FileMessage {
   readonly t: "file";

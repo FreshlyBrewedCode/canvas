@@ -3038,6 +3038,152 @@ if (step === "lobby") {
   await guest.locator('[data-access="edit"]').waitFor({ timeout: 30000 });
   check((await knock.count()) === 0, "a member comes back without knocking");
 }
+// ADR 0011, decision 5: presence only among members, on the host's signed list.
+if (step === "presence-members") {
+  const check = (ok: boolean, what: string) => {
+    console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
+    if (!ok) process.exitCode = 1;
+  };
+  const settle = (ms = 1500) => new Promise((r) => setTimeout(r, ms));
+  /** Whose presence `page` holds, by name, with their pointer and the fingerprint shown. */
+  const others = (page: Page) =>
+    page.evaluate(() =>
+      ((window as any).room?.peerList ?? []).map((p: any) => ({
+        name: p.user.name as string,
+        pointer: p.pointer as { x: number; y: number } | null,
+        fingerprint: p.fingerprint as string | null,
+      })),
+    );
+  const has = async (page: Page, name: string) => (await others(page)).some((p) => p.name === name);
+  /** Until `page` has `name`'s pointer at `x`; false if it never does. */
+  const pointerAt = (page: Page, name: string, x: number) =>
+    page
+      .waitForFunction(
+        ([name, x]) =>
+          (window as any).room.peerList.some((p: any) => p.user.name === name && p.pointer?.x === x),
+        [name, x] as const,
+        { timeout: 15000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+  const point = (page: Page, x: number) =>
+    page.evaluate((x) => (window as any).room.setPresence({ pointer: { x, y: 100 } }), x);
+
+  const bob = await open(guestLink, "Bob", "#22c55e");
+  const knock = host.locator('[data-knock="Bob"]').first();
+  await bob.locator('[data-lobby="lobby"]').waitFor({ timeout: 30000 });
+  await knock.waitFor({ timeout: 10000 });
+  check(true, "Bob waits in the lobby");
+
+  // What reaches Bob in the lobby, on any channel: only the host's hello and admission messages.
+  await bob.evaluate(() => {
+    const room = (window as any).room;
+    const got: string[] = ((window as any).received = []);
+    for (const [name, channel] of Object.entries<any>(room.actions)) {
+      const handler = channel.onMessage;
+      if (handler)
+        channel.onMessage = (data: unknown, context: { peerId: string }) => {
+          got.push(`${name} from ${context.peerId === room.hostPeer ? "host" : context.peerId}`);
+          return handler(data, context);
+        };
+    }
+  });
+
+  // Members move; the lobby sees none of it.
+  await point(guest, 111);
+  await point(host, 112);
+  await settle();
+  check((await others(bob)).length === 0, `in the lobby, Bob sees nobody's presence: ${JSON.stringify(await others(bob))}`);
+  const received = await bob.evaluate(() => (window as any).received as string[]);
+  check(
+    received.every((r) => r === "hello from host" || r === "admission from host"),
+    `nothing else reaches him, from anyone: ${JSON.stringify(received)}`,
+  );
+
+  // Bob's own pointer goes nowhere; not even sent past the filter, as a tampered client would.
+  await point(bob, 113);
+  await bob.evaluate(() => {
+    const room = (window as any).room;
+    room.sendPresence(room.peerIds());
+  });
+  await settle();
+  check(!(await has(guest, "Bob")), "Ada doesn't take Bob's presence, even sent to her");
+  check(!(await has(host, "Bob")), "nor does the host");
+  check(await has(guest, "Karl"), "Ada still has the host's");
+
+  await knock.getByRole("button", { name: "Admit to edit" }).click();
+  await bob.locator("[data-board]").waitFor({ timeout: 15000 });
+  check(true, "Bob is let in");
+  await point(guest, 121);
+  check(await pointerAt(bob, "Ada", 121), "now Bob sees Ada's pointer");
+  await point(bob, 122);
+  check(await pointerAt(guest, "Bob", 122), "and Ada sees Bob's");
+  check(await pointerAt(host, "Bob", 122), "and the host does");
+  const bobPrint = await bob.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self");
+  const adaPrint = await guest.locator("[data-fingerprint-self]").getAttribute("data-fingerprint-self");
+  check(
+    (await others(guest)).find((p) => p.name === "Bob")?.fingerprint === bobPrint,
+    "Ada sees Bob's fingerprint, from the signed list",
+  );
+  check(
+    (await others(bob)).find((p) => p.name === "Ada")?.fingerprint === adaPrint,
+    "Bob sees Ada's",
+  );
+  await bob.mouse.move(600, 400);
+  await settle(600);
+  await shot(guest, "presence-members-01-ada-sees-bob");
+
+  /** The host removes Bob. */
+  const remove = async () => {
+    await host.locator("[data-members-button]").click();
+    await host
+      .locator(`[data-member][data-fingerprint="${bobPrint}"]`)
+      .getByRole("button", { name: /^Remove/ })
+      .click();
+    await host.keyboard.press("Escape");
+  };
+  const until = (page: Page, fn: () => boolean, what: string) =>
+    page
+      .waitForFunction(fn, null, { timeout: 5000 })
+      .then(() => check(true, what))
+      .catch(() => check(false, what));
+
+  // Removed, Bob is off the list: Ada drops his presence at once, and stops
+  // sending him hers — even if he doesn't leave the room as told (a tampered client).
+  await bob.evaluate(() => {
+    (window as any).room.leaveRoom = () => {};
+  });
+  await remove();
+  await until(
+    guest,
+    () => !(window as any).room.peerList.some((p: any) => p.user.name === "Bob"),
+    "removed, Bob is gone from Ada's presence while he is still connected",
+  );
+  await point(bob, 132);
+  await bob.evaluate(() => {
+    const room = (window as any).room;
+    room.sendPresence(room.peerIds());
+  });
+  await point(guest, 131);
+  await settle();
+  check(!(await has(guest, "Bob")) && !(await has(host, "Bob")), "what Bob still sends, nobody takes");
+  check(!(await pointerAt(bob, "Ada", 131)), "nor does Ada's pointer reach him");
+  check(await pointerAt(host, "Ada", 131), "Ada and the host still see each other");
+
+  // As told, he leaves, and drops everyone's.
+  await bob.reload();
+  await letIn(bob, "Bob");
+  await point(bob, 141);
+  check(await pointerAt(guest, "Bob", 141), "back in, Ada sees Bob again");
+  await remove();
+  await bob.locator('[data-lobby="removed"]').waitFor({ timeout: 10000 });
+  await until(bob, () => (window as any).room.peerList.length === 0, "removed, Bob holds nobody's presence");
+  await until(
+    guest,
+    () => !(window as any).room.peerList.some((p: any) => p.user.name === "Bob"),
+    "and Ada none of his",
+  );
+}
 // ADR 0011: each browser proves its key; the host tells everyone whose fingerprint each peer has.
 if (step === "identity") {
   const check = (ok: boolean, what: string) => {

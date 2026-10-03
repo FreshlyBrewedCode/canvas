@@ -3,9 +3,10 @@
  * the other peers (`transport/`, ADR 0008) and — for the host — the link to
  * `canvas serve`.
  *
- * Topology. Presence (cursors, selections, frame focus) is a full mesh: every peer
- * broadcasts to every other. Everything with authority is a star around the
- * host's browser:
+ * Topology. Presence (cursors, selections, frame focus) is a mesh between
+ * the peers that are in: the host signs who they are (`member-list.ts`), and
+ * guests send theirs only to peers on that list and take it only from them.
+ * Everything with authority is a star around the host's browser:
  *
  *  - board updates: guests send theirs to the host only; the host applies
  *    what the guest's role allows and re-broadcasts. A read-only guest's
@@ -19,13 +20,14 @@
  *
  * Guests only accept host traffic from the peer that proved it holds the
  * board's host key (see `host-key.ts`). Every guest in turn proves its
- * browser's key to the host (ADR 0011, `shared/identity.ts`), which tells
- * everyone whose fingerprint each peer verified with.
+ * browser's key to the host (ADR 0011, `shared/identity.ts`), whose signed
+ * member list tells everyone whose fingerprint each peer verified with.
  *
  * Admission (ADR 0011, decision 2, `admission.ts`): the guest link is an
  * invite. A guest whose key isn't a member's waits in the lobby until the
  * host lets it in; until then the host sends it nothing but its hello and
- * `lobby`, and refuses its updates, requests and presence.
+ * `lobby`, and refuses its updates, requests and presence. It isn't on the
+ * member list, so no guest sends it presence or takes its own.
  */
 
 import { selfId } from "trystero";
@@ -49,6 +51,7 @@ import type {
   MemberRole,
   RoomState,
   ServerToClient,
+  SignedMemberList,
   SessionHead,
   SessionMeta,
   ToolImage,
@@ -72,6 +75,7 @@ import type { ConnectionEvent, RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
 import { provePeer, type BrowserKey } from "./identity-key";
 import { forgetPairingCode, type BoardLink, type Identity, type RelayLink } from "./link";
+import { Members, nextVersion, signMembers } from "./member-list";
 import {
   PeerIdentities,
   ownerStatement,
@@ -232,8 +236,15 @@ export class Room {
   private readonly admissions = new Admissions();
   /** Guests: the peer that proved it is the host. */
   private hostPeer: string | null = null;
-  /** Verified fingerprints by peer id: the host's own book, or as the host told us. */
+  /** Verified fingerprints by peer id: the host's own book, or as its member list says. */
   private fingerprints: Readonly<Record<string, string>> = {};
+  /** Guests: the latest member list the host signed; whom presence goes to and comes from. */
+  private readonly memberList: Members;
+  /** Guests: the last presence of peers not on the list (yet): the list may come after it. */
+  private readonly heldPresence = new Map<string, Uint8Array>();
+  /** Host: the member list we signed last, and its version. */
+  private signedList: SignedMemberList | null = null;
+  private listVersion = 0;
   private transport: Transport | null = null;
   private actions: ReturnType<Room["makeActions"]> | null = null;
   /** Paths opened with the server since the link came up. */
@@ -260,6 +271,7 @@ export class Room {
     this.isHost = link.host !== null;
     this.fingerprint = key.fingerprint;
     this.identities = new PeerIdentities(link.roomId);
+    this.memberList = new Members(link.roomId, link.hostPublicKey, selfId);
     this.setPresence({ pointer: null, view: null, selection: null, focus: null });
     this.doc.on("update", (update: Uint8Array, origin: unknown) =>
       this.onDocUpdate(update, origin),
@@ -520,14 +532,12 @@ export class Room {
       return;
     }
     if (origin !== "local" || !this.actions) return;
-    // Only to (host) or once (guest) we are among members: the lobby gets none of ours.
-    const update = encodeAwarenessUpdate(this.awareness, changed);
-    if (!this.isHost) {
-      if (this.admission === "admitted") void this.actions.presence.send(update);
-      return;
-    }
-    const targets = this.admissions.admitted();
-    if (targets.length) void this.actions.presence.send(update, { target: targets });
+    // Only to members, and (guest) once we are one: the lobby gets none of ours.
+    const targets = this.isHost ? this.admissions.admitted() : this.presenceTargets();
+    if (targets.length)
+      void this.actions.presence.send(encodeAwarenessUpdate(this.awareness, changed), {
+        target: targets,
+      });
   }
 
   // -------------------------------------------------------------------------
@@ -570,16 +580,15 @@ export class Room {
       this.record({ level: "info", source: "peer", text: "peer connected", peerId });
       // The host's presence goes to a guest once it is in (`letIn`).
       if (this.isHost) void this.greet(peerId);
-      else if (this.admission === "admitted") this.sendPresence(peerId);
+      else if (this.memberList.has(peerId)) this.sendPresence(peerId);
     };
     room.onPeerLeave = (peerId) => {
       this.record({ level: "info", source: "peer", text: "peer left", peerId });
-      removeAwarenessStates(this.awareness, [...(this.peerClients.get(peerId) ?? [])], "leave");
-      this.peerClients.delete(peerId);
+      this.dropPresence(peerId);
       if (this.isHost) {
         this.identities.forget(peerId);
         this.admissions.leave(peerId);
-        this.publishIdentities();
+        this.publishMembers();
         this.refreshKnocks();
       }
       if (peerId === this.hostPeer && !this.isHost) {
@@ -589,10 +598,14 @@ export class Room {
       }
     };
 
+    // Only from members. The host takes none from the lobby: a guest sends
+    // its own again once in. Guests take it from peers on the host's list,
+    // and hold the last of anyone else's in case the list comes after it.
     actions.presence.onMessage = (update, { peerId }) => {
-      // The host takes none from the lobby: a guest sends its own again once in.
-      if (this.isHost && !this.admissions.access(peerId)) return;
-      applyAwarenessUpdate(this.awareness, new Uint8Array(update), peerId);
+      const bytes = new Uint8Array(update);
+      if (this.isHost ? this.admissions.access(peerId) : this.takesPresence(peerId))
+        applyAwarenessUpdate(this.awareness, bytes, peerId);
+      else if (!this.isHost) this.heldPresence.set(peerId, bytes);
     };
 
     // The host's hello proves it is the host and asks who we are; the board
@@ -722,10 +735,32 @@ export class Room {
     return this.hostOnline && this.hostPeer === peerId;
   }
 
-  private sendPresence(peerId: string) {
+  private sendPresence(peerId: string | ReadonlyArray<string>) {
+    if (peerId.length === 0) return;
     void this.actions?.presence.send(encodeAwarenessUpdate(this.awareness, [this.doc.clientID]), {
       target: peerId,
     });
+  }
+
+  /** Guests: whom our presence goes to — once in, the host and the others on its list. */
+  private presenceTargets(): string[] {
+    if (this.admission !== "admitted") return [];
+    const targets = new Set(this.memberList.peers());
+    if (this.hostPeer && this.hostOnline) targets.add(this.hostPeer);
+    return [...targets];
+  }
+
+  /** Guests: whose presence we take — once in, the host's, and those on its list. */
+  private takesPresence(peerId: string) {
+    if (this.admission !== "admitted") return false;
+    return this.fromHost(peerId) || this.memberList.has(peerId);
+  }
+
+  /** A peer's presence goes (it left, or is off the list). */
+  private dropPresence(peerId: string) {
+    removeAwarenessStates(this.awareness, [...(this.peerClients.get(peerId) ?? [])], "leave");
+    this.peerClients.delete(peerId);
+    this.heldPresence.delete(peerId);
   }
 
   /** Host: prove who we are to a new peer, and ask it who it is. */
@@ -739,10 +774,25 @@ export class Room {
     await this.actions.hello.send(json(hello), { target: peerId });
   }
 
-  /** Host: tell members the fingerprints we verified of those in, ours included. */
-  private publishIdentities() {
-    this.setFingerprints(this.verifiedFingerprints());
-    this.hostcast({ t: "identities", fingerprints: this.fingerprints });
+  /**
+   * Host: sign who is in — their peer ids and the fingerprints we verified,
+   * ours included — and tell them (`member-list.ts`).
+   */
+  private publishMembers() {
+    const members = this.verifiedFingerprints();
+    // A knock or a role changes nobody's place on it.
+    if (JSON.stringify(members) === JSON.stringify(this.fingerprints)) return;
+    this.setFingerprints(members);
+    const key = this.hostPrivateKey;
+    if (!key) return;
+    this.listVersion = nextVersion(this.listVersion);
+    const list = { host: selfId, version: this.listVersion, members: this.fingerprints };
+    void signMembers(key, this.link.roomId, list).then((signed) => {
+      // Signing takes a moment: a later list may have gone out meanwhile.
+      if (list.version !== this.listVersion || !this.actions) return;
+      this.signedList = signed;
+      this.hostcast({ t: "member-list", ...signed });
+    });
   }
 
   private verifiedFingerprints() {
@@ -788,7 +838,7 @@ export class Room {
       }
     }
     if (steps.length) {
-      this.publishIdentities();
+      this.publishMembers();
       this.refreshKnocks();
     }
   }
@@ -811,8 +861,7 @@ export class Room {
 
   /** Host: a peer is out: its presence goes, and so do its requests waiting for us. */
   private shutOut(peerId: string) {
-    removeAwarenessStates(this.awareness, [...(this.peerClients.get(peerId) ?? [])], "leave");
-    this.peerClients.delete(peerId);
+    this.dropPresence(peerId);
     for (const approval of this.approvals.filter((a) => a.peerId === peerId))
       approval.resolve(false);
   }
@@ -838,10 +887,9 @@ export class Room {
           { target: host },
         );
         void this.actions?.sync.send(Y.encodeStateVector(this.doc), { target: host });
-        // Nobody had our presence while we waited.
-        void this.actions?.presence.send(
-          encodeAwarenessUpdate(this.awareness, [this.doc.clientID]),
-        );
+        // Nobody had our presence while we waited: the host now, the others
+        // as they are on its list (`onMemberList`).
+        this.sendPresence(this.presenceTargets());
         break;
       }
       case "access":
@@ -881,6 +929,8 @@ export class Room {
     this.terminals.clear();
     this.files.clear();
     this.treePaths = null;
+    this.memberList.reset();
+    this.heldPresence.clear();
     this.setFingerprints({});
     this.emit("sessions");
     this.emit("tree");
@@ -970,7 +1020,7 @@ export class Room {
       ...(this.treePaths && access !== "view"
         ? [{ t: "tree" as const, paths: this.treePaths }]
         : []),
-      { t: "identities", fingerprints: this.verifiedFingerprints() },
+      ...(this.signedList ? [{ t: "member-list" as const, ...this.signedList }] : []),
     ];
     try {
       for (const message of messages) {
@@ -1027,8 +1077,29 @@ export class Room {
         return this.putFile(message.path, message.file);
       case "tree":
         return this.putTree(message.paths);
-      case "identities":
-        return this.setFingerprints(message.fingerprints);
+      case "member-list":
+        return void this.onMemberList(message);
+    }
+  }
+
+  /**
+   * Guests: a member list from the host. Taken if signed and newer: presence
+   * of those off it goes, those new on it get ours (and their held one is in).
+   */
+  private async onMemberList(signed: SignedMemberList) {
+    const host = this.hostPeer;
+    if (!host) return;
+    const change = await this.memberList.accept(signed, host);
+    if (!change || this.hostPeer !== host || !this.actions) return;
+    for (const peerId of change.removed) this.dropPresence(peerId);
+    this.setFingerprints(this.memberList.fingerprints());
+    if (this.admission !== "admitted") return;
+    const added = change.added.filter((id) => id !== host);
+    if (added.length) this.sendPresence(added);
+    for (const peerId of added) {
+      const held = this.heldPresence.get(peerId);
+      this.heldPresence.delete(peerId);
+      if (held) applyAwarenessUpdate(this.awareness, held, peerId);
     }
   }
 
@@ -1395,6 +1466,7 @@ export class Room {
     this.refreshKnocks();
     this.refreshTrusted();
     this.fingerprints = {};
+    this.signedList = null;
     for (const approval of [...this.approvals]) approval.resolve(false);
   }
 

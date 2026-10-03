@@ -53,9 +53,9 @@ canvas
 - identity (ADR 0011, decision 1): a key per browser, non-extractable in IndexedDB
   (`web/lib/identity-key.ts`); its fingerprint (`shared/identity.ts`) is who we are — comment
   authorship, shown in presence. The host's `hello` carries a nonce, each guest answers with a
-  signed `canvas-peer:` statement (`identify`), the host checks it (`PeerIdentities`) and hostcasts
-  `identities`. Presence is matched to them by the transport's peer id, never the one it claims
-  (`Room.fingerprintOf`, host: `Room.verifiedPeer`)
+  signed `canvas-peer:` statement (`identify`), the host checks it (`PeerIdentities`) and puts
+  it on the member list. Presence is matched to them by the transport's peer id, never the one it
+  claims (`Room.fingerprintOf`, host: `Room.verifiedPeer`)
 - host pairing (ADR 0011, decision 3): `canvas serve`'s socket sends `challenge` first and takes
   nothing but `auth` before it: the browser signs `canvas-owner:<room>:<nonce>` (`ownerStatement`),
   with the link's `pair` code if it has one (fragment only; dropped from the address bar once
@@ -74,6 +74,13 @@ canvas
   Trusted (decision 4): the host's grant per member fingerprint, kept only in `Admissions`
   (`trust`, `Room.trust`/`Room.trusted`), so it lasts while the host tab does and goes with the
   member; never sent to `canvas serve`
+- the member list (ADR 0011, decision 5, `web/lib/member-list.ts`): the host signs who is in —
+  `{host, version, members: peer id → fingerprint}`, statement `canvas-members:<room>:<json>` — and
+  hostcasts `member-list` when it changes (`Room.publishMembers`). Guests (`Members`) take it only
+  from the verified host peer it names, newer than the last (versions: the host's clock, kept
+  growing; a new host peer starts over), and presence — every path: pointer, view, selection,
+  focus, drag all ride awareness — goes only to and is taken only from peers on it
+  (`presenceTargets`, `takesPresence`); presence that comes before the list is held until then
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends. A file frame's tree panel follows too
@@ -131,7 +138,7 @@ canvas
     a host (a paired browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the
     first link must carry a pairing code — `canvas pair` — later ones need none) and a guest,
     which the host admits when it knocks (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|lobby|trusted-session|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|lobby|trusted-session|presence-members|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
