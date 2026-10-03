@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed, 2026-10-03 (#37, epic #32). Amends ADR 0003: the frame an agent acts as (decision 1),
-and when an agent process starts (consequences). Builds on ADR 0011's roles.
+Proposed, 2026-10-03 (#37, epic #32); built as finding 21 describes. Amends ADR 0003: the frame
+an agent acts as (decision 1), and when an agent process starts (consequences). Builds on ADR
+0011's roles.
 
 ## Context
 
@@ -47,8 +48,10 @@ the agent's, with `session/resume` or `session/load`.
    id into the frame, and the settings it starts with (copied from the conversation before) into
    the frame too. `canvas serve` hears nothing: no log, no process. The first prompt starts the
    session, with the frame's agent and those settings, and it is a request like any prompt: an
-   `edit` member's waits for the host's approval. So clicking "new" costs nothing and runs
-   nothing, and conversations nobody prompted leave no trace.
+   `edit` member's waits for the host's approval. So does a settings change before it: only the
+   agent knows which settings follow a change (effort depends on the model), so changing one
+   begins the session too, without a title. So clicking "new" costs nothing and runs nothing,
+   and conversations nobody prompted or set leave no trace.
 5. **An agent process runs for a prompt, not for a frame.** The host's browser no longer starts a
    session for every agent frame it sees. To show the settings before any process runs, `canvas
    serve` keeps the settings each kind of agent offered last (`.canvas/agents.json`), and when it
@@ -58,14 +61,15 @@ the agent's, with `session/resume` or `session/load`.
    the agent offers it (no replay), else `session/load`.
 6. **Logs are loaded when shown.** Joining, a browser gets the head of every session (meta and
    settings), and the logs of the sessions frames show; any other log when a frame switches to it.
-   For the host's browser as for guests: the list of a board's sessions only grows.
+   For the host's browser as for guests: the list of a board's sessions only grows. Reading a
+   log is not a change: any member that is in, `view` too, may ask for any session's.
 
 ## Consequences
 
 - One frame, many conversations; one conversation, possibly many frames. Each frame keeps its own
   shared draft (`prompt:<frameId>`), which survives switching.
 - A guest with `edit` access can switch frames and start empty conversations freely. Only
-  prompts start processes, and they are approved as before. Today, picking an agent in a frame
+  prompts and settings changes start processes, and they are approved as before. Today, picking an agent in a frame
   starts its process unasked (ADR 0003's consequences); it no longer does.
 - A conversation may keep running while its frame shows another. The first version doesn't allow
   switching away from a busy one, but nothing here depends on that.
