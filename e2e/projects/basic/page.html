@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>Hello preview</h1>
+    <p id="probe">scripts blocked</p>
+    <script>
+      // What the sandbox lets a previewed page do (ADR 0004, finding 09).
+      const parts = ["scripts run"];
+      try {
+        localStorage.getItem("x");
+        parts.push("storage open");
+      } catch {
+        parts.push("storage blocked");
+      }
+      try {
+        parent.document.title;
+        parts.push("parent open");
+      } catch {
+        parts.push("parent blocked");
+      }
+      document.getElementById("probe").textContent = parts.join("; ");
+    </script>
+  </body>
+</html>

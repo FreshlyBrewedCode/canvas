@@ -1,3 +1,7 @@
 {
-  "ignorePatterns": ["e2e/drive.ts", "e2e/screenshots.ts"]
+  "ignorePatterns": [
+    "e2e/drive.ts",
+    "e2e/screenshots.ts",
+    "e2e/projects"
+  ]
 }
