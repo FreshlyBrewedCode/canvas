@@ -5,8 +5,9 @@ section: Features
 order: 3
 ---
 
-An agent frame is one coding-agent session running on the host's machine. Everyone on the board
-reads the same thread.
+An agent frame shows a conversation with a coding agent running on the host's machine. Everyone on
+the board reads the same thread. A frame can start a new conversation and go back to its earlier
+ones ([Conversations](#conversations)).
 
 ## Pick an agent
 
@@ -16,7 +17,9 @@ A new agent frame asks which agent runs it. The list is what the host has instal
 - **opencode**, as `opencode acp`.
 
 The choice is made once per frame, and the frame is renamed after it: `agent-1` becomes
-`claude-1`.
+`claude-1`. Picking runs nothing yet: the agent starts with the first prompt. To show its settings
+before that, `canvas serve` asks the agent for them once (then keeps them in
+`.canvas/agents.json`).
 
 ![A new agent frame: choose an agent](./screenshots/agent-picker.webp)
 
@@ -96,12 +99,31 @@ on the edge of the screen, in its direction, like people do; a click goes there.
 | --------------------------------------------- | ----------------------------------------------- |
 | ![A permission request, with the host's answers](./screenshots/agent-host-permission.webp) | ![The same request for a guest: waiting for the host](./screenshots/agent-guest-permission.webp) |
 
+## Conversations
+
+The agent's name in the frame's header (for example **opencode**) opens the frame's
+**conversations**: **New conversation**, then the conversations it had, the last active first,
+each with its first prompt as its title and how long ago it was active. The shown one has a check.
+
+- **New conversation** empties the thread. The agent settings stay those of the conversation
+  before, and the prompt draft stays as it is. Nothing runs until its first prompt (or a change of
+  its settings); a new conversation nobody prompted leaves nothing behind.
+- **Picking one** shows its thread again. The agent still remembers it: the next prompt continues
+  that conversation.
+- An empty new conversation offers **← back to …** the one before.
+- Switching is the frame's, not your own: everyone sees the frame switch. The host and members with
+  the edit role switch freely, without approval; only prompts run anything, and they are approved as
+  ever ([Guests](/docs/guests#approvals)).
+- Not while the agent works: stop it, or wait for its turn to end, to switch.
+- Members with the view role see the list, but can't switch.
+
 ## Sessions
 
-- A session's agent process starts when it is needed and stops after 15 minutes unused. The next
-  prompt resumes the same conversation.
+- A conversation's agent process starts with its first prompt, stops after 15 minutes unused, and
+  stops at once when its frame switches to another conversation. The next prompt resumes the same
+  conversation.
 - Threads are saved by `canvas serve` and survive restarts.
-- Removing an agent frame removes it from the board; the session's log stays in `.canvas/`.
+- Removing an agent frame removes it from the board; its conversations' logs stay in `.canvas/`.
 
 ## Configuration
 
