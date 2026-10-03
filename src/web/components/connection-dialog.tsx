@@ -46,7 +46,9 @@ export function ConnectionIndicator() {
       ? "connected to canvas serve"
       : room.serverStatus === "replaced"
         ? "host in another tab"
-        : `canvas serve ${room.serverStatus ?? "…"}`
+        : room.serverStatus === "refused"
+          ? "not paired with canvas serve"
+          : `canvas serve ${room.serverStatus ?? "…"}`
     : room.hostOnline
       ? "host online"
       : "waiting for host…";

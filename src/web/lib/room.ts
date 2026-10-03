@@ -62,8 +62,13 @@ import { drawingImage, prepareDrawCall } from "./drawing-kit";
 import type { ConnectionEvent, RelayInfo } from "./connection";
 import { signHost, verifyHost } from "./host-key";
 import { provePeer, type BrowserKey } from "./identity-key";
-import { type BoardLink, type Identity, type RelayLink } from "./link";
-import { PeerIdentities, type PeerIdentity, type PeerProof } from "../../shared/identity";
+import { forgetPairingCode, type BoardLink, type Identity, type RelayLink } from "./link";
+import {
+  PeerIdentities,
+  ownerStatement,
+  type PeerIdentity,
+  type PeerProof,
+} from "../../shared/identity";
 import { ServerLink, type LinkStatus } from "./server-link";
 import { openTransport } from "./transport/open";
 import type { Transport } from "./transport/transport";
@@ -236,17 +241,33 @@ export class Room {
     );
 
     if (link.host) {
-      const url = `${link.host.server}/ws?token=${encodeURIComponent(link.host.token)}`;
+      // The link's pairing code goes along until the server welcomes us once: then we are an owner.
+      let pair = link.host.pair;
       this.server = new ServerLink(
-        url,
-        (message) => this.onServer(message),
+        `${link.host.server}/ws`,
+        async (nonce) => ({
+          t: "auth",
+          publicKey: key.publicKey,
+          signature: await key.sign(ownerStatement(link.roomId, nonce)),
+          ...(pair && { pair }),
+        }),
+        (message) => {
+          if (message.t === "welcome" && pair) {
+            pair = null;
+            forgetPairingCode();
+          }
+          this.onServer(message);
+        },
         (status) => {
           // Every retry passes through "connecting": only its outcome is news.
           if (status !== this.serverStatus && status !== "connecting")
             this.record({
-              level: status === "open" ? "info" : "warn",
+              level: status === "open" ? "info" : status === "refused" ? "error" : "warn",
               source: "serve",
-              text: `canvas serve: ${status}`,
+              text:
+                status === "refused"
+                  ? `canvas serve refused this browser: ${this.serverRefusal}`
+                  : `canvas serve: ${status}`,
             });
           this.serverStatus = status;
           if (status === "replaced") this.stepDown();
@@ -1114,6 +1135,11 @@ export class Room {
   /** Host: be the host again after another tab took over (it steps down in turn). */
   takeOver() {
     this.server?.takeOver();
+  }
+
+  /** Host: why `canvas serve` refused this browser, if it did. */
+  get serverRefusal(): string | null {
+    return this.server?.refusal ?? null;
   }
 
   /**

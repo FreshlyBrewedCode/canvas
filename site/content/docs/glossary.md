@@ -34,9 +34,10 @@ order: 7
 | **line**          | Clusters side by side, left to right, tops aligned; lines go top to bottom. [Board](/docs/board#layout) |
 | **link**          | A markdown or HTML link to a place on the board: a frame, a file, lines, a heading, a comment. [Board](/docs/board#links) |
 | **host**          | The person who runs `canvas serve` and opens the host link                  |
-| **host link**     | The link `canvas serve` prints. Controls the machine: never share it        |
+| **host link**     | The link `canvas serve` prints. Opens the board as host in a paired browser; keep it to yourself |
 | **occupant**      | The person or agent holding a frame. [Focus](/docs/focus)                   |
 | **outdated comment** | A comment whose lines are gone from the file. It shows above the first line, with what they read. [Files](/docs/files#comments) |
+| **pairing code**  | A one-time code in the host link, good for 10 minutes: the first browser to open the link is paired with `canvas serve` as the host. `canvas pair` prints a new one. [Quick start](/docs/quick-start#2-open-the-host-link) |
 | **permission**    | An agent asking before a tool call. Only the host answers                   |
 | **prompt draft**  | The shared composer of an agent frame, written by several people at once    |
 | **relay token**   | Admits one board to a canvas relay for 30 days; the host's tab and guest links carry one. [Relay](/docs/relay) |

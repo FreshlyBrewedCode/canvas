@@ -6,7 +6,7 @@ canvas
 - two halves
   1. **`canvas serve`** (`src/cli.ts`, `src/server/`) — Bun server started in the project dir:
      ACP agent sessions, read-only files of the shared set, PTYs, persistence under
-     `<dir>/.canvas/`. One token-guarded WebSocket, used only by the host's browser
+     `<dir>/.canvas/`. One WebSocket, used only by the host's browser, once paired
   2. **web app** (`src/web/`) — Vite/React SPA standing in for the publicly hosted UI; peers
      meet over trystero (Nostr), the board is a Yjs doc
 - `src/shared/protocol.ts` is the wire contract of both halves; the trust model is ADR 0001 (the
@@ -56,6 +56,13 @@ canvas
   signed `canvas-peer:` statement (`identify`), the host checks it (`PeerIdentities`) and hostcasts
   `identities`. Presence is matched to them by the transport's peer id, never the one it claims
   (`Room.fingerprintOf`, host: `Room.verifiedPeer`)
+- host pairing (ADR 0011, decision 3): `canvas serve`'s socket sends `challenge` first and takes
+  nothing but `auth` before it: the browser signs `canvas-owner:<room>:<nonce>` (`ownerStatement`),
+  with the link's `pair` code if it has one (fragment only; dropped from the address bar once
+  welcomed). Owners in `.canvas/owners.json`, the one pending code (10 min, single use) in
+  `.canvas/pairing.json`, read on every attempt, so `canvas pair` reaches a running `serve`
+  (`server/owners.ts`; `serve.json` is the link base `canvas pair` prints). Refused: close
+  `AUTH_REFUSED`, status `refused`, no retry (`web/lib/server-link.ts`)
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant
   drives its scroll for everyone following (`hooks/use-follow-scroll.ts`), agents occupy the
   frame they last opened or changed until their turn ends. A file frame's tree panel follows too
@@ -110,13 +117,14 @@ canvas
     `.certs/dev.{crt,key}`, then `serve --tls-host <name> --web-url https://<name>:4417`. Machine
     names and certs stay local, never in the repo
   - browser automation through `nix develop` (playwright libs); `e2e/drive.ts <host link>` drives
-    a host and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
-    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
+    a host (a paired browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the
+    first link must carry a pairing code — `canvas pair` — later ones need none) and a guest (`STEP=basic|approve|extras|selection|claude|config|files|tools|lines|
+    layout|arrange|cluster-lines|edges|inserts|fullscreen-presence|keys|identity|pairing|resume|focus|focus-agent|focus-tree|presence|preview|scratch|lists|comments|comments-agent|
     takeover|version|links|drawing|drawing-agent|connection|relay|pan|fullscreen|needs-you|plan|thread-nav|mode|copy|usage|history`; `files` wants the scratch repo of finding 05, `tools`/`lines`/`scratch`/
     `lists` the one of finding 07, `focus`/`focus-agent` a long file and a long markdown file,
     finding 08, `focus-tree` nested folders, finding 18, `preview` an HTML file and a loopback server, finding 09, `comments`/
     `comments-agent` the repo of finding 13, `links` the one of finding 14, `relay` a `canvas relay`
-    and `serve --relay`; `IDLE_MS` gives slow agents longer than 4 min per
+    and `serve --relay`, `pairing` a fresh pairing link (and `DIR=<project>` to try `canvas pair`); `IDLE_MS` gives slow agents longer than 4 min per
     prompt)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit

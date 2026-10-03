@@ -42,6 +42,9 @@ export const readable = (fingerprint: string) =>
 export const peerStatement = (roomId: string, peerId: string, nonce: string) =>
   `canvas-peer:${roomId}:${peerId}:${nonce}`;
 
+/** What the host's browser signs for `canvas serve`'s challenge (ADR 0011, decision 3). */
+export const ownerStatement = (roomId: string, nonce: string) => `canvas-owner:${roomId}:${nonce}`;
+
 /** Whether `signature` (base64url) is `publicKey`'s over `text`; false for anything malformed. */
 export async function verify(publicKey: string, text: string, signature: string): Promise<boolean> {
   try {

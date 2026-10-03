@@ -8,7 +8,8 @@ order: 2
 ## Guest link
 
 The host copies it with **Copy guest link** in the top bar. It holds the room's key and the host's
-public key, but not the token that controls `canvas serve`. A guest link lets someone join the
+public key, but not where `canvas serve` is or a pairing code: only a browser paired as host
+controls it. A guest link lets someone join the
 board; what they can do there is the host's choice.
 
 Both links keep their secrets in the URL fragment (after `#`), which browsers never send to the

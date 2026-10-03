@@ -2,7 +2,7 @@
  * Everyone in a room holds the room key, so knowing it proves nothing about
  * who is the host. The CLI mints an ECDSA keypair per board: the public half
  * rides in every link, the private half only reaches the host's browser
- * (over the token-guarded WebSocket). The host signs its peer id; guests only
+ * (over the WebSocket only a paired browser gets). The host signs its peer id; guests only
  * take board state, agent output and room policy from the peer that verifies.
  */
 

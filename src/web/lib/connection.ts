@@ -211,6 +211,13 @@ export function diagnose(snapshot: ConnectionSnapshot): Headline {
       title: "The board is open as host in another tab",
       detail: "Press Use here to make this tab the host again.",
     };
+  if (isHost && serveStatus === "refused")
+    return {
+      tone: "blocked",
+      title: "This browser isn't paired with canvas serve",
+      detail:
+        "canvas serve only lets in the browsers paired with it as host. Run canvas pair in the project and open the link it prints here: its code works once, within 10 minutes.",
+    };
   if (isHost && serveStatus !== "open")
     return {
       tone: "blocked",

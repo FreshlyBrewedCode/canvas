@@ -127,6 +127,13 @@ describe("diagnose", () => {
     expect(headline).toMatchObject({ tone: "blocked", title: "Can't reach canvas serve" });
   });
 
+  test("a host browser canvas serve refused is told to pair", () => {
+    const headline = diagnose(guest({ isHost: true, serveStatus: "refused" }));
+    expect(headline).toMatchObject({ tone: "blocked" });
+    expect(headline.title).toContain("isn't paired");
+    expect(headline.detail).toContain("canvas pair");
+  });
+
   test("no relay open is pending at first, then blocked", () => {
     const closed = [{ url: "wss://a", state: "closed" as const }];
     expect(diagnose(guest({ relays: closed, joinedAt: 99_000 })).tone).toBe("pending");

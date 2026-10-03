@@ -1,11 +1,12 @@
 /**
  * Everything a browser needs to join a board rides in its URL:
  *
- *   /?room=<id>#k=<trystero key>&pk=<host public key>[&server=<ws url>&token=<t>]
+ *   /?room=<id>#k=<trystero key>&pk=<host public key>[&server=<ws url>[&pair=<code>]]
  *     [&relay=<wss url>&via=transport|signal&rt=<relay token>]
  *
- * `server` + `token` make you the host (only the CLI prints them); without
- * them you are a guest. `relay` names the board's `canvas relay` (ADR 0008),
+ * `server` makes you the host (only the CLI prints it), if this browser is
+ * paired with that `canvas serve`; `pair` is a one-time code that pairs it
+ * (ADR 0011). Without `server` you are a guest. `relay` names the board's `canvas relay` (ADR 0008),
  * how to use it and, `rt`, the guest token it takes; the host gets its own
  * from `canvas serve`. Secrets are in the fragment, which never leaves the
  * browser — the web host serving this app does not see them.
@@ -23,7 +24,7 @@ export interface BoardLink {
   readonly roomId: string;
   readonly key: string;
   readonly hostPublicKey: string;
-  readonly host: { readonly server: string; readonly token: string } | null;
+  readonly host: { readonly server: string; readonly pair: string | null } | null;
   readonly relay: RelayLink | null;
 }
 
@@ -34,7 +35,7 @@ export function readLink(location: Location = window.location): BoardLink | null
   const hostPublicKey = fragment.get("pk");
   if (!roomId || !key || !hostPublicKey) return null;
   const server = fragment.get("server");
-  const token = fragment.get("token");
+  const pair = fragment.get("pair");
   const relay = fragment.get("relay");
   const via = fragment.get("via") === "signal" ? "signal" : "transport";
   const relayToken = fragment.get("rt");
@@ -42,7 +43,7 @@ export function readLink(location: Location = window.location): BoardLink | null
     roomId,
     key,
     hostPublicKey,
-    host: server && token ? { server, token } : null,
+    host: server ? { server, pair } : null,
     relay: relay && relayToken ? { url: relay, via, token: relayToken } : null,
   };
 }
@@ -108,4 +109,12 @@ export function loadIdentity(): Identity {
 
 export function saveIdentity(identity: Identity): void {
   localStorage.setItem("canvas.identity", JSON.stringify(identity));
+}
+
+/** The link in the address bar without its pairing code, once it is used: reloads don't need it. */
+export function forgetPairingCode(location: Location = window.location): void {
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  if (!fragment.has("pair")) return;
+  fragment.delete("pair");
+  history.replaceState(history.state, "", `${location.pathname}${location.search}#${fragment}`);
 }
