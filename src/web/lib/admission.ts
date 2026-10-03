@@ -9,6 +9,10 @@
  * whose member was removed, is dropped for good: coming again is a reload, a
  * new peer id, a new knock. What a peer may do is read from the member list
  * at every check, so a change takes hold at once.
+ *
+ * Trusted (decision 4) is the host's grant to a member, by fingerprint, on top
+ * of its saved role: kept here only, so it lasts while this book does (one
+ * host session), and goes with the member.
  */
 
 import type { GuestAccess, GuestRequest, Member } from "../../shared/protocol";
@@ -48,10 +52,31 @@ export class Admissions {
   private members: ReadonlyArray<Member> = [];
   private readonly peers = new Map<string, Entry>();
   private readonly dropped = new Set<string>();
+  /** Fingerprints of the members trusted this session. */
+  private readonly trusted = new Set<string>();
 
   /** `canvas serve`'s member list changed: who is in, who changed, who is out. */
   setMembers(members: ReadonlyArray<Member>): Step[] {
     this.members = members;
+    for (const fingerprint of this.trusted)
+      if (!members.some((m) => m.fingerprint === fingerprint)) this.trusted.delete(fingerprint);
+    return this.refresh();
+  }
+
+  /** The host grants trusted to a member, or takes it back. Nothing for a non-member. */
+  trust(fingerprint: string, on: boolean): Step[] {
+    if (!on) this.trusted.delete(fingerprint);
+    else if (this.members.some((m) => m.fingerprint === fingerprint)) this.trusted.add(fingerprint);
+    else return [];
+    return this.refresh();
+  }
+
+  isTrusted(fingerprint: string) {
+    return this.trusted.has(fingerprint);
+  }
+
+  /** What changed for each connected peer since it was last told. */
+  private refresh(): Step[] {
     const steps: Step[] = [];
     for (const [peerId, entry] of this.peers) {
       const access = this.role(entry.knock);
@@ -90,16 +115,14 @@ export class Admissions {
     this.peers.delete(peerId);
   }
 
-  /** The transport was left: everyone comes again. */
+  /** The transport was left: everyone comes again, and the session's trust is gone. */
   clear() {
     this.peers.clear();
     this.dropped.clear();
+    this.trusted.clear();
   }
 
-  /**
-   * What `peerId` may do now; null unless it is in. The seam for trusted
-   * (decision 4): granted for one host session, on top of this.
-   */
+  /** What `peerId` may do now; null unless it is in. */
   access(peerId: string): GuestAccess | null {
     const entry = this.peers.get(peerId);
     return entry?.access ? this.role(entry.knock) : null;
@@ -135,7 +158,8 @@ export class Admissions {
     const member = this.members.find(
       (m) => m.fingerprint === identity.fingerprint && m.publicKey === identity.publicKey,
     );
-    return member?.role ?? null;
+    if (!member) return null;
+    return this.trusted.has(member.fingerprint) ? "trusted" : member.role;
   }
 
   private drop(peerId: string) {

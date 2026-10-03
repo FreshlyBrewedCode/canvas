@@ -1,6 +1,6 @@
 ---
 title: Guests
-description: Guest links, the lobby, members and their roles, and approvals.
+description: Guest links, the lobby, members, their roles and trust, and approvals.
 section: Features
 order: 2
 ---
@@ -46,6 +46,16 @@ theirs as a badge.
 
 A view member's edits never leave their browser: the host drops them.
 
+### Trusted, for this session
+
+The shield next to a member's role makes them **trusted**: what they ask for runs without an
+approval card, and they type into terminals. It goes on top of their role, for as long as the
+host's tab stays open: their own reloads keep it, but when the host's tab reloads or closes they
+are back to their role. It is never saved. The members list marks who is trusted right now; press
+the shield again to take it back, at once. A guest sees **trusted** as their badge.
+
+Trust them only as far as you would let them use your keyboard: a terminal runs as you.
+
 **Remove** cuts a member off at once: they are told so, and the board goes away for them. If they
 open the link again, they knock again. They still hold the guest link, so they can knock; see
 [Limits](/docs/limits#guests).
@@ -54,7 +64,8 @@ open the link again, they knock again. They still hold the guest link, so they c
 
 ## Approvals
 
-For members with the edit role, these become an approval card for the host:
+For members with the edit role, unless [trusted](#trusted-for-this-session), these become an
+approval card for the host:
 
 - sending a prompt
 - changing an agent's settings
@@ -73,7 +84,8 @@ See [Agent](/docs/agent#permissions).
 
 ## Terminals
 
-Only the host types into a terminal frame. Everyone sees its output.
+Only the host, and [trusted](#trusted-for-this-session) members, type into a terminal frame.
+Everyone sees its output.
 
 ## When the host is away
 

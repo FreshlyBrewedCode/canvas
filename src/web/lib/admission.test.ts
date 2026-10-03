@@ -103,6 +103,65 @@ describe("admission", () => {
   });
 });
 
+describe("trusted for one host session (decision 4)", () => {
+  test("granted on top of the saved role, taken back to it", () => {
+    const book = new Admissions();
+    book.setMembers([member(ada, "edit"), member(bob, "view")]);
+    book.arrive("p1", ada, who);
+    book.arrive("p2", bob, who);
+    expect(book.trust(ada.fingerprint, true)).toEqual([
+      { t: "access", peerId: "p1", access: "trusted", was: "edit" },
+    ]);
+    expect(book.access("p1")).toBe("trusted");
+    expect(book.isTrusted(ada.fingerprint)).toBe(true);
+    expect(book.access("p2")).toBe("view");
+    expect(book.trust(ada.fingerprint, false)).toEqual([
+      { t: "access", peerId: "p1", access: "edit", was: "trusted" },
+    ]);
+    expect(book.isTrusted(ada.fingerprint)).toBe(false);
+  });
+
+  test("per member: a peer that comes again (a guest reload) is trusted at once", () => {
+    const book = new Admissions();
+    book.setMembers([member(ada, "edit")]);
+    expect(book.trust(ada.fingerprint, true)).toEqual([]);
+    expect(book.arrive("p1", ada, who)).toEqual([{ t: "admit", peerId: "p1", access: "trusted" }]);
+    book.leave("p1");
+    expect(book.arrive("p2", ada, who)).toEqual([{ t: "admit", peerId: "p2", access: "trusted" }]);
+  });
+
+  test("only members are trusted; a role change keeps it, a removal drops it", () => {
+    const book = new Admissions();
+    book.setMembers([member(ada, "edit")]);
+    expect(book.trust(bob.fingerprint, true)).toEqual([]);
+    expect(book.isTrusted(bob.fingerprint)).toBe(false);
+    book.trust(ada.fingerprint, true);
+    book.arrive("p1", ada, who);
+    expect(book.setMembers([member(ada, "view")])).toEqual([]);
+    expect(book.access("p1")).toBe("trusted");
+    book.setMembers([]);
+    expect(book.isTrusted(ada.fingerprint)).toBe(false);
+    // Admitted again, it has its saved role only.
+    book.setMembers([member(ada, "edit")]);
+    expect(book.arrive("p2", ada, who)).toEqual([{ t: "admit", peerId: "p2", access: "edit" }]);
+  });
+
+  test("never saved: the member list keeps the role, and a new host session starts without it", () => {
+    const members = [member(ada, "edit")];
+    const book = new Admissions();
+    book.setMembers(members);
+    book.trust(ada.fingerprint, true);
+    expect(members[0]!.role).toBe("edit");
+    // The host tab reloads: a new room, a new book, the same saved members.
+    const next = new Admissions();
+    next.setMembers(members);
+    expect(next.arrive("p1", ada, who)).toEqual([{ t: "admit", peerId: "p1", access: "edit" }]);
+    // Stepping down (another tab is the host) ends the session too.
+    book.clear();
+    expect(book.isTrusted(ada.fingerprint)).toBe(false);
+  });
+});
+
 describe("the authority's checks", () => {
   test("lobby peers: no edits, no requests", () => {
     expect(mayEdit(null)).toBe(false);
@@ -128,5 +187,14 @@ describe("the authority's checks", () => {
       approve: false,
     });
     expect(check("edit", { t: "term-input", id: "t", data: "ls\n" }).ok).toBe(false);
+  });
+
+  test("trusted: edits; runs without the approval click; terminals", () => {
+    expect(mayEdit("trusted")).toBe(true);
+    expect(check("trusted", prompt)).toEqual({ ok: true, approve: false });
+    expect(check("trusted", { t: "term-input", id: "t", data: "ls\n" })).toEqual({
+      ok: true,
+      approve: false,
+    });
   });
 });
