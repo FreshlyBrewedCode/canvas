@@ -7,13 +7,22 @@ import {
   CircleStop,
   CornerDownLeft,
   ArrowDown,
+  ArrowLeft,
   Layers,
   LoaderCircle,
   SendHorizontal,
   ShieldAlert,
   Wrench,
 } from "lucide-react";
-import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { EditorView } from "@codemirror/view";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -22,13 +31,21 @@ import { AgentSettings, ModeChip, useModeCycle } from "@/components/agent-settin
 import { TurnFooter, UsageRing } from "@/components/agent-usage";
 import { MARKDOWN_LINKS, urlTransform } from "@/components/board-link";
 import { CollabEditor } from "@/components/collab-editor";
+import { ConversationMenu } from "@/components/conversation-menu";
 import { CopyButton } from "@/components/copy-button";
 import { FrameShell, StatusDot } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { promptText, shownSession, updateFrame, type Frame } from "@/lib/board";
-import { useKindOptions, useRoom, useRoomState, useSession } from "@/lib/room-context";
+import {
+  useFrameSessions,
+  useKindOptions,
+  useRoom,
+  useRoomState,
+  useSession,
+} from "@/lib/room-context";
+import { backTo, conversations, type Conversation } from "@/lib/sessions";
 import {
   foldThread,
   groupSteps,
@@ -144,6 +161,11 @@ function AgentThread({
   const agentLabel =
     room.roomState?.agents.find((a) => a.kind === frame.agent)?.label ?? frame.agent;
   const access = room.access;
+  const mine = useFrameSessions(frame.id);
+  const list = useMemo(
+    () => conversations(mine, sessionId, session?.meta),
+    [mine, sessionId, session?.meta],
+  );
 
   const send = async () => {
     const prompt = text.toString().trim();
@@ -160,8 +182,13 @@ function AgentThread({
     }
   };
 
-  // ↑/↓: our own prompts of this frame (`prompt-history.ts`).
+  // ↑/↓: our own prompts of the conversation shown (`prompt-history.ts`).
   const browsing = useRef<number | null>(null);
+  // What was about the conversation before isn't about this one.
+  useEffect(() => {
+    setError(null);
+    browsing.current = null;
+  }, [sessionId]);
   const recall = (view: EditorView, direction: "older" | "newer") => {
     const { doc, selection } = view.state;
     const line = doc.lineAt(selection.main.head).number;
@@ -182,18 +209,32 @@ function AgentThread({
     });
     return true;
   };
-  /** A prompt again, into the draft: as it is, or after what is there. */
-  const reuse = (prompt: string) => {
+  const composer = () => {
     const editor = document.querySelector<HTMLElement>(
       `[data-frame="${frame.id}"] [data-composer] .cm-editor`,
     );
-    const view = editor && EditorView.findFromDOM(editor);
+    return editor ? EditorView.findFromDOM(editor) : null;
+  };
+  /** A prompt again, into the draft: as it is, or after what is there. */
+  const reuse = (prompt: string) => {
+    const view = composer();
     if (!view) return;
     const end = view.state.doc.length;
     const insert = view.state.doc.toString().trim() ? `\n\n${prompt}` : prompt;
     view.dispatch({ changes: { from: end, insert }, selection: { anchor: end + insert.length } });
     view.focus();
   };
+
+  // Not while it runs: the first version keeps no conversation going unseen (ADR 0012).
+  const startNew = () => {
+    if (readOnly || busy) return;
+    room.newConversation(frame.id);
+    composer()?.focus();
+  };
+  const show = (id: string) => {
+    if (!readOnly && !busy) room.showConversation(frame.id, id);
+  };
+  const back = !readOnly && !busy ? backTo(list) : undefined;
 
   const configure = (configId: string, value: AgentConfigValue) =>
     room.act({ t: "agent-config", sessionId, configId, value });
@@ -215,9 +256,14 @@ function AgentThread({
         readOnly={readOnly}
         status={
           <>
-            <span className="bg-secondary text-secondary-foreground shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap">
-              {agentLabel}
-            </span>
+            <ConversationMenu
+              label={agentLabel}
+              list={list}
+              readOnly={readOnly}
+              busy={busy}
+              onNew={startNew}
+              onShow={show}
+            />
             {room.hostOnline && status === "waiting" ? (
               <NeedsHost frameId={frame.id} host={room.isHost} />
             ) : (
@@ -229,11 +275,14 @@ function AgentThread({
       >
         <div className="flex h-full flex-col">
           <Thread
+            key={sessionId}
             frameId={frame.id}
             turns={turns}
             onReuse={readOnly ? undefined : reuse}
             version={version}
             loading={room.hostOnline && (session ? session.loading : !room.sessionsKnown)}
+            back={back}
+            onBack={show}
           />
           <Plan events={events} version={version} />
           <div className="border-t" data-composer="">
@@ -302,6 +351,8 @@ function Thread({
   onReuse,
   version,
   loading,
+  back,
+  onBack,
 }: {
   frameId: string;
   turns: ReadonlyArray<Turn>;
@@ -310,6 +361,9 @@ function Thread({
   version: number;
   /** The host has not sent the conversation yet. */
   loading: boolean;
+  /** Empty, the conversation it may go back to. */
+  back: Conversation | undefined;
+  onBack: (sessionId: string) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -354,9 +408,21 @@ function Thread({
             </p>
           ) : (
             turns.length === 0 && (
-              <p className="text-muted-foreground py-8 text-center text-xs">
-                No messages yet. Write a prompt below — the agent runs on the host's machine.
-              </p>
+              <div className="text-muted-foreground space-y-2 py-8 text-center text-xs">
+                <p>No messages yet. Write a prompt below — the agent runs on the host's machine.</p>
+                {back && (
+                  <button
+                    type="button"
+                    data-back-to={back.id}
+                    className="hover:text-foreground mx-auto flex max-w-full items-center gap-1"
+                    onClick={() => onBack(back.id)}
+                  >
+                    <ArrowLeft className="size-3 shrink-0" />
+                    <span className="shrink-0">back to</span>
+                    <span className="truncate font-medium">{back.title}</span>
+                  </button>
+                )}
+              </div>
             )
           )}
           {turns.map((turn) => (
