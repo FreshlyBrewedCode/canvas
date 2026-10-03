@@ -104,9 +104,12 @@ apart.
 
 Roles narrow what reaches the machine; they do not make guests harmless.
 
-- **Edit guests** can add agent and terminal frames, which start an idle agent process or shell on
-  the host's machine, without approval. Prompting an agent needs the host's approval; typing into
-  a terminal is not open to edit guests at all.
+- **Edit guests** can add terminal frames, which start a shell on the host's machine, and agent
+  frames, without approval. An agent frame runs nothing until its first prompt or settings change,
+  both of which need the host's approval; but the first frame of an agent `canvas serve` doesn't
+  know yet starts it once, to read its settings. Edit guests switch agent frames between
+  conversations and start new ones freely: that runs nothing. Typing into a terminal is not open to
+  edit guests at all.
 - **Trusted members** run everything without approval and type into terminals, as the host's user:
   they can do anything the host can, until the host takes it back or its tab reloads.
 - **An approved prompt** can ask the agent for anything. The agent's own permission prompts, which

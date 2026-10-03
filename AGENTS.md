@@ -25,6 +25,14 @@ canvas
   `parent`/`pos`; `resolve` in `src/shared/layout.ts` derives every rect, operations change it by
   structural targets, and the host tidies it (`tidy` in `web/lib/board.ts`: migrates boards from
   before, repairs — clusters from before lines too — prunes)
+- agent conversations (ADR 0012, finding 21): sessions are `canvas serve`'s, for the board (meta:
+  the frame it began in, title); an agent frame shows one (`session` in the doc, `shownSession`;
+  without it, its own id's), switched by a doc write, so for whoever may edit. The running turn's
+  frame is the agent's "you" (`board-call.frameId`). No process until the first prompt or a
+  settings change before it; one no frame shows is released when idle, back by `session/resume`.
+  Kinds' settings before any process: `.canvas/agents.json`, probed once. Browsers get heads,
+  logs on demand (`session-open`). Queries in `web/lib/sessions.ts`, the header's menu
+  `components/conversation-menu.tsx`
 - comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with
