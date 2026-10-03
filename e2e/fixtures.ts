@@ -111,6 +111,7 @@ export const test = base.extend<Options & Fixtures>({
     rmSync(dir, { recursive: true, force: true });
   },
 
+  // A fresh browser each test: the link's pairing code makes it the board's owner (ADR 0011).
   host: async ({ browser, serve }, use, testInfo) => {
     const page = await open(browser, serve.link, "Karl", "#f97316", testInfo);
     await expect(page.getByText("connected to canvas serve")).toBeVisible({ timeout: 15_000 });
@@ -123,11 +124,30 @@ export const test = base.extend<Options & Fixtures>({
     await host.getByRole("button", { name: "Copy guest link" }).click();
     const link = await host.evaluate(() => navigator.clipboard.readText());
     const page = await open(browser, link, "Ada", "#3b82f6", testInfo);
-    await expect(page.getByText("host online")).toBeVisible({ timeout: 30_000 });
+    await letIn(host, page, "Ada");
     await use(page);
     await page.context().close();
   },
 });
+
+/**
+ * The guest link is an invite (ADR 0011): a browser the host doesn't know
+ * knocks, and the host lets it in, to edit or to view; a member's browser
+ * comes straight in.
+ */
+export async function letIn(host: Page, page: Page, name: string, role: "edit" | "view" = "edit") {
+  const knock = host.locator(`[data-knock="${name}"]`).first();
+  const board = page.locator("[data-board]");
+  // Two pages: until either the knock or the board shows.
+  await expect
+    .poll(async () => (await knock.isVisible()) || (await board.isVisible()), { timeout: 30_000 })
+    .toBe(true);
+  if (await knock.isVisible())
+    await knock
+      .getByRole("button", { name: role === "edit" ? "Admit to edit" : "Admit to view" })
+      .click();
+  await expect(board).toBeVisible({ timeout: 30_000 });
+}
 
 /** A person's tab: their own context, so their own storage and identity. */
 export async function open(
