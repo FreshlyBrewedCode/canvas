@@ -28,7 +28,7 @@ jobs:
         run: bun scripts/build-release.ts 0.0.0-development --smoke-test
 
   # The e2e tests (`e2e/`): a host and a guest in Chromium against Vite, a
-  # `canvas relay` and a `canvas serve` per test.
+  # `canvas relay` and a `canvas serve` per test; agents replay their recordings.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20

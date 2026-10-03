@@ -153,17 +153,12 @@ canvas
     traffic both ways and the agent's board MCP calls, which the replay makes again on this run's
     board, its ids swapped for this run's (`e2e/acp/ids.ts`). `bun run e2e:record -g <title>`
     records anew with the real agents (`E2E_AGENTS=live` runs them unrecorded); a prompt that
-    differs from the recording fails, saying so
+    differs from the recording fails, saying so. `e2e/agents.ts` adds agent frames and waits out
+    their turns; a prompt is a constant of its test. A known bug is a `test.fail()` naming it
   - fixture projects (`e2e/projects/`): `basic` (long files, nested folders, an HTML page),
-    `files` (finding 05), `comments` (finding 13), `links` (finding 14). What must not be in a repo
-    (secrets, binaries, a 1 MiB file) a test writes into its copy (`serve.dir`)
-  - `e2e/drive.ts <host link>`: the agent steps not yet moved to `e2e/tests/`. It drives a host (a
-    paired browser profile in `$HOST_PROFILE`, default `/tmp/canvas-e2e-host`: the first link must
-    carry a pairing code — `canvas pair` — later ones need none) and a guest, which the host admits
-    (`STEP=basic|approve|claude|selection|config|tools|resume|focus-agent|scratch|lists|
-    comments-agent|drawing-agent|needs-you|plan|thread-nav|mode|copy|usage|history`;
-    `tools`/`scratch`/`lists` want the repo of finding 07, `comments-agent` the `comments` project,
-    `focus-agent` a long file; `IDLE_MS` gives slow agents longer than 4 min per prompt)
+    `files` (finding 05), `comments` (finding 13), `links` (finding 14), `shop` (findings 07, 11).
+    What must not be in a repo (secrets, binaries, a 1 MiB file) a test writes into its copy
+    (`serve.dir`)
   - conventional commits; spike → prototype → validate → harden
   - releases (semantic-release, as in factory): PRs are squash-merged, their title is the commit
     semantic-release reads. Every merge to `main` publishes `@frebreco/canvas@next` and deploys its
