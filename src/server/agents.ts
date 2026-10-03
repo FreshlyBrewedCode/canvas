@@ -104,6 +104,17 @@ export function detectAgents(): ReadonlyArray<AgentDefinition> {
       },
     },
   ];
+  // The e2e tests' seam (`e2e/acp/cassette.ts`): a JSON array that each agent's
+  // command goes behind, after the agent's kind — to record its traffic, or
+  // to replay a recording in place of it. The wrapper decides what runs.
+  const wrapper = process.env.CANVAS_AGENT_WRAPPER;
+  if (wrapper) {
+    const prefix = JSON.parse(wrapper) as string[];
+    return candidates.map((agent) => ({
+      ...agent,
+      command: [...prefix, agent.kind, "--", ...agent.command],
+    }));
+  }
   return candidates.filter((agent) => Bun.which(agent.needs) !== null);
 }
 
