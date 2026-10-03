@@ -13,7 +13,9 @@ import {
   type Frame,
 } from "./board";
 import {
+  backTo,
   boardSessions,
+  conversations,
   frameSessions,
   framesShowing,
   mergeLog,
@@ -222,5 +224,53 @@ describe("a log that arrives in pieces", () => {
     const had = [e(0), e(1), e(2), e(3)].map((event, index) => ({ index, event }));
     expect(mergeLog([e(0), e(1), e(2), e(3), e(4)], had)).toEqual([e(0), e(1), e(2), e(3), e(4)]);
     expect(mergeLog([e(0), e(1), e(2)], had)).toEqual([e(0), e(1), e(2), e(3)]);
+  });
+});
+
+describe("a frame's conversation menu", () => {
+  const old = meta("s-1", "f", 100, { title: "fix the build" });
+  const later = meta("s-2", "f", 300, { title: "write tests", status: "running" });
+  const unprompted = meta("s-3", "f", 200);
+
+  test("the frame's prompted ones, last active first, the shown one marked", () => {
+    const list = conversations([later, unprompted, old], "s-1", old);
+    expect(list.map((c) => [c.id, c.shown])).toEqual([
+      ["s-2", false],
+      ["s-1", true],
+    ]);
+    expect(list[0]).toMatchObject({ title: "write tests", lastAt: 300, status: "running" });
+  });
+
+  test("one not begun is on top, without a title; a shown one never prompted is listed", () => {
+    expect(conversations([later, old], "fresh", undefined).map((c) => c.id)).toEqual([
+      "fresh",
+      "s-2",
+      "s-1",
+    ]);
+    expect(conversations([later, old], "fresh", undefined)[0]).toEqual({
+      id: "fresh",
+      status: "idle",
+      shown: true,
+    });
+    expect(conversations([later, unprompted, old], "s-3", unprompted).map((c) => c.id)).toEqual([
+      "s-2",
+      "s-3",
+      "s-1",
+    ]);
+  });
+
+  test("one shown that began in another frame, in its place", () => {
+    const elsewhere = meta("s-9", "g", 200, { title: "elsewhere" });
+    expect(conversations([later, old], "s-9", elsewhere).map((c) => c.id)).toEqual([
+      "s-2",
+      "s-9",
+      "s-1",
+    ]);
+  });
+
+  test("back to the last active other one, if there is one", () => {
+    expect(backTo(conversations([later, old], "fresh", undefined))?.id).toBe("s-2");
+    expect(backTo(conversations([later, old], "s-2", later))?.id).toBe("s-1");
+    expect(backTo(conversations([], "fresh", undefined))).toBeUndefined();
   });
 });

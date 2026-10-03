@@ -1,4 +1,4 @@
-/** Short human forms of durations and token counts, for the agent thread. */
+/** Short human forms of durations, times and token counts, for the agent thread. */
 
 /** `12s`, `3m 05s`, `1h 02m`. */
 export function formatDuration(ms: number): string {
@@ -23,4 +23,14 @@ export function formatCost(amount: number, currency: string): string {
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
+}
+
+/** How long ago `at` was, at `now`: `now`, `5m`, `3h`, `2d`, then the date (`Oct 3`). */
+export function formatAgo(at: number, now: number): string {
+  const m = Math.floor(Math.max(0, now - at) / 60_000);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h`;
+  if (m < 7 * 24 * 60) return `${Math.floor(m / (24 * 60))}d`;
+  return new Date(at).toLocaleDateString("en", { month: "short", day: "numeric" });
 }

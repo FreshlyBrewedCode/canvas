@@ -30,6 +30,48 @@ export function frameSessions(metas: Iterable<SessionMeta>, frameId: string): Se
   return [...metas].filter((meta) => meta.frameId === frameId).sort(newestFirst);
 }
 
+/** A line of an agent frame's conversation menu. */
+export interface Conversation {
+  readonly id: string;
+  /** Its first prompt, shortened; none before it has one. */
+  readonly title?: string;
+  /** When it was last active; none if it hasn't begun. */
+  readonly lastAt?: number;
+  readonly status: SessionStatus;
+  /** The one the frame shows. */
+  readonly shown: boolean;
+}
+
+/**
+ * An agent frame's conversations as its menu lists them: those that began in
+ * it (`frameSessions`), the last active first, and the one it shows wherever
+ * that began — on top while it hasn't begun (decision 4: a fresh id, no
+ * record yet). Others never prompted are left out: a settings change begins a
+ * session too, and there is nothing in it to go back to.
+ */
+export function conversations(
+  mine: ReadonlyArray<SessionMeta>,
+  shown: string,
+  shownMeta: SessionMeta | undefined,
+): Conversation[] {
+  const line = (meta: SessionMeta): Conversation => ({
+    id: meta.id,
+    ...(meta.title !== undefined && { title: meta.title }),
+    lastAt: meta.lastAt,
+    status: meta.status,
+    shown: meta.id === shown,
+  });
+  const list = mine.filter((meta) => meta.id === shown || meta.title !== undefined).map(line);
+  if (list.some((c) => c.shown)) return list;
+  if (!shownMeta) return [{ id: shown, status: "idle", shown: true }, ...list];
+  return [line(shownMeta), ...list].sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
+}
+
+/** Where an empty conversation offers to go back to: the frame's last active other one. */
+export function backTo(list: ReadonlyArray<Conversation>): Conversation | undefined {
+  return list.find((c) => !c.shown && c.title !== undefined);
+}
+
 /** The agent frames showing a session. */
 export function framesShowing(frames: ReadonlyArray<Frame>, sessionId: string): AgentFrame[] {
   return frames.filter(

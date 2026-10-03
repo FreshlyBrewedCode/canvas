@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatCost, formatDuration, formatTokens } from "./format";
+import { formatAgo, formatCost, formatDuration, formatTokens } from "./format";
 
 describe("format", () => {
   test("durations", () => {
@@ -21,5 +21,15 @@ describe("format", () => {
   test("costs", () => {
     expect(formatCost(0.1234, "USD")).toBe("$0.12");
     expect(formatCost(1.5, "nope")).toBe("1.50 nope");
+  });
+
+  test("how long ago", () => {
+    const now = Date.UTC(2026, 9, 3, 12);
+    expect(formatAgo(now - 20_000, now)).toBe("now");
+    expect(formatAgo(now + 5_000, now)).toBe("now");
+    expect(formatAgo(now - 5 * 60_000, now)).toBe("5m");
+    expect(formatAgo(now - 3 * 3_600_000 - 1, now)).toBe("3h");
+    expect(formatAgo(now - 2 * 86_400_000, now)).toBe("2d");
+    expect(formatAgo(Date.UTC(2026, 8, 1, 12), now)).toBe("Sep 1");
   });
 });
