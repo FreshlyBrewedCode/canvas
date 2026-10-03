@@ -4,6 +4,7 @@
 import type { Page } from "@playwright/test";
 import { add, arrange, clear, fit, frame, settle } from "../board";
 import { expect, test } from "../fixtures";
+import { setRole } from "../members";
 
 const elements = (p: Page, id: string) =>
   p.evaluate(
@@ -120,7 +121,7 @@ test("drawing together", async ({ host, guest }) => {
   });
 
   await test.step("view guests look, but don't draw", async () => {
-    await host.getByLabel("Guest access").selectOption("view");
+    await setRole(host, guest, "view");
     await expect(frame(guest, id).locator("[data-drawing-edit]"), "no Edit").toHaveCount(0, {
       timeout: 5000,
     });
@@ -130,7 +131,7 @@ test("drawing together", async ({ host, guest }) => {
       guest.locator("[data-drawing-editor]"),
       "nor an editor on double-click",
     ).toHaveCount(0);
-    await host.getByLabel("Guest access").selectOption("edit");
+    await setRole(host, guest, "edit");
   });
 
   await test.step("removing the frame clears its drawing", async () => {

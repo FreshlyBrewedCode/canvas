@@ -6,6 +6,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { add, arrange, clear, frame, frames, settle } from "../board";
 import { expect, test } from "../fixtures";
+import { setRole } from "../members";
 
 /** Find a file with the tree's search, then click it (rows are virtualized). */
 const pick = async (of: ReturnType<typeof frame>, path: string, modifier = false) => {
@@ -160,14 +161,14 @@ test.describe(() => {
     });
 
     await test.step("view guests see open files, but get no tree", async () => {
-      await host.getByLabel("Guest access").selectOption("view");
+      await setRole(host, guest, "view");
       await pick(of(host), "docs/adr/0001-host-relayed-star-topology.md");
       await expect(of(guest).getByText("The host's browser is the only door").first()).toBeVisible({
         timeout: 10_000,
       });
       await expect(of(guest).getByTitle(/files$/), "no tree toggle").toHaveCount(0);
       await expect(of(guest).getByRole("treeitem"), "no tree").toHaveCount(0);
-      await host.getByLabel("Guest access").selectOption("edit");
+      await setRole(host, guest, "edit");
     });
   });
 });

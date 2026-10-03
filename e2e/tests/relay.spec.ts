@@ -4,7 +4,8 @@
 // request on the host; a token that doesn't verify is refused.
 import type { Page } from "@playwright/test";
 import { add, frame, settle } from "../board";
-import { expect, open, test } from "../fixtures";
+import { expect, letIn, open, test } from "../fixtures";
+import { request, setTrusted } from "../members";
 
 const headline = (page: Page) => page.locator("[data-connection-headline]");
 
@@ -57,23 +58,32 @@ for (const via of ["transport", "signal"] as const)
 
       await test.step("a guest without Nostr reaches the host, edits go both ways", async () => {
         await expect(locked.getByText("host online")).toBeVisible({ timeout: 30_000 });
+        await letIn(host, locked, "Locked");
         const fromHost = await add(host, "Files");
         await expect(frame(locked, fromHost)).toBeVisible({ timeout: 10_000 });
         const fromGuest = await add(locked, "Files");
         await expect(frame(host, fromGuest)).toBeVisible({ timeout: 10_000 });
       });
 
-      await test.step("its terminal input runs on the host, the output comes back", async () => {
-        await host.getByLabel("Guest access").selectOption("trusted");
+      await test.step("terminal output reaches it, its requests run on the host", async () => {
         const term = await add(host, "Terminal");
         await frame(locked, term).locator(".xterm").waitFor({ timeout: 10_000 });
         await settle(1500);
-        await frame(locked, term).locator(".xterm").click();
-        await locked.keyboard.type("echo relay-$((6*7))\n");
-        await expect(frame(host, term).getByText("relay-42").first()).toBeVisible({
+        await frame(host, term).locator(".xterm").click();
+        await host.keyboard.type("echo relay-$((6*7))\n");
+        await expect(frame(locked, term).getByText("relay-42").first()).toBeVisible({
           timeout: 15_000,
         });
-        await expect(frame(locked, term).getByText("relay-42").first()).toBeVisible({
+        // One needing no approval: its answer comes back.
+        expect(await request(locked, { t: "agent-cancel", sessionId: "none" })).toBe("ok");
+        // Trusted, it types into the terminal: the input runs on the host.
+        await setTrusted(host, locked, true);
+        await frame(locked, term).locator(".xterm").click();
+        await locked.keyboard.type("echo trusted-$((6*7))\n");
+        await expect(frame(host, term).getByText("trusted-42").first()).toBeVisible({
+          timeout: 15_000,
+        });
+        await expect(frame(locked, term).getByText("trusted-42").first()).toBeVisible({
           timeout: 15_000,
         });
       });

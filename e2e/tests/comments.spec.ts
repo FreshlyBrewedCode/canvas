@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { add, arrange, clear, frame, frames, settle } from "../board";
 import { expect, test } from "../fixtures";
+import { setRole } from "../members";
 
 test.use({ project: "comments" });
 
@@ -183,7 +184,7 @@ test("comments on a file frame", async ({ host, guest, serve }) => {
   });
 
   await test.step("view guests read comments, but can't write them", async () => {
-    await host.getByLabel("Guest access").selectOption("view");
+    await setRole(host, guest, "view");
     await settle(1500);
     const box = (await of(guest).locator('[data-line="30"]').first().boundingBox())!;
     await guest.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 3 });
@@ -191,7 +192,7 @@ test("comments on a file frame", async ({ host, guest, serve }) => {
     await expect(of(guest).locator("[data-utility-button]"), "no + for a view guest").toHaveCount(
       0,
     );
-    await host.getByLabel("Guest access").selectOption("edit");
+    await setRole(host, guest, "edit");
   });
 
   await test.step("comments are the frame's: a new frame has none, and they go with it", async () => {

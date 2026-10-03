@@ -144,8 +144,9 @@ canvas
   - e2e: `bun run e2e` (Playwright test, through `nix develop` for its libs) — `e2e/tests/*.spec.ts`
     on the fixtures of `e2e/fixtures.ts`: Vite and a `canvas relay` started for the run, each test
     its own `canvas serve` on a copy of `e2e/projects/<name>` (`test.use({ project })`), the host's
-    tab, and a guest's on the guest link when the test asks for `guest`. `e2e/board.ts` reads and
-    sets up the board through the dev build's `window` hooks. One test per feature, `test.step`s
+    tab (a fresh browser, paired by the link's code), and a guest's — let in when it knocks — when
+    the test asks for `guest`. `e2e/board.ts` reads and sets up the board through the dev build's
+    `window` hooks; `e2e/members.ts` sets members' roles, trust, removal (ADR 0011). One test per feature, `test.step`s
     for its parts; `-g <title>` runs one
   - fixture projects (`e2e/projects/`): `basic` (long files, nested folders, an HTML page),
     `files` (finding 05), `comments` (finding 13), `links` (finding 14). What must not be in a repo

@@ -37,8 +37,9 @@ test("the connection dialog says how peers connect", async ({ host, guest, serve
       const report = JSON.parse(text) as { peers: unknown[]; log: unknown[] };
       expect(report.peers, "the report has the peer").toHaveLength(1);
       expect(report.log.length, "…and the log").toBeGreaterThan(0);
-      for (const key of ["k", "token", "pk"])
-        expect(text, `the report has no ${key}`).not.toContain(secrets.get(key)!);
+      for (const key of ["k", "pair", "pk"])
+        if (secrets.get(key))
+          expect(text, `the report has no ${key}`).not.toContain(secrets.get(key)!);
       await page.keyboard.press("Escape");
     });
 });

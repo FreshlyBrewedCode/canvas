@@ -1,12 +1,14 @@
 // One host tab at a time: a second one takes over, "Use here" takes it back.
 import type { Page } from "@playwright/test";
 import { add, frame, settle } from "../board";
-import { expect, open, test } from "../fixtures";
+import { expect, test } from "../fixtures";
 
-test("one host tab at a time", async ({ browser, host, guest, serve }, testInfo) => {
+test("one host tab at a time", async ({ host, guest, serve }) => {
   const connected = (page: Page) => page.getByText("connected to canvas serve");
   const replaced = (page: Page) => page.locator("[data-host-elsewhere]");
-  const second = await open(browser, serve.link, "Karl", "#f97316", testInfo);
+  // Another tab of the same, paired, browser.
+  const second = await host.context().newPage();
+  await second.goto(serve.link);
 
   await test.step("a second tab takes over; the first is read-only", async () => {
     await expect(connected(second)).toBeVisible({ timeout: 15_000 });
@@ -31,5 +33,5 @@ test("one host tab at a time", async ({ browser, host, guest, serve }, testInfo)
     await expect(replaced(second), "the second tab still waits").toBeVisible();
     await expect(guest.getByText("host online")).toBeVisible({ timeout: 30_000 });
   });
-  await second.context().close();
+  await second.close();
 });
