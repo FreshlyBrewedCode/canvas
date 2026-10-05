@@ -13,7 +13,7 @@ const member = ({ publicKey, fingerprint }: typeof ada, role: MemberRole): Membe
   role,
   admitted: "2026-10-01T00:00:00.000Z",
 });
-const prompt: GuestRequest = { t: "agent-prompt", sessionId: "s", text: "hi" };
+const prompt: GuestRequest = { t: "agent-prompt", sessionId: "s", frameId: "f", text: "hi" };
 
 describe("admission", () => {
   test("a browser the host doesn't know knocks, and is nowhere in until admitted", () => {
@@ -212,10 +212,9 @@ describe("the authority's checks", () => {
   test("edit members: edits; runs wait for the host, stopping doesn't; no terminals", () => {
     expect(mayEdit("edit")).toBe(true);
     expect(check("edit", prompt)).toEqual({ ok: true, approve: true });
-    expect(check("edit", { t: "agent-create", frameId: "f", agent: "claude" })).toEqual({
-      ok: true,
-      approve: true,
-    });
+    expect(check("edit", { t: "agent-config", sessionId: "s", configId: "m", value: "x" })).toEqual(
+      { ok: true, approve: true },
+    );
     expect(check("edit", { t: "agent-cancel", sessionId: "s" })).toEqual({
       ok: true,
       approve: false,

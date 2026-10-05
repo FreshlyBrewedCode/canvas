@@ -27,8 +27,8 @@ import { FrameShell, StatusDot } from "@/components/frame-shell";
 import { RemoteSelections } from "@/components/remote-selections";
 import { Button } from "@/components/ui/button";
 import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
-import { promptText, updateFrame, type Frame } from "@/lib/board";
-import { useRoom, useRoomState, useSession } from "@/lib/room-context";
+import { promptText, shownSession, updateFrame, type Frame } from "@/lib/board";
+import { useKindOptions, useRoom, useRoomState, useSession } from "@/lib/room-context";
 import {
   foldThread,
   groupSteps,
@@ -40,6 +40,7 @@ import {
 } from "@/lib/thread";
 import { browse } from "@/lib/prompt-history";
 import { cn } from "@/lib/utils";
+import { settingsOf, withSettings } from "../../shared/agent-settings";
 import { BOARD_SERVER_NAME, BOARD_TOOL_NAMES } from "../../shared/board-tools";
 import type { AgentConfigValue, AgentEvent, PlanEntry } from "../../shared/protocol";
 
@@ -113,7 +114,18 @@ function AgentThread({
   readOnly: boolean;
   room: ReturnType<typeof useRoomState>;
 }) {
-  const session = useSession(frame.id);
+  const sessionId = shownSession(frame);
+  const session = useSession(sessionId);
+  const kindOptions = useKindOptions(frame.agent);
+  // Until its agent runs, the session's settings are what its kind offers,
+  // with the values it last had (ADR 0012). The same while they read the same:
+  // a change waits for new options as the agent's answer.
+  const derived = kindOptions && withSettings(kindOptions, session?.meta.settings);
+  const derivedKey = JSON.stringify(derived);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stable = useMemo(() => derived, [derivedKey]);
+  const options = session?.options ?? stable;
+  const settings = session?.meta.settings ?? (options && settingsOf(options));
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const text = useMemo(() => promptText(room.doc, frame.id), [room.doc, frame.id]);
@@ -134,7 +146,7 @@ function AgentThread({
     setError(null);
     setSending(true);
     try {
-      await room.act({ t: "agent-prompt", sessionId: frame.id, text: prompt });
+      await room.act({ t: "agent-prompt", sessionId, frameId: frame.id, text: prompt });
       text.delete(0, text.length);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -179,8 +191,8 @@ function AgentThread({
   };
 
   const configure = (configId: string, value: AgentConfigValue) =>
-    room.act({ t: "agent-config", sessionId: frame.id, configId, value });
-  const mode = useModeCycle(session?.options, configure);
+    room.act({ t: "agent-config", sessionId, configId, value });
+  const mode = useModeCycle(options, configure);
   const controls = readOnly || !room.hostOnline;
 
   const hint = room.isHost
@@ -215,7 +227,7 @@ function AgentThread({
           turns={turns}
           onReuse={readOnly ? undefined : reuse}
           version={version}
-          loading={room.hostOnline && (session ? session.loading : !room.isHost)}
+          loading={room.hostOnline && (session ? session.loading : !room.sessionsKnown)}
         />
         <Plan events={events} version={version} />
         <div className="border-t" data-composer="">
@@ -236,13 +248,13 @@ function AgentThread({
           />
           <div className="flex items-center gap-2 px-2.5 pb-2">
             <AgentSettings
-              settings={session?.meta.settings}
-              options={session?.options}
+              settings={settings}
+              options={options}
               known={room.isHost || !!session}
               disabled={controls}
               onChange={configure}
             />
-            <ModeChip settings={session?.meta.settings} mode={mode} disabled={controls} />
+            <ModeChip settings={settings} mode={mode} disabled={controls} />
             <span className="text-muted-foreground flex-1 truncate text-[11px]">
               {error ? (
                 <span className="text-destructive">{error}</span>
@@ -256,7 +268,7 @@ function AgentThread({
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => void room.act({ t: "agent-cancel", sessionId: frame.id })}
+                onClick={() => void room.act({ t: "agent-cancel", sessionId })}
                 disabled={readOnly}
               >
                 <CircleStop /> Stop

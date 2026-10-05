@@ -8,6 +8,9 @@
  *   serve.json             the host link's base, for `canvas pair`
  *   board.bin              the latest Yjs state of the board
  *   sessions/<id>.ndjson   one agent session: a meta line, then its events
+ *                          (meta lines again as it changes)
+ *   agents.json            the settings each kind of agent offered a new
+ *                          session last (ADR 0012), shown before any runs
  *
  * Keeping the room stable across restarts keeps the links people already
  * have working, until the host resets the invite link (`rotateRoom`).
@@ -20,10 +23,18 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { AgentEvent, RoomSecrets, SessionMeta, SessionSnapshot } from "../shared/protocol";
+import type {
+  AgentEvent,
+  KindOptions,
+  RoomSecrets,
+  SessionMeta,
+  SessionSnapshot,
+} from "../shared/protocol";
+import { withDefaults } from "./session-meta";
 
 export type RoomFile = RoomSecrets;
 
@@ -95,21 +106,32 @@ export class Store {
     writeFileSync(join(this.root, "board.bin"), state);
   }
 
+  /** Every session's last meta and its events; logs from before ADR 0012 get their meta's new fields. */
   sessions(): SessionSnapshot[] {
     const dir = join(this.root, "sessions");
     return readdirSync(dir)
       .filter((name) => name.endsWith(".ndjson"))
       .flatMap((name) => {
+        const path = join(dir, name);
         let meta: SessionMeta | undefined;
         const events: AgentEvent[] = [];
-        for (const line of readFileSync(join(dir, name), "utf8").split("\n")) {
+        for (const line of readFileSync(path, "utf8").split("\n")) {
           if (!line) continue;
           const record = JSON.parse(line) as { meta?: SessionMeta; event?: AgentEvent };
           if (record.meta) meta = record.meta;
           if (record.event) events.push(record.event);
         }
-        return meta ? [{ meta, events }] : [];
+        return meta ? [{ meta: withDefaults(meta, events, statSync(path).mtimeMs), events }] : [];
       });
+  }
+
+  agentOptions(): KindOptions {
+    const path = join(this.root, "agents.json");
+    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as KindOptions) : {};
+  }
+
+  saveAgentOptions(options: KindOptions): void {
+    writeFileSync(join(this.root, "agents.json"), JSON.stringify(options, null, 2));
   }
 
   appendMeta(meta: SessionMeta): void {
