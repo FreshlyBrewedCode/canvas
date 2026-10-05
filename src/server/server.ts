@@ -67,6 +67,7 @@ export async function serve(options: ServeOptions) {
   const store = new Store(options.dir);
   excludeFromGit(options.dir);
   let room = await store.room();
+  const runtime = store.runtime();
   const owners = new Owners(store.root);
   const members = new Members(store.root);
   // A new code at every start while nobody is paired, and on request.
@@ -160,6 +161,7 @@ export async function serve(options: ServeOptions) {
         t: "welcome",
         version: options.version ?? null,
         room,
+        runtime,
         cwd: options.dir,
         agents: agentDefinitions.map(({ kind, label }) => ({ kind, label })),
         board: board ? Buffer.from(board).toString("base64") : null,
@@ -313,7 +315,7 @@ export async function serve(options: ServeOptions) {
     },
   });
 
-  return { server, room, pairing };
+  return { server, room, runtime, pairing };
 }
 
 function sendError(ws: ServerWebSocket<Conn>, error: unknown) {

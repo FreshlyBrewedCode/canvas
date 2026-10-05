@@ -35,6 +35,12 @@ canvas
   Kinds' settings before any process: `.canvas/agents.json`, probed once. Browsers get heads,
   logs on demand (`session-open`). Queries in `web/lib/sessions.ts`, the header's menu
   `components/conversation-menu.tsx`
+- frame addresses (ADR 0013, decisions 3–7): agent, file and terminal frames say where theirs are —
+  `runtime`, a file frame's `root`, a terminal's `pty` — absent meaning the board's own runtime (its
+  id in `.canvas/runtime.json`, sent in `welcome` and `RoomState`), its working dir, the frame's own
+  id. Nothing writes the defaults, `tidy` neither: boards from before are unchanged. `reach` and
+  `addressKey` in `shared/address.ts`; a frame elsewhere shows as not reachable (`Room.reachOf`,
+  `UnreachableFrame`) and nothing of it is opened or sent
 - comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with

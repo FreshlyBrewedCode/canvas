@@ -274,3 +274,42 @@ export function StatusDot({ status }: { status: "idle" | "running" | "waiting" |
     </span>
   );
 }
+
+/**
+ * A frame whose agent, file or terminal is on a runtime this board isn't
+ * connected to, or names none at all (ADR 0013, decision 7): nothing of it
+ * is opened or sent. It still moves and closes like any frame.
+ */
+export function UnreachableFrame({
+  frame,
+  readOnly,
+  reach,
+}: {
+  frame: Frame;
+  readOnly: boolean;
+  reach: "elsewhere" | "nowhere";
+}) {
+  const address = frame as { readonly runtime?: unknown; readonly root?: unknown };
+  const where = [
+    typeof address.runtime === "string" && `runtime ${address.runtime}`,
+    typeof address.root === "string" && `root ${address.root}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <FrameShell frame={frame} readOnly={readOnly}>
+      <div
+        data-frame-body=""
+        data-unreachable={reach}
+        className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center"
+      >
+        <p className="text-sm font-medium">Not reachable</p>
+        <p className="text-muted-foreground max-w-80 text-xs">
+          {reach === "elsewhere"
+            ? `This frame is on ${where || "another runtime"}, which this board isn't connected to.`
+            : "This frame names no runtime canvas knows."}
+        </p>
+      </div>
+    </FrameShell>
+  );
+}

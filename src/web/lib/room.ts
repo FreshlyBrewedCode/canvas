@@ -68,8 +68,10 @@ import type {
 import { Admissions, check, mayEdit, type Knock, type Step } from "./admission";
 import {
   allFrames,
+  frameReach,
   newConversation,
   showConversation,
+  shownPty,
   shownSession,
   tidy,
   type AgentFrame,
@@ -221,6 +223,7 @@ const MOVE_WAIT_MS = 3000;
 const LOG_LIMIT = 300;
 const TERM_SCROLLBACK = 200_000;
 const json = <T>(value: T) => value as never;
+const NOT_REACHABLE = "not reachable: that frame is on another runtime";
 
 export class Room {
   readonly doc = new Y.Doc();
@@ -425,7 +428,7 @@ export class Room {
   optionsFor(sessionId: string): ReadonlyArray<AgentConfigOption> | undefined {
     const session = this.sessions.get(sessionId);
     if (session) return session.options;
-    const frame = framesShowing(this.frames(), sessionId)[0];
+    const frame = framesShowing(this.here(), sessionId)[0];
     return frame && unbegunOptions(this.kinds.get(frame.agent), frame);
   }
 
@@ -1243,7 +1246,7 @@ export class Room {
     const actions = this.actions;
     const access = this.admissions.access(peerId);
     if (!actions || !access) return;
-    const shown = shownSessions(this.frames());
+    const shown = shownSessions(this.here());
     const sessions = [...this.sessions.values()];
     // All taken now: what changes from here on reaches the guest live.
     const messages: HostBroadcast[] = [
@@ -1312,7 +1315,7 @@ export class Room {
         this.sessionsKnown = true;
         for (const head of message.sessions) this.putSession(head, null);
         // The logs of the sessions frames show now come after this; others as frames show them.
-        this.shownHere = shownSessions(this.frames());
+        this.shownHere = shownSessions(this.here());
         this.emit("sessions");
         this.emit("room");
         return;
@@ -1499,6 +1502,7 @@ export class Room {
         this.emit("sessions");
         this.roomState = {
           hostPeerId: selfId,
+          runtime: message.runtime,
           cwd: message.cwd,
           agents: message.agents,
           version: message.version,
@@ -1600,6 +1604,28 @@ export class Room {
   }
 
   /**
+   * The board's own runtime's id (ADR 0013, decision 3): what an absent
+   * `runtime` means; null until the welcome, or the host, says.
+   */
+  get runtime(): string | null {
+    return this.roomState?.runtime ?? null;
+  }
+
+  /** Where a frame's agent, file or terminal is, from here (`frameReach`). */
+  reachOf(frame: Frame) {
+    return frameReach(frame, this.runtime);
+  }
+
+  /**
+   * The frames whose agent, file or terminal is on a runtime we reach: the
+   * board's own (ADR 0013, decision 7). Nothing is opened, sent or asked
+   * for the others; they show as not reachable.
+   */
+  private here(): Frame[] {
+    return this.frames().filter((frame) => this.reachOf(frame) === "own");
+  }
+
+  /**
    * Host: run an agent's board tool call against the board, and answer it.
    * A drawing's elements are made before, and its image after (ADR 0009).
    */
@@ -1649,7 +1675,7 @@ export class Room {
    */
   private syncResources() {
     if (!this.isHost || this.server?.status !== "open") return;
-    const frames = this.frames();
+    const frames = this.here();
     const paths = new Set(
       frames.flatMap((frame) => (frame.type === "file" && frame.path ? [frame.path] : [])),
     );
@@ -1686,10 +1712,11 @@ export class Room {
           this.server.send({ t: "kind-probe", agent: frame.agent });
         }
       }
-      if (frame.type === "terminal" && !this.opened.has(frame.id)) {
-        this.opened.add(frame.id);
-        this.terminals.delete(frame.id);
-        this.server.send({ t: "term-open", id: frame.id, cols: 80, rows: 24 });
+      const pty = frame.type === "terminal" ? shownPty(frame) : null;
+      if (pty && !this.opened.has(pty)) {
+        this.opened.add(pty);
+        this.terminals.delete(pty);
+        this.server.send({ t: "term-open", id: pty, cols: 80, rows: 24 });
       }
     }
     const shown = shownSessions(frames);
@@ -1704,7 +1731,7 @@ export class Room {
    */
   private openShown() {
     if (this.isHost || !this.shownHere) return;
-    const shown = shownSessions(this.frames());
+    const shown = shownSessions(this.here());
     for (const sessionId of shown)
       if (!this.shownHere.has(sessionId) && this.sessions.get(sessionId)?.pending)
         this.askLog(sessionId);
@@ -1747,6 +1774,7 @@ export class Room {
       case "agent-prompt": {
         const { sessionId, frameId, text } = request;
         const frame = promptFrame(this.frames(), frameId, sessionId);
+        if (this.reachOf(frame) !== "own") throw new Error(NOT_REACHABLE);
         const session = this.sessions.get(sessionId);
         if (session && session.meta.status !== "idle") throw new Error("the agent is still busy");
         // The first prompt begins the session (ADR 0012, decision 4), as the frame says.
@@ -1760,7 +1788,7 @@ export class Room {
       case "agent-config": {
         const { sessionId, configId, value } = request;
         // Not begun yet: the change begins it, as the frame showing it says.
-        const frame = framesShowing(this.frames(), sessionId)[0];
+        const frame = framesShowing(this.here(), sessionId)[0];
         const start = frame && !this.sessions.has(sessionId) ? startIn(frame, false) : undefined;
         this.server.send({
           t: "agent-config",
