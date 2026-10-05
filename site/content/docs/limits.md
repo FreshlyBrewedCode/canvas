@@ -32,7 +32,8 @@ canvas is a prototype. These are known, and not bugs to report.
   theirs. A reset moves only the members on the board: anyone else needs the new link, members
   who were away included.
 - **Late joiners receive whole threads**, shortest first, each in one message: a very long thread
-  takes a while to appear, and closed frames' threads are not sent.
+  takes a while to appear. They get the threads frames show; another one comes when a frame
+  switches to it.
 
 ## Agents
 
@@ -42,6 +43,10 @@ canvas is a prototype. These are known, and not bugs to report.
 - **Tool output is cut** to its first 3,000 and last 1,000 characters, and images a tool returns
   (a screenshot the agent reads, a drawing) show as a placeholder. The agent itself gets them in full.
 - **Agents prompt other agents only through people**: an agent frame an agent opens gets a draft.
+- **Conversations** are listed per frame: there is no list of the whole board's yet, and a
+  frame's are all of its agent. A frame can't switch while its agent works, so a conversation
+  doesn't run on in the background. **↑** in the draft goes through the shown conversation's
+  prompts only.
 
 ## Frames
 

@@ -7,7 +7,7 @@ order: 7
 
 | Term              | Meaning                                                                    |
 | ----------------- | -------------------------------------------------------------------------- |
-| **agent frame**   | A frame running one coding-agent session. [Agent](/docs/agent)              |
+| **agent frame**   | A frame showing one conversation with a coding agent. [Agent](/docs/agent)  |
 | **agent settings**| An agent session's model, reasoning effort, mode and so on, as the agent offers them |
 | **approval**      | The host's yes or no to something an edit guest wants to run. [Guests](/docs/guests#approvals) |
 | **board**         | The shared surface all frames live on. One per project                      |
@@ -18,6 +18,7 @@ order: 7
 | **cluster**       | A group of rows of frames, in a line with others; it can have a name. [Board](/docs/board#layout) |
 | **column**        | One place in a row, as wide as its frame. [Board](/docs/board#layout)       |
 | **code tour**     | A files frame an agent makes to walk through code: a guide, then the files at their lines. [Skills](/docs/skills#code-tour) |
+| **conversation**  | One session with a coding agent: its thread, its settings. An agent frame starts new ones and switches between them. [Agent](/docs/agent#conversations) |
 | **comment**       | A markdown note on lines of a file, kept by the files frame it was written in. [Files](/docs/files#comments) |
 | **drawing frame** | An Excalidraw whiteboard everyone draws on, agents included. [Drawing](/docs/drawing) |
 | **file list**     | Files an agent picked for a files frame's tree, at display paths it chose. [Files](/docs/files#lists) |

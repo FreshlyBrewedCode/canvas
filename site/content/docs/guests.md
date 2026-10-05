@@ -42,7 +42,7 @@ theirs as a badge.
 | Role               | Board                              | Runs on the host's machine      |
 | ------------------ | ---------------------------------- | ------------------------------- |
 | **view**           | Read-only; sees the files others open, no file tree | Nothing                  |
-| **edit**           | Edits frames and prompt drafts, opens files, browses the tree | Only after the host approves |
+| **edit**           | Edits frames and prompt drafts, opens files, browses the tree, switches [conversations](/docs/agent#conversations) | Only after the host approves |
 
 A view member's edits never leave their browser: the host drops them.
 
