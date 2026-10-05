@@ -5,6 +5,8 @@
 Accepted, 2026-09-25 (prototype). Validated end to end in `docs/findings/03-prototype-validation.md`.
 Amended by ADR 0011: a key per browser, the host admits each one with its own role, the host's
 browser pairs once and then authenticates by signature, and presence goes only among members.
+Amended by ADR 0013: the door to the machine is its owner's paired browser, and authority over
+the board is a role apart, which can move off the host's tab.
 
 ## Context
 
