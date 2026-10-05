@@ -1,0 +1,19 @@
+{
+  // The board's authority without a DOM (ADR 0013, #110): `room/authority.ts`
+  // and everything it imports typecheck with Bun's globals and no DOM lib, and
+  // React resolves to nothing. Part of `bun run typecheck`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["bun"],
+    "paths": {
+      "@/*": ["./src/web/*"],
+      "react": ["./src/web/lib/room/no-dom/no-react.d.ts"],
+      "react/*": ["./src/web/lib/room/no-dom/no-react.d.ts"],
+      "react-dom": ["./src/web/lib/room/no-dom/no-react.d.ts"],
+      "react-dom/*": ["./src/web/lib/room/no-dom/no-react.d.ts"]
+    }
+  },
+  "include": ["src/web/lib/room/authority.ts", "src/web/lib/room/no-dom/env.d.ts"],
+  "exclude": []
+}

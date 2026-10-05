@@ -16,21 +16,9 @@
  * them (`showLink`), so a reload comes back to the board.
  */
 
-import type { RelayVia } from "../../shared/protocol";
+import type { BoardLink, Identity, RelayLink } from "./link-types";
 
-export interface RelayLink {
-  readonly url: string;
-  readonly via: RelayVia;
-  readonly token: string;
-}
-
-export interface BoardLink {
-  readonly roomId: string;
-  readonly key: string;
-  readonly hostPublicKey: string;
-  readonly host: { readonly server: string; readonly pair: string | null } | null;
-  readonly relay: RelayLink | null;
-}
+export type { BoardLink, Identity, RelayLink } from "./link-types";
 
 export function readLink(location: Location = window.location): BoardLink | null {
   const roomId = new URLSearchParams(location.search).get("room");
@@ -91,11 +79,6 @@ function fragment(link: BoardLink): URLSearchParams {
 }
 
 // ---------------------------------------------------------------------------
-
-export interface Identity {
-  readonly name: string;
-  readonly color: string;
-}
 
 /** Presence hues: distinct at a glance, readable as a label background with dark text. */
 const PRESENCE = [

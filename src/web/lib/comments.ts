@@ -11,7 +11,6 @@
  * never race to write the same move.
  */
 
-import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
 import { sameAddress, type UncheckedAddress } from "../../shared/address";
@@ -152,7 +151,7 @@ export const rangeOf = (comment: Comment): LineRange => ({
 });
 
 /** An immutable snapshot per frame, rebuilt only when its comments change. */
-class CommentsStore {
+export class CommentsStore {
   private snapshot: Comment[];
   constructor(
     private readonly doc: Y.Doc,
@@ -170,10 +169,11 @@ class CommentsStore {
 }
 const stores = new WeakMap<Y.Doc, Map<string, CommentsStore>>();
 
-export function useComments(doc: Y.Doc, frameId: string): Comment[] {
+/** A frame's comments' snapshot store, one per frame (`useComments`, `hooks/use-doc.ts`). */
+export function commentsStore(doc: Y.Doc, frameId: string): CommentsStore {
   let perDoc = stores.get(doc);
   if (!perDoc) stores.set(doc, (perDoc = new Map()));
   let store = perDoc.get(frameId);
   if (!store) perDoc.set(frameId, (store = new CommentsStore(doc, frameId)));
-  return useSyncExternalStore(store.subscribe, store.get);
+  return store;
 }

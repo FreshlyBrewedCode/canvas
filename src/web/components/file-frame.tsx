@@ -51,10 +51,10 @@ import {
   rangeOf,
   removeComment,
   settle,
-  useComments,
   type Comment,
   type Editor,
 } from "@/lib/comments";
+import { useComments } from "@/hooks/use-doc";
 import { canonical, type Address } from "../../shared/address";
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import { quoteOf, relocate } from "../../shared/comments";

@@ -1,5 +1,5 @@
 /**
- * How a board's peers reach each other (ADR 0008). `room.ts` sees only this:
+ * How a board's peers reach each other (ADR 0008). The room (`room/participant.ts`) sees only this:
  * named channels to one peer or everyone, request/reply to one peer, peers
  * joining and leaving. Three adapters, picked by the link:
  *
@@ -11,30 +11,11 @@
  */
 
 import type { RelayInfo } from "../connection";
+import type { Channel, Payload, RequestChannel } from "./channel";
 
 export type TransportKind = "p2p" | "relay-signal" | "relay";
 
-/** Anything JSON, or bytes. */
-export type Payload = unknown;
-
-export interface MessageContext {
-  readonly peerId: string;
-}
-
-export interface SendOptions {
-  /** One peer or several; absent: everyone. */
-  readonly target?: string | ReadonlyArray<string>;
-}
-
-export interface Channel<T extends Payload = Payload> {
-  send(data: T, options?: SendOptions): Promise<void>;
-  onMessage: ((data: T, context: MessageContext) => void | Promise<void>) | null;
-}
-
-export interface RequestChannel<T extends Payload = Payload, R extends Payload = Payload> {
-  request(data: T, options: { readonly target: string; readonly timeoutMs?: number }): Promise<R>;
-  onRequest: ((data: T, context: MessageContext) => R | Promise<R>) | null;
-}
+export type { Channel, MessageContext, Payload, RequestChannel, SendOptions } from "./channel";
 
 /** What the connection dialog shows about a transport. */
 export interface TransportDiagnostics {
