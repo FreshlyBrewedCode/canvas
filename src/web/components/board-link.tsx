@@ -4,6 +4,7 @@ import { defaultUrlTransform, type Components } from "react-markdown";
 import type * as Y from "yjs";
 
 import { framesOf, readFrame, type FrameType } from "@/lib/board";
+import { canonical, sameAddress, type Address } from "../../shared/address";
 import {
   formatHash,
   parseCodeRef,
@@ -23,8 +24,12 @@ const GoContext = createContext<Go>(() => {});
 export const GoProvider = GoContext.Provider;
 export const useGo = () => useContext(GoContext);
 
-/** Where links sit: the frame (new frames go beside it) and the file, for relative paths. */
-export interface LinkScopeValue {
+/**
+ * Where links sit: the frame (new frames go beside it) and the file, for
+ * relative paths, and their address (ADR 0013): the file's, else the agent
+ * frame's runtime. Absent: the board's own runtime and working dir.
+ */
+export interface LinkScopeValue extends Address {
   readonly frame: string | null;
   readonly file?: string | null;
 }
@@ -35,7 +40,8 @@ export const LinkScope = ScopeContext.Provider;
 export function useLinkBase(): LinkBase & LinkScopeValue {
   const room = useRoomState();
   const scope = useContext(ScopeContext);
-  const cwd = room.roomState?.cwd ?? null;
+  // Absolute paths are of the runtime's working dir: we know the board's own.
+  const cwd = scope.runtime === undefined ? (room.roomState?.cwd ?? null) : null;
   return useMemo(() => ({ ...scope, cwd }), [scope, cwd]);
 }
 
@@ -154,10 +160,15 @@ const FRAME_ICONS: Record<FrameType, typeof FileCode> = {
  */
 function useFound(target: LinkTarget | null): { type: FrameType; title: string } | boolean {
   const room = useRoom();
-  const tree = useTree();
+  // The tree of the target's root (ADR 0013): only the own runtime's comes.
+  const tree = useTree(canonical(target ?? {}, room.runtime));
   const paths = useMemo(() => (tree ? new Set(tree) : null), [tree]);
   const frameKey = useFrameSummary(room.doc, target?.frame ?? null);
-  const shown = useShown(room.doc, !paths && !target?.frame ? (target?.path ?? null) : null);
+  const shown = useShown(
+    room.doc,
+    !paths && !target?.frame && target?.path ? target : null,
+    room.runtime,
+  );
   if (!target) return false;
   if (target.frame) {
     if (!frameKey) return false;
@@ -184,16 +195,19 @@ function useFrameSummary(doc: Y.Doc, frameId: string | null): string {
   );
 }
 
-/** Does any frame show `path`? */
-function useShown(doc: Y.Doc, path: string | null): boolean {
+/** Does any frame show the file `target` names, at its address? */
+function useShown(doc: Y.Doc, target: LinkTarget | null, own: string | null): boolean {
   return useSyncExternalStore(
     (onChange) => {
       framesOf(doc).observeDeep(onChange);
       return () => framesOf(doc).unobserveDeep(onChange);
     },
     () => {
-      if (!path) return false;
-      for (const map of framesOf(doc).values()) if (map.get("path") === path) return true;
+      if (!target?.path) return false;
+      for (const map of framesOf(doc).values()) {
+        const at = { runtime: map.get("runtime"), root: map.get("root") };
+        if (map.get("path") === target.path && sameAddress(at, target, own)) return true;
+      }
       return false;
     },
   );

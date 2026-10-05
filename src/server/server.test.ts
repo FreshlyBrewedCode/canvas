@@ -278,3 +278,94 @@ describe("the runtime id (ADR 0013, decision 3)", async () => {
     expect(saved()).toEqual({ id });
   });
 });
+
+describe("addresses not its own are refused (ADR 0013, decision 7)", async () => {
+  const { open, answer, pairing, runtime } = await start();
+  const host = await answer(await open(), await browserKey(), pairing!);
+  const send = (message: object) => host.ws.send(JSON.stringify(message));
+  const errors = () => host.received.filter((m) => m.t === "error").length;
+  /** Send `message`, and wait for the error it is answered with. */
+  const refused = async (message: object) => {
+    const before = errors();
+    send(message);
+    await until(`${JSON.stringify(message)} refused`, () => errors() > before);
+  };
+  const files = () => host.received.flatMap((m) => (m.t === "file" ? [m] : []));
+
+  test("a file of another runtime or root is denied, named as asked", async () => {
+    send({ t: "file-open", path: "README.md", runtime: "laptop-2" });
+    send({ t: "file-open", path: "README.md", root: "worktree-1" });
+    send({ t: "file-open", path: "canvas:scratch/a.md", root: "worktree-1" });
+    await until("three answers", () => files().length === 3);
+    expect(files()).toEqual([
+      {
+        t: "file",
+        runtime: "laptop-2",
+        path: "README.md",
+        file: { kind: "denied", reason: "not this runtime's" },
+      },
+      {
+        t: "file",
+        root: "worktree-1",
+        path: "README.md",
+        file: { kind: "denied", reason: "not this runtime's" },
+      },
+      {
+        t: "file",
+        root: "worktree-1",
+        path: "canvas:scratch/a.md",
+        file: { kind: "denied", reason: "not this runtime's" },
+      },
+    ]);
+  });
+
+  test("its own id is its own", async () => {
+    send({ t: "file-open", path: "README.md", runtime });
+    await until("the file", () => files().some((m) => m.file.kind === "text"));
+    send({ t: "file-close", path: "README.md", runtime });
+  });
+
+  test("files, the tree, terminals and sessions of another runtime: an error, nothing done", async () => {
+    const other = { runtime: "laptop-2" };
+    for (const message of [
+      { t: "file-close", path: "README.md", ...other },
+      { t: "tree-watch", ...other },
+      { t: "tree-watch", root: "worktree-1" },
+      { t: "term-open", pty: "t1", cols: 80, rows: 24, ...other },
+      { t: "term-input", pty: "t1", data: "echo hi\n", ...other },
+      { t: "term-resize", pty: "t1", cols: 80, rows: 24, ...other },
+      {
+        t: "agent-prompt",
+        sessionId: "s1",
+        frameId: "f1",
+        agent: "claude",
+        text: "hi",
+        author: { name: "Karl", color: "#f97316" },
+        ...other,
+      },
+      { t: "agent-cancel", sessionId: "s1", ...other },
+      { t: "agent-config", sessionId: "s1", configId: "model", value: "x", ...other },
+      { t: "agent-release", sessionId: "s1", ...other },
+      { t: "agent-permission", sessionId: "s1", requestId: "r", optionId: null, by: "K", ...other },
+      { t: "session-open", sessionId: "s1", ...other },
+      { t: "kind-probe", agent: "claude", ...other },
+      // A root names another place even on this runtime.
+      { t: "session-open", sessionId: "s1", root: "worktree-1" },
+    ])
+      await refused(message);
+    await Bun.sleep(100);
+    expect(host.received.filter((m) => ["tree", "term-data", "agent-meta"].includes(m.t))).toEqual(
+      [],
+    );
+  });
+
+  test("a terminal of its own is named by its pty", async () => {
+    send({ t: "term-open", pty: "t1", cols: 80, rows: 24 });
+    send({ t: "term-input", pty: "t1", data: "echo addressed-$((40 + 2))\n" });
+    await until("its output", () =>
+      host.received.some(
+        (m) => m.t === "term-data" && m.pty === "t1" && m.data.includes("addressed-42"),
+      ),
+    );
+  });
+});

@@ -3,7 +3,7 @@
  *
  * A link names a frame, a file, or both, and optionally a place inside:
  *
- *   #frame=<id>[&path=<file>][&lines=10-20][&heading=<slug>][&comment=<id>]
+ *   #frame=<id>[&runtime=<id>][&root=<id>][&path=<file>][&lines=10-20][&heading=<slug>][&comment=<id>]
  *   src/auth/session.ts, src/auth/session.ts#L10-L20, /abs/cwd/src/a.ts:42
  *   docs/setup.md#install, #install (a heading of the file the link is in)
  *   canvas:scratch/overview.md
@@ -12,15 +12,23 @@
  * it (`…#k=…&pk=…&frame=abc`) is a deep link. File paths are read the way
  * GitHub, editors and agents write them. Everything here is text: whether a
  * path is in the shared set, or a frame on the board, is for the caller.
+ *
+ * A file is where its address says (ADR 0013, decision 5): a runtime and a
+ * root, absent for the board's own and its working dir, written only when
+ * not those. A relative path takes the address of where the link is.
  */
 
+import type { Address } from "../../shared/address";
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import type { LineRange } from "./board";
 
-/** A place on the board. Without `frame`: wherever `path` shows, or a new frame. */
-export interface LinkTarget {
+/**
+ * A place on the board. Without `frame`: wherever `path` shows (a frame with
+ * the whole address), or a new frame.
+ */
+export interface LinkTarget extends Address {
   readonly frame?: string;
-  /** Working-dir-relative, or a scratch file. */
+  /** Root-relative, or a scratch file (of the runtime: no root). */
   readonly path?: string;
   readonly lines?: LineRange;
   /** A markdown heading, by its slug (`slug`). */
@@ -33,15 +41,18 @@ export type Link =
   | { readonly kind: "board"; readonly target: LinkTarget }
   | { readonly kind: "web"; readonly url: string };
 
-/** Where a link sits, to read relative paths against. */
-export interface LinkBase {
-  /** The working dir: absolute paths under it are project files. */
+/**
+ * Where a link sits, to read relative paths against: the file it is in, else
+ * the agent frame whose reply it is in, and their address (ADR 0013).
+ */
+export interface LinkBase extends Address {
+  /** Its runtime's working dir: absolute paths under it are files of that runtime. */
   readonly cwd?: string | null;
   /** The file the link is in; none for an agent's reply or a comment (the working dir). */
   readonly file?: string | null;
 }
 
-const BOARD_KEYS = ["frame", "path", "lines", "heading", "comment"] as const;
+const BOARD_KEYS = ["frame", "runtime", "root", "path", "lines", "heading", "comment"] as const;
 
 /** A link's `href`, or null for one that goes nowhere canvas can follow. */
 export function parseLink(href: string, base: LinkBase = {}): Link | null {
@@ -52,7 +63,9 @@ export function parseLink(href: string, base: LinkBase = {}): Link | null {
     if (target) return { kind: "board", target };
     // A heading of this file; elsewhere there is nothing to scroll.
     const heading = headingOf(text.slice(1));
-    return base.file && heading ? { kind: "board", target: { path: base.file, heading } } : null;
+    return base.file && heading
+      ? { kind: "board", target: { ...addressFor(base.file, base), path: base.file, heading } }
+      : null;
   }
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(text)?.[1]?.toLowerCase();
   if (scheme === "http" || scheme === "https" || scheme === "mailto")
@@ -72,13 +85,15 @@ export function parseCodeRef(code: string, base: LinkBase = {}): LinkTarget | nu
   if (!text || text.length > 300 || /[\s`'"<>|*?(){}[\]\\,;]/.test(text)) return null;
   if (!/[./]/.test(text) || /^[-.]+$/.test(text) || /^[a-z][a-z0-9+.-]*:\/\//i.test(text))
     return null;
-  return fileTarget(text, { cwd: base.cwd });
+  return fileTarget(text, { cwd: base.cwd, runtime: base.runtime, root: base.root });
 }
 
 /** The board part of a fragment (`#k=…&frame=…`), if it has one. */
 export function readHash(fragment: string): LinkTarget | null {
   const params = new URLSearchParams(fragment.replace(/^#/, ""));
   const frame = params.get("frame") || undefined;
+  const runtime = params.get("runtime") || undefined;
+  const root = params.get("root") || undefined;
   const path = params.get("path") || undefined;
   if (!frame && !path) return null;
   const lines = linesOf(params.get("lines") ?? "");
@@ -86,6 +101,8 @@ export function readHash(fragment: string): LinkTarget | null {
   const comment = (frame && params.get("comment")) || undefined;
   return {
     ...(frame && { frame }),
+    ...(runtime && { runtime }),
+    ...(root && { root }),
     ...(path && { path: normalize(path) ?? path }),
     ...(lines && { lines }),
     ...(heading && { heading }),
@@ -97,6 +114,8 @@ export function readHash(fragment: string): LinkTarget | null {
 export function formatHash(target: LinkTarget): string {
   const params = new URLSearchParams();
   if (target.frame) params.set("frame", target.frame);
+  if (target.runtime) params.set("runtime", target.runtime);
+  if (target.root) params.set("root", target.root);
   if (target.path) params.set("path", target.path);
   if (target.lines)
     params.set(
@@ -153,9 +172,21 @@ function fileTarget(text: string, base: LinkBase): LinkTarget | null {
       lines = range(Number(suffix[2]), Number(suffix[3] ?? suffix[2]));
     }
   }
-  const path = resolve(decode(raw), base);
+  const decoded = decode(raw);
+  const path = resolve(decoded, base);
   if (!path) return null;
-  return { path, ...(lines && { lines }), ...(heading && { heading }) };
+  // An absolute path is of the runtime's working dir: its main root.
+  const at = addressFor(path, decoded.startsWith("/") ? { runtime: base.runtime } : base);
+  return { ...at, path, ...(lines && { lines }), ...(heading && { heading }) };
+}
+
+/** The address of `path`, read where `base` is: scratch files are the runtime's, in no root. */
+function addressFor(path: string, base: Address): Address {
+  const { runtime, root } = base;
+  return {
+    ...(runtime && { runtime }),
+    ...(root && !path.startsWith(SCRATCH_PREFIX) && { root }),
+  };
 }
 
 function resolve(raw: string, base: LinkBase): string | null {

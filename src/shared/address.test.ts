@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { addressKey, isRuntimeId, reach, sameAddress } from "./address";
+import { addressKey, canonical, isRuntimeId, reach, sameAddress } from "./address";
 
 const OWN = "Rt0wn-runtime";
 
@@ -46,5 +46,21 @@ describe("an address and the board's own runtime", () => {
     expect(other).not.toBe("s1");
     expect(addressKey({ runtime: "third" }, OWN, "s1")).not.toBe(other);
     expect(addressKey({ runtime: "other", root: "r" }, OWN, "s1")).not.toBe(other);
+  });
+});
+
+describe("canonical: an address as writers write it", () => {
+  test("the own runtime and the working dir are left absent", () => {
+    expect(canonical({}, OWN)).toEqual({});
+    expect(canonical({ runtime: OWN }, OWN)).toEqual({});
+  });
+
+  test("another runtime or a root is kept, and nothing else", () => {
+    expect(canonical({ runtime: "other" }, OWN)).toEqual({ runtime: "other" });
+    expect(canonical({ runtime: OWN, root: "r" }, OWN)).toEqual({ root: "r" });
+    expect(sameAddress({ runtime: OWN, root: "r" }, { root: "r" }, OWN)).toBe(true);
+    expect(canonical({ runtime: "other", path: "a.ts" } as never, OWN)).toEqual({
+      runtime: "other",
+    });
   });
 });

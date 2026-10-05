@@ -31,6 +31,7 @@ import { domSurface, useFollowScroll } from "@/hooks/use-follow-scroll";
 import { useFollowTreePanel, type TreePanel } from "@/hooks/use-follow-tree";
 import {
   addFrame,
+  atAddress,
   fileView,
   hasPreview,
   isHtml,
@@ -45,6 +46,7 @@ import {
 import {
   addComment,
   editComment,
+  isOn,
   mayChange,
   rangeOf,
   removeComment,
@@ -53,6 +55,7 @@ import {
   type Comment,
   type Editor,
 } from "@/lib/comments";
+import { canonical, type Address } from "../../shared/address";
 import { SCRATCH_PREFIX } from "../../shared/board-tools";
 import { quoteOf, relocate } from "../../shared/comments";
 import { parseLink, Slugger } from "@/lib/board-link";
@@ -78,8 +81,14 @@ const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
  */
 export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly: boolean }) {
   const room = useRoom();
-  const file = useFile(frame.path);
-  const allPaths = useTree();
+  // Where its file is (ADR 0013): the board's own runtime and working dir unless it says.
+  const { runtime, root } = room.addressOf(frame);
+  const at = useMemo<Address>(
+    () => ({ ...(runtime !== undefined && { runtime }), ...(root !== undefined && { root }) }),
+    [runtime, root],
+  );
+  const file = useFile(frame.path, at);
+  const allPaths = useTree(at);
   const previewable = hasPreview(frame.path);
   const scratch = frame.path.startsWith(SCRATCH_PREFIX);
   const view = fileView(frame);
@@ -114,20 +123,23 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   useEffect(() => {
     latest.current = frame;
   });
+  /** Show a file: of the frame's address, unless it is at another (`where`: a list entry's, a comment's). */
   const show = useCallback(
-    (path: string, lines: LineRange | null, title: string, newFrame: boolean) => {
+    (path: string, lines: LineRange | null, title: string, newFrame: boolean, where?: Address) => {
       const { id, w, h, files } = latest.current;
+      const address = canonical(where ?? latest.current, room.runtime);
       if (newFrame)
         own(room.doc, () =>
           addFrame(
             room.doc,
-            { type: "file", path, title, lines },
+            { type: "file", ...address, path, title, lines },
             { anchor: id, side: "right" },
             { w, h },
           ),
         );
       else
         updateFrame(room.doc, id, {
+          ...atAddress(address),
           path,
           view: null,
           lines,
@@ -135,7 +147,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
           ...(!files?.length && { title }),
         });
     },
-    [room.doc],
+    [room],
   );
   const open = useCallback(
     (path: string, newFrame: boolean) => show(path, null, basename(path), newFrame),
@@ -144,7 +156,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   const openEntry = useCallback(
     (display: string, newFrame: boolean) => {
       const entry = latest.current.files?.find((e) => e.display === display);
-      if (entry) show(entry.path, entry.lines ?? null, basename(display), newFrame);
+      if (entry) show(entry.path, entry.lines ?? null, basename(display), newFrame, entry);
     },
     [show],
   );
@@ -155,25 +167,30 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
     [room],
   );
   const text = file?.kind === "text" ? file.text : file?.kind === "missing" ? "" : null;
+  // Of files at the frame's address: the tree's.
   const counts = useMemo(() => {
     const byPath = new Map<string, number>();
-    for (const comment of comments) byPath.set(comment.path, (byPath.get(comment.path) ?? 0) + 1);
+    for (const comment of comments)
+      if (isOn(comment, comment.path, at, room.runtime))
+        byPath.set(comment.path, (byPath.get(comment.path) ?? 0) + 1);
     return byPath;
-  }, [comments]);
+  }, [comments, at, room.runtime]);
   const [commentedOnly, setCommentedOnly] = useState(false);
   const filtering = commentedOnly && counts.size > 0;
 
   // The host moves the shown file's comments along as it changes.
   const shownIds = comments
-    .filter((c) => c.path === frame.path)
+    .filter((c) => isOn(c, frame.path, at, room.runtime))
     .map((c) => c.id)
     .join();
   useEffect(() => {
-    if (room.isHost && frame.path && text !== null) settle(room.doc, frame.id, frame.path, text);
-  }, [room, frame.id, frame.path, text, shownIds]);
+    if (room.isHost && frame.path && text !== null)
+      settle(room.doc, frame.id, frame.path, text, at, room.runtime);
+  }, [room, frame.id, frame.path, at, text, shownIds]);
 
   const openComment = useCallback(
-    (comment: Comment) => show(comment.path, rangeOf(comment), basename(comment.path), false),
+    (comment: Comment) =>
+      show(comment.path, rangeOf(comment), basename(comment.path), false, comment),
     [show],
   );
 
@@ -229,7 +246,9 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
   );
   const allBadge = useCallback((path: string) => badgeOf([], path), [badgeOf]);
   const badgeKey = [...counts].join();
-  const selectedEntry = list ? (entryFor(list, frame.path, frame.lines)?.display ?? "") : "";
+  const selectedEntry = list
+    ? (entryFor(list, frame.path, frame.lines, at, room.runtime)?.display ?? "")
+    : "";
 
   const body = (
     <FileBody
@@ -240,6 +259,7 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
       source={(text) => (
         <CommentedSource
           frameId={frame.id}
+          at={at}
           path={frame.path}
           text={text}
           lines={frame.lines}
@@ -248,8 +268,10 @@ export function FileFrame({ frame, readOnly }: { frame: FileFrameData; readOnly:
           readOnly={readOnly}
         />
       )}
-      preview={(text) => <MarkdownPreview frameId={frame.id} path={frame.path} text={text} />}
-      html={(text) => <HtmlPreview frameId={frame.id} path={frame.path} html={text} />}
+      preview={(text) => (
+        <MarkdownPreview frameId={frame.id} at={at} path={frame.path} text={text} />
+      )}
+      html={(text) => <HtmlPreview frameId={frame.id} at={at} path={frame.path} html={text} />}
     />
   );
 
@@ -453,6 +475,7 @@ function ToolbarButton({
  */
 function CommentedSource({
   frameId,
+  at,
   path,
   text,
   lines,
@@ -461,6 +484,8 @@ function CommentedSource({
   readOnly,
 }: {
   frameId: string;
+  /** The file's address (ADR 0013): its comments are at it. */
+  at: Address;
   path: string;
   text: string;
   lines: LineRange | null | undefined;
@@ -481,9 +506,9 @@ function CommentedSource({
   const placed = useMemo(
     () =>
       comments
-        .filter((comment) => comment.path === path)
+        .filter((comment) => isOn(comment, path, at, room.runtime))
         .map((comment) => ({ comment, at: relocate(text, comment.quote, comment.start) })),
-    [comments, path, text],
+    [comments, path, at, room.runtime, text],
   );
   const notes = useMemo(() => {
     const at = new Set(placed.map(({ at }) => at?.end ?? 0));
@@ -512,6 +537,7 @@ function CommentedSource({
             const quote = quoteOf(text, draft.start, draft.end);
             if (quote === null) return setDraft(null);
             addComment(room.doc, frameId, {
+              ...at,
               path,
               start: draft.start,
               end: draft.end,
@@ -617,7 +643,17 @@ const textOf = (node: ElementContent): string =>
 const REHYPE = [keyBlocks, slugHeadings];
 const REMARK = [remarkGfm];
 
-function MarkdownPreview({ frameId, path, text }: { frameId: string; path: string; text: string }) {
+function MarkdownPreview({
+  frameId,
+  at,
+  path,
+  text,
+}: {
+  frameId: string;
+  at: Address;
+  path: string;
+  text: string;
+}) {
   const scroller = useRef<HTMLDivElement>(null);
   useFollowScroll(
     frameId,
@@ -638,8 +674,8 @@ function MarkdownPreview({ frameId, path, text }: { frameId: string; path: strin
     }
     revealed(frameId, reveal);
   }, [reveal, frameId, text]);
-  // Relative links are the file's own.
-  const scope = useMemo(() => ({ frame: frameId, file: path }), [frameId, path]);
+  // Relative links are the file's own, at its address.
+  const scope = useMemo(() => ({ frame: frameId, file: path, ...at }), [frameId, path, at]);
   return (
     <div ref={scroller} data-frame-body="" className="h-full overflow-auto">
       <div data-sel-root={frameId} data-sel-path={path} className="relative p-4">
@@ -672,7 +708,17 @@ function MarkdownPreview({ frameId, path, text }: { frameId: string; path: strin
  * on one to us, and we follow it as a link in markdown. Another HTML file
  * opens in this frame.
  */
-function HtmlPreview({ frameId, path, html }: { frameId: string; path: string; html: string }) {
+function HtmlPreview({
+  frameId,
+  at,
+  path,
+  html,
+}: {
+  frameId: string;
+  at: Address;
+  path: string;
+  html: string;
+}) {
   const iframe = useRef<HTMLIFrameElement>(null);
   const go = useGo();
   const base = useLinkBase();
@@ -684,14 +730,14 @@ function HtmlPreview({ frameId, path, html }: { frameId: string; path: string; h
       if (event.source !== iframe.current?.contentWindow) return;
       const href = bridgedLink(event.data, token);
       if (href === null) return;
-      const link = parseLink(href, { cwd: base.cwd, file: path });
+      const link = parseLink(href, { ...at, cwd: at.runtime ? null : base.cwd, file: path });
       if (!link) return;
       const page = link.kind === "board" && !link.target.frame && isHtml(link.target.path ?? "");
       go(link, { from: frameId, inPlace: page });
     };
     addEventListener("message", onMessage);
     return () => removeEventListener("message", onMessage);
-  }, [go, base.cwd, path, frameId, token]);
+  }, [go, base.cwd, at, path, frameId, token]);
   return (
     <iframe
       ref={iframe}

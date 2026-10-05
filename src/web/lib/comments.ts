@@ -4,7 +4,9 @@
  *   comments:<frameId>  Y.Map<commentId, Comment>
  *
  * They belong to the frame, not to a file: they stay while the frame shows
- * other files, and go with it. Each names the file and lines it is about.
+ * other files, and go with it. Each names the file and lines it is about,
+ * the file at its address (ADR 0013): absent, the board's own runtime and
+ * its working dir.
  * Only the host moves comments as their files change (`settle`), so peers
  * never race to write the same move.
  */
@@ -12,6 +14,7 @@
 import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
+import { sameAddress, type UncheckedAddress } from "../../shared/address";
 import { relocate } from "../../shared/comments";
 import type { LineRange } from "./board";
 
@@ -32,7 +35,10 @@ export type CommentAuthor =
 
 export interface Comment {
   readonly id: string;
-  /** Working-dir-relative, or a scratch file. */
+  /** The runtime and root of its file; absent: the board's own, its working dir. */
+  readonly runtime?: string;
+  readonly root?: string;
+  /** Root-relative, or a scratch file. */
   readonly path: string;
   /** Where its lines were last seen (1-based, inclusive). */
   readonly start: number;
@@ -99,15 +105,30 @@ export function clearComments(doc: Y.Doc, frameId: string): void {
   for (const id of [...map.keys()]) map.delete(id);
 }
 
+/** Is a comment on `path` at `at`? `own`: the board's own runtime, what absent means. */
+export const isOn = (
+  comment: Comment,
+  path: string,
+  at: UncheckedAddress,
+  own: string | null | undefined,
+): boolean => comment.path === path && sameAddress(comment, at, own);
+
 /**
- * Host: move `path`'s comments to where their lines are in `text` now, or
- * mark them outdated — and back, should the lines return.
+ * Host: move the comments of `path` at `at` to where their lines are in
+ * `text` now, or mark them outdated — and back, should the lines return.
  */
-export function settle(doc: Y.Doc, frameId: string, path: string, text: string): void {
+export function settle(
+  doc: Y.Doc,
+  frameId: string,
+  path: string,
+  text: string,
+  at: UncheckedAddress = {},
+  own: string | null = null,
+): void {
   const map = commentsOf(doc, frameId);
   doc.transact(() => {
     for (const comment of map.values()) {
-      if (comment.path !== path) continue;
+      if (!isOn(comment, path, at, own)) continue;
       const now = relocate(text, comment.quote, comment.start);
       const next = now
         ? { ...comment, ...now, outdated: undefined }

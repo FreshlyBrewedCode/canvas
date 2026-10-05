@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseCodeRef, parseLink, readHash, Slugger, slug, withTarget } from "./board-link";
+import {
+  formatHash,
+  parseCodeRef,
+  parseLink,
+  readHash,
+  Slugger,
+  slug,
+  withTarget,
+} from "./board-link";
 
 const board = (href: string, base = {}) => {
   const link = parseLink(href, base);
@@ -114,5 +122,61 @@ describe("slug", () => {
       "usage-1",
       "usage-2",
     ]);
+  });
+});
+
+describe("addresses in links (ADR 0013)", () => {
+  const elsewhere = { runtime: "laptop-2", root: "worktree-1" };
+
+  test("the fragment carries a runtime and a root, only when given", () => {
+    const target = { frame: "abc", ...elsewhere, path: "src/a.ts", lines: { start: 10, end: 20 } };
+    const hash = formatHash(target);
+    expect(hash).toBe("frame=abc&runtime=laptop-2&root=worktree-1&path=src%2Fa.ts&lines=10-20");
+    expect(readHash(`#k=K&${hash}`)).toEqual(target);
+    // Without them, as before.
+    expect(formatHash({ frame: "abc", path: "src/a.ts" })).toBe("frame=abc&path=src%2Fa.ts");
+    expect(readHash("#frame=abc&path=src/a.ts")).toEqual({ frame: "abc", path: "src/a.ts" });
+    expect(withTarget(`k=K&${hash}`, { frame: "new" })).toBe("k=K&frame=new");
+  });
+
+  test("relative paths and code references take the address of where they are", () => {
+    const base = { file: "docs/guide.md", ...elsewhere };
+    expect(board("../src/a.ts", base)).toEqual({ ...elsewhere, path: "src/a.ts" });
+    expect(board("#install", base)).toEqual({
+      ...elsewhere,
+      path: "docs/guide.md",
+      heading: "install",
+    });
+    expect(parseCodeRef("src/a.ts:3", base)).toEqual({
+      ...elsewhere,
+      path: "src/a.ts",
+      lines: { start: 3, end: 3 },
+    });
+    // An agent's reply: its frame's runtime.
+    expect(board("src/a.ts", { runtime: "laptop-2" })).toEqual({
+      runtime: "laptop-2",
+      path: "src/a.ts",
+    });
+    // A frame is named by its id: the board finds it.
+    expect(board("#frame=abc", base)).toEqual({ frame: "abc" });
+  });
+
+  test("an absolute path is of that runtime's working dir: no root", () => {
+    expect(board("/p/src/a.ts", { cwd: "/p", ...elsewhere })).toEqual({
+      runtime: "laptop-2",
+      path: "src/a.ts",
+    });
+  });
+
+  test("scratch files are a runtime's, outside its roots", () => {
+    const base = { file: "canvas:scratch/index.html", runtime: "laptop-2" };
+    expect(board("page-2.html", base)).toEqual({
+      runtime: "laptop-2",
+      path: "canvas:scratch/page-2.html",
+    });
+    expect(board("canvas:scratch/x.md", { file: "docs/a.md", ...elsewhere })).toEqual({
+      runtime: "laptop-2",
+      path: "canvas:scratch/x.md",
+    });
   });
 });

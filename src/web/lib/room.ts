@@ -36,6 +36,13 @@
  */
 
 import { selfId } from "trystero";
+import {
+  addressKey,
+  canonical,
+  reach,
+  type Address,
+  type UncheckedAddress,
+} from "../../shared/address";
 import * as Y from "yjs";
 import {
   Awareness,
@@ -223,7 +230,7 @@ const MOVE_WAIT_MS = 3000;
 const LOG_LIMIT = 300;
 const TERM_SCROLLBACK = 200_000;
 const json = <T>(value: T) => value as never;
-const NOT_REACHABLE = "not reachable: that frame is on another runtime";
+const NOT_REACHABLE = "not reachable: that is on another runtime";
 
 export class Room {
   readonly doc = new Y.Doc();
@@ -259,9 +266,14 @@ export class Room {
   /** Host: the board's relay (ADR 0008) as `canvas serve` set it up for this tab. */
   private relaySetup: WelcomeRelay | null = null;
 
+  /*
+   * What we mirror is keyed by address (ADR 0013, decision 7; `addressKey`):
+   * the bare id for the board's own runtime's, the address with it otherwise
+   * — two runtimes may have the same session or PTY id.
+   */
   private readonly sessions = new Map<string, MirroredSession>();
-  /** The settings each kind of agent offers a new session (ADR 0012). */
-  private readonly kinds = new Map<AgentKind, ReadonlyArray<AgentConfigOption>>();
+  /** The settings each kind of agent offers a new session (ADR 0012), by runtime and kind. */
+  private readonly kinds = new Map<string, Mirrored<{ readonly options: AgentOptions }>>();
   /** Host: which sessions' agents may stop, as frames stop showing them (ADR 0012). */
   private readonly releases = new Releases();
   /**
@@ -272,12 +284,12 @@ export class Room {
   private shownHere: Set<string> | null = null;
   /** Guests: sessions whose log we asked the host for, until it comes. */
   private readonly asked = new Set<string>();
-  /** Every session's meta, the last active first; rebuilt after a change. */
-  private metaList: SessionMeta[] | null = null;
-  private readonly terminals = new Map<string, string>();
-  private readonly files = new Map<string, FileContent>();
-  /** The shared set's file list; null until the host sends it (never to `view` guests). */
-  private treePaths: ReadonlyArray<string> | null = null;
+  /** Each runtime's sessions' metas, the last active first; rebuilt after a change. */
+  private readonly metaLists = new Map<string, SessionMeta[]>();
+  private readonly terminals = new Map<string, Mirrored<{ readonly data: string }>>();
+  private readonly files = new Map<string, Mirrored<{ readonly file: FileContent }>>();
+  /** Each root's shared set's file list, once the host sends it (never to `view` guests). */
+  private readonly trees = new Map<string, Mirrored<{ readonly paths: ReadonlyArray<string> }>>();
   private readonly listeners = new Map<Topic, Set<() => void>>();
   private readonly peerClients = new Map<string, Set<number>>();
   private readonly server: ServerLink | null = null;
@@ -408,37 +420,57 @@ export class Room {
 
   private emit(topic: Topic) {
     // Any session's meta may have changed.
-    if (topic === "sessions") this.metaList = null;
+    if (topic === "sessions") this.metaLists.clear();
     for (const listener of this.listeners.get(topic) ?? []) listener();
   }
 
-  session(id: string) {
-    return this.sessions.get(id);
+  /** The key what is at `at` named `id` is mirrored under (`addressKey`). */
+  keyOf(at: UncheckedAddress, id: string): string {
+    return addressKey(at, this.runtime, id);
+  }
+
+  /** The topic that says a session, a terminal or a file of `at` changed. */
+  topic(kind: "session" | "term" | "file", at: UncheckedAddress, id: string): Topic {
+    return `${kind}:${this.keyOf(at, id)}`;
+  }
+
+  /** A session of the runtime `at` names (absent: the board's own). */
+  session(id: string, at: UncheckedAddress = {}) {
+    return this.sessions.get(this.keyOf(at, id));
   }
 
   /** The settings a kind of agent offers a new session; undefined until known. */
-  kindOptions(agent: AgentKind): ReadonlyArray<AgentConfigOption> | undefined {
-    return this.kinds.get(agent);
+  kindOptions(agent: AgentKind, at: UncheckedAddress = {}): AgentOptions | undefined {
+    return this.kinds.get(this.keyOf(at, agent))?.options;
   }
 
   /**
    * A session's settings; for one not begun, those its frame's agent offers,
    * at the values the frame starts it with.
    */
-  optionsFor(sessionId: string): ReadonlyArray<AgentConfigOption> | undefined {
-    const session = this.sessions.get(sessionId);
+  optionsFor(sessionId: string, at: UncheckedAddress = {}): AgentOptions | undefined {
+    const session = this.session(sessionId, at);
     if (session) return session.options;
+    if (reach(at, this.runtime) !== "own") return undefined;
     const frame = framesShowing(this.here(), sessionId)[0];
-    return frame && unbegunOptions(this.kinds.get(frame.agent), frame);
+    return frame && unbegunOptions(this.kindOptions(frame.agent), frame);
   }
 
   /**
-   * Every session of the board (ADR 0012), the last active first: heads
-   * only, logs come when a frame shows one. The same array until one changes.
-   * `frameSessions` (`sessions.ts`) picks a frame's.
+   * Every session of the board on the runtime `at` names (ADR 0012), the
+   * last active first: heads only, logs come when a frame shows one. The
+   * same array until one changes. `frameSessions` (`sessions.ts`) picks a frame's.
    */
-  sessionMetas(): ReadonlyArray<SessionMeta> {
-    return (this.metaList ??= boardSessions([...this.sessions.values()].map((s) => s.meta)));
+  sessionMetas(at: UncheckedAddress = {}): ReadonlyArray<SessionMeta> {
+    const runtime = this.keyOf({ runtime: at.runtime }, "");
+    let list = this.metaLists.get(runtime);
+    if (!list) {
+      const metas = [...this.sessions.values()].flatMap((s) =>
+        this.keyOf(s.at, "") === runtime ? [s.meta] : [],
+      );
+      this.metaLists.set(runtime, (list = boardSessions(metas)));
+    }
+    return list;
   }
 
   /**
@@ -450,7 +482,7 @@ export class Room {
   newConversation(frameId: string): string | undefined {
     const frame = this.agentFrame(frameId);
     if (!frame) return undefined;
-    const shown = this.sessions.get(shownSession(frame))?.meta;
+    const shown = this.session(shownSession(frame), frame)?.meta;
     return newConversation(this.doc, frameId, nextSettings(frame, shown));
   }
 
@@ -465,21 +497,25 @@ export class Room {
    * (`waitingFrames`, `sessions.ts`).
    */
   waitingSessions(): Array<{ readonly id: string; readonly frameId: string }> {
+    // Only the board's own runtime's: the host answers those.
     return [...this.sessions.values()]
-      .filter((s) => s.meta.status === "waiting")
+      .filter((s) => s.meta.status === "waiting" && reach(s.at, this.runtime) === "own")
       .map((s) => ({ id: s.meta.id, frameId: lastFrame(s.meta, s.events) }));
   }
 
-  terminal(id: string): string {
-    return this.terminals.get(id) ?? "";
+  /** A PTY's output so far, of the runtime `at` names. */
+  terminal(pty: string, at: UncheckedAddress = {}): string {
+    return this.terminals.get(this.keyOf(at, pty))?.data ?? "";
   }
 
-  file(path: string): FileContent | undefined {
-    return this.files.get(path);
+  /** A file of the runtime and root `at` names; undefined until it arrives. */
+  file(path: string, at: UncheckedAddress = {}): FileContent | undefined {
+    return this.files.get(this.keyOf(at, path))?.file;
   }
 
-  tree(): ReadonlyArray<string> | null {
-    return this.treePaths;
+  /** A root's file list; null until the host sends it (never to `view` guests). */
+  tree(at: UncheckedAddress = {}): ReadonlyArray<string> | null {
+    return this.trees.get(this.keyOf(at, ""))?.paths ?? null;
   }
 
   // -------------------------------------------------------------------------
@@ -952,11 +988,12 @@ export class Room {
             ...(mayEdit(step.access) &&
               !mayEdit(step.was) && { vector: [...Y.encodeStateVector(this.doc)] }),
           });
-          // `view` guests never got the tree; now they may browse it.
-          if (step.was === "view" && this.treePaths)
-            void this.actions?.broadcast.send(json({ t: "tree", paths: this.treePaths }), {
-              target: step.peerId,
-            });
+          // `view` guests never got the trees; now they may browse them.
+          if (step.was === "view")
+            for (const { at, paths } of this.trees.values())
+              void this.actions?.broadcast.send(json({ t: "tree", ...at, paths }), {
+                target: step.peerId,
+              });
           break;
         case "knock":
           this.record({
@@ -1064,7 +1101,7 @@ export class Room {
     this.kinds.clear();
     this.terminals.clear();
     this.files.clear();
-    this.treePaths = null;
+    this.trees.clear();
     this.memberList.reset();
     this.heldPresence.clear();
     this.setFingerprints({});
@@ -1246,28 +1283,48 @@ export class Room {
     const actions = this.actions;
     const access = this.admissions.access(peerId);
     if (!actions || !access) return;
+    // The sessions frames show here are the board's own runtime's: keyed by their bare ids.
     const shown = shownSessions(this.here());
     const sessions = [...this.sessions.values()];
+    // Every session's head, a message per runtime; the own one's always.
+    const heads = new Map<string | undefined, SessionHead[]>([[undefined, []]]);
+    for (const { at, meta, options } of sessions) {
+      let list = heads.get(at.runtime);
+      if (!list) heads.set(at.runtime, (list = []));
+      list.push({ meta, ...(options && { options }) });
+    }
     // All taken now: what changes from here on reaches the guest live.
     const messages: HostBroadcast[] = [
-      {
-        t: "sessions",
-        sessions: sessions.map(({ meta, options }) => ({ meta, ...(options && { options }) })),
-      },
+      ...[...heads].map(([runtime, list]) => ({
+        t: "sessions" as const,
+        ...(runtime !== undefined && { runtime }),
+        sessions: list,
+      })),
       ...sessions
-        .filter((s) => shown.has(s.meta.id) && s.pending === null)
+        .filter((s) => !s.at.runtime && shown.has(s.meta.id) && s.pending === null)
         .map((s) => ({ sessionId: s.meta.id, events: s.events.slice() }))
         .sort((a, b) => a.events.length - b.events.length)
         .map(({ sessionId, events }) => ({ t: "session-history" as const, sessionId, events })),
-      ...[...this.kinds].map(([agent, options]) => ({
+      ...[...this.kinds.values()].map(({ at, id: agent, options }) => ({
         t: "kind-options" as const,
+        ...at,
         agent,
         options,
       })),
-      ...[...this.terminals].map(([id, data]) => ({ t: "term-data" as const, id, data })),
-      ...[...this.files].map(([path, file]) => ({ t: "file" as const, path, file })),
-      ...(this.treePaths && access !== "view"
-        ? [{ t: "tree" as const, paths: this.treePaths }]
+      ...[...this.terminals.values()].map(({ at, id: pty, data }) => ({
+        t: "term-data" as const,
+        ...at,
+        pty,
+        data,
+      })),
+      ...[...this.files.values()].map(({ at, id: path, file }) => ({
+        t: "file" as const,
+        ...at,
+        path,
+        file,
+      })),
+      ...(access !== "view"
+        ? [...this.trees.values()].map(({ at, paths }) => ({ t: "tree" as const, ...at, paths }))
         : []),
       ...(this.signedList ? [{ t: "member-list" as const, ...this.signedList }] : []),
     ];
@@ -1309,33 +1366,39 @@ export class Room {
 
   private applyBroadcast(message: HostBroadcast) {
     switch (message.t) {
-      case "sessions":
-        this.sessions.clear();
-        this.asked.clear();
-        this.sessionsKnown = true;
-        for (const head of message.sessions) this.putSession(head, null);
-        // The logs of the sessions frames show now come after this; others as frames show them.
-        this.shownHere = shownSessions(this.here());
+      case "sessions": {
+        // Every head of one runtime: those we had of it go.
+        const runtime = this.keyOf({ runtime: message.runtime }, "");
+        for (const [key, session] of this.sessions)
+          if (this.keyOf(session.at, "") === runtime) this.sessions.delete(key);
+        for (const head of message.sessions) this.putSession(message, head, null);
+        if (reach(message, this.runtime) === "own") {
+          this.asked.clear();
+          this.sessionsKnown = true;
+          // The logs of the sessions frames show now come after this; others as frames show them.
+          this.shownHere = shownSessions(this.here());
+        }
         this.emit("sessions");
         this.emit("room");
         return;
+      }
       case "session-history":
-        this.asked.delete(message.sessionId);
-        return this.putHistory(message.sessionId, message.events);
+        if (reach(message, this.runtime) === "own") this.asked.delete(message.sessionId);
+        return this.putHistory(message, message.sessionId, message.events);
       case "kind-options":
-        return this.putKind(message.agent, message.options);
+        return this.putKind(message, message.agent, message.options);
       case "agent-meta":
-        return this.putMeta(message.meta);
+        return this.putMeta(message, message.meta);
       case "agent-event":
-        return void this.pushEvent(message.sessionId, message.event, message.index);
+        return void this.pushEvent(message, message.sessionId, message.event, message.index);
       case "agent-options":
-        return this.putOptions(message.sessionId, message.options);
+        return this.putOptions(message, message.sessionId, message.options);
       case "term-data":
-        return this.pushTerm(message.id, message.data);
+        return this.pushTerm(message, message.pty, message.data);
       case "file":
-        return this.putFile(message.path, message.file);
+        return this.putFile(message, message.path, message.file);
       case "tree":
-        return this.putTree(message.paths);
+        return this.putTree(message, message.paths);
       case "member-list":
         return void this.onMemberList(message);
     }
@@ -1366,15 +1429,21 @@ export class Room {
   // sessions & terminals (local mirror)
 
   /** A session with its log, or (null) one whose history is still on its way. */
-  private putSession(head: SessionHead, events: ReadonlyArray<AgentEvent> | null) {
-    this.sessions.set(head.meta.id, {
+  private putSession(
+    at: UncheckedAddress,
+    head: SessionHead,
+    events: ReadonlyArray<AgentEvent> | null,
+  ) {
+    const key = this.keyOf(at, head.meta.id);
+    this.sessions.set(key, {
+      at: this.runtimeOf(at),
       meta: head.meta,
       events: events ? [...events] : [],
       pending: events ? null : [],
       options: head.options,
       version: Date.now(),
     });
-    this.emit(`session:${head.meta.id}`);
+    this.emit(`session:${key}`);
     this.emit("sessions");
   }
 
@@ -1385,8 +1454,9 @@ export class Room {
    * whatever came first, also a history sent again after the host's link to
    * `canvas serve` came back.
    */
-  private putHistory(sessionId: string, events: ReadonlyArray<AgentEvent>) {
-    const session = this.sessions.get(sessionId);
+  private putHistory(at: UncheckedAddress, sessionId: string, events: ReadonlyArray<AgentEvent>) {
+    const key = this.keyOf(at, sessionId);
+    const session = this.sessions.get(key);
     if (!session) return;
     if (this.isHost) {
       if (!session.pending) return;
@@ -1397,37 +1467,40 @@ export class Room {
     }
     session.pending = null;
     session.version++;
-    this.emit(`session:${sessionId}`);
+    this.emit(`session:${key}`);
   }
 
-  private putKind(agent: AgentKind, options: ReadonlyArray<AgentConfigOption>) {
-    this.kinds.set(agent, options);
+  private putKind(at: UncheckedAddress, agent: AgentKind, options: AgentOptions) {
+    this.kinds.set(this.keyOf(at, agent), { at: this.runtimeOf(at), id: agent, options });
     this.emit("sessions");
   }
 
-  private putMeta(meta: SessionMeta) {
-    const session = this.sessions.get(meta.id);
+  private putMeta(at: UncheckedAddress, meta: SessionMeta) {
+    const key = this.keyOf(at, meta.id);
+    const session = this.sessions.get(key);
     if (session) {
       session.meta = meta;
       session.version++;
     } else
-      this.sessions.set(meta.id, {
+      this.sessions.set(key, {
+        at: this.runtimeOf(at),
         meta,
         events: [],
         pending: null,
         options: undefined,
         version: 0,
       });
-    this.emit(`session:${meta.id}`);
+    this.emit(`session:${key}`);
     this.emit("sessions");
   }
 
-  private putOptions(sessionId: string, options: ReadonlyArray<AgentConfigOption>) {
-    const session = this.sessions.get(sessionId);
+  private putOptions(at: UncheckedAddress, sessionId: string, options: AgentOptions) {
+    const key = this.keyOf(at, sessionId);
+    const session = this.sessions.get(key);
     if (!session) return;
     session.options = options;
     session.version++;
-    this.emit(`session:${sessionId}`);
+    this.emit(`session:${key}`);
   }
 
   /**
@@ -1435,8 +1508,14 @@ export class Room {
    * from `canvas serve` in order; a guest's carry their place in the log
    * (`index`), and one after a gap asks for the log again.
    */
-  private pushEvent(sessionId: string, event: AgentEvent, index?: number): boolean {
-    const session = this.sessions.get(sessionId);
+  private pushEvent(
+    at: UncheckedAddress,
+    sessionId: string,
+    event: AgentEvent,
+    index?: number,
+  ): boolean {
+    const key = this.keyOf(at, sessionId);
+    const session = this.sessions.get(key);
     if (!session) return false;
     if (session.pending) {
       // Host: its log, when it comes, has this already.
@@ -1448,28 +1527,37 @@ export class Room {
         return false;
       case "gap":
         session.pending = [{ index: index!, event }];
-        this.askLog(sessionId);
+        if (reach(at, this.runtime) === "own") this.askLog(sessionId);
         return false;
     }
     session.events.push(event);
     session.version++;
-    this.emit(`session:${sessionId}`);
+    this.emit(`session:${key}`);
     return true;
   }
 
-  private pushTerm(id: string, data: string) {
-    this.terminals.set(id, (this.terminal(id) + data).slice(-TERM_SCROLLBACK));
-    this.emit(`term:${id}`);
+  private pushTerm(at: UncheckedAddress, pty: string, data: string) {
+    const key = this.keyOf(at, pty);
+    const all = (this.terminal(pty, at) + data).slice(-TERM_SCROLLBACK);
+    this.terminals.set(key, { at: this.runtimeOf(at), id: pty, data: all });
+    this.emit(`term:${key}`);
   }
 
-  private putFile(path: string, file: FileContent) {
-    this.files.set(path, file);
-    this.emit(`file:${path}`);
+  private putFile(at: UncheckedAddress, path: string, file: FileContent) {
+    const key = this.keyOf(at, path);
+    this.files.set(key, { at: canonical(at, this.runtime), id: path, file });
+    this.emit(`file:${key}`);
   }
 
-  private putTree(paths: ReadonlyArray<string>) {
-    this.treePaths = paths;
+  private putTree(at: UncheckedAddress, paths: ReadonlyArray<string>) {
+    this.trees.set(this.keyOf(at, ""), { at: canonical(at, this.runtime), id: "", paths });
     this.emit("tree");
+  }
+
+  /** The runtime of an address, as writers write it: sessions, kinds and PTYs have no root. */
+  private runtimeOf(at: UncheckedAddress): Address {
+    const { runtime } = canonical(at, this.runtime);
+    return runtime === undefined ? {} : { runtime };
   }
 
   // -------------------------------------------------------------------------
@@ -1493,12 +1581,13 @@ export class Room {
         // Boards from before the tree are migrated before anyone joins.
         tidy(this.doc, { screen: boardHeight() });
         // Heads only: the logs of the sessions frames show are asked for (`syncResources`).
+        // All of them this runtime's, `canvas serve`'s: the board's own.
         this.sessions.clear();
         this.sessionsKnown = true;
-        for (const head of message.sessions) this.putSession(head, null);
+        for (const head of message.sessions) this.putSession({}, head, null);
         this.kinds.clear();
         for (const [agent, options] of Object.entries(message.kindOptions))
-          this.kinds.set(agent, options);
+          this.putKind({}, agent, options);
         this.emit("sessions");
         this.roomState = {
           hostPeerId: selfId,
@@ -1530,46 +1619,52 @@ export class Room {
           );
         return;
       }
+      // What `canvas serve` sends names what it is about as it was asked
+      // (ADR 0013, decision 7), and goes on to guests so.
       case "agent-meta":
-        this.putMeta(message.meta);
-        // Its turn is over: it leaves the frame it worked on.
-        if (message.meta.status === "idle") this.releaseAgent(message.meta.id);
-        // No frame shows it since it ran: its agent stops now.
-        if (this.releases.settle(message.meta.id, message.meta.status))
-          this.server?.send({ t: "agent-release", sessionId: message.meta.id });
+        this.putMeta(message, message.meta);
+        if (reach(message, this.runtime) === "own") {
+          // Its turn is over: it leaves the frame it worked on.
+          if (message.meta.status === "idle") this.releaseAgent(message.meta.id);
+          // No frame shows it since it ran: its agent stops now.
+          if (this.releases.settle(message.meta.id, message.meta.status))
+            this.server?.send({ t: "agent-release", sessionId: message.meta.id });
+        }
         return this.hostcast(message);
       case "agent-event": {
         // Guests get a session's events once we have its log, after it.
         const { sessionId, event } = message;
-        if (this.pushEvent(sessionId, event)) {
-          const index = this.sessions.get(sessionId)!.events.length - 1;
-          this.hostcast({ t: "agent-event", sessionId, event, index });
+        if (this.pushEvent(message, sessionId, event)) {
+          const index = this.session(sessionId, message)!.events.length - 1;
+          const at = this.runtimeOf(message);
+          this.hostcast({ t: "agent-event", ...at, sessionId, event, index });
         }
         return;
       }
       case "agent-options":
-        this.putOptions(message.sessionId, message.options);
+        this.putOptions(message, message.sessionId, message.options);
         return this.hostcast(message);
       case "session-history":
-        this.putHistory(message.sessionId, message.events);
+        this.putHistory(message, message.sessionId, message.events);
         return this.hostcast(message);
       case "kind-options":
-        this.putKind(message.agent, message.options);
+        this.putKind(message, message.agent, message.options);
         return this.hostcast(message);
       case "term-data":
-        this.pushTerm(message.id, message.data);
+        this.pushTerm(message, message.pty, message.data);
         return this.hostcast(message);
       case "term-exit": {
         const data = `\r\n\x1b[2m[process exited${message.code === null ? "" : ` with ${message.code}`}]\x1b[0m\r\n`;
-        this.pushTerm(message.id, data);
-        this.opened.delete(message.id);
-        return this.hostcast({ t: "term-data", id: message.id, data });
+        const { pty } = message;
+        this.pushTerm(message, pty, data);
+        this.opened.delete(this.keyOf(message, pty));
+        return this.hostcast({ t: "term-data", ...this.runtimeOf(message), pty, data });
       }
       case "file":
-        this.putFile(message.path, message.file);
+        this.putFile(message, message.path, message.file);
         return this.hostcast(message);
       case "tree":
-        this.putTree(message.paths);
+        this.putTree(message, message.paths);
         return this.hostcast(message, (access) => access !== "view");
       case "board-call":
         return void this.runBoardCall(message);
@@ -1617,6 +1712,22 @@ export class Room {
   }
 
   /**
+   * A frame's address as writers write it (ADR 0013): what its messages and
+   * links name; none on the board's own runtime and working dir.
+   */
+  addressOf(frame: Frame): Address {
+    switch (frame.type) {
+      case "file":
+        return canonical(frame, this.runtime);
+      case "agent":
+      case "terminal":
+        return this.runtimeOf(frame);
+      default:
+        return {};
+    }
+  }
+
+  /**
    * The frames whose agent, file or terminal is on a runtime we reach: the
    * board's own (ADR 0013, decision 7). Nothing is opened, sent or asked
    * for the others; they show as not reachable.
@@ -1640,6 +1751,7 @@ export class Room {
           doc: this.doc,
           // The frame the agent acts as: its turn's (ADR 0012, decision 3).
           self: message.frameId,
+          runtime: this.runtime,
           agents: this.roomState?.agents ?? [],
           status: (frameId) => this.statusOf(frameId),
         },
@@ -1659,7 +1771,7 @@ export class Room {
   /** The status of the session an agent frame shows, if it has begun. */
   private statusOf(frameId: string) {
     const frame = this.agentFrame(frameId);
-    return frame && this.sessions.get(shownSession(frame))?.meta.status;
+    return frame && this.session(shownSession(frame), frame)?.meta.status;
   }
 
   private agentFrame(frameId: string): AgentFrame | undefined {
@@ -1672,6 +1784,8 @@ export class Room {
    * terminal is running; get the logs of the sessions agent frames show, and
    * what a kind of agent offers where a frame's session hasn't begun (ADR
    * 0012). A session no frame shows any more is released: its agent stops.
+   * Only frames on `canvas serve`'s runtime (ADR 0013): their things are
+   * keyed by their bare ids, and named to it without an address.
    */
   private syncResources() {
     if (!this.isHost || this.server?.status !== "open") return;
@@ -1716,7 +1830,7 @@ export class Room {
       if (pty && !this.opened.has(pty)) {
         this.opened.add(pty);
         this.terminals.delete(pty);
-        this.server.send({ t: "term-open", id: pty, cols: 80, rows: 24 });
+        this.server.send({ t: "term-open", pty, cols: 80, rows: 24 });
       }
     }
     const shown = shownSessions(frames);
@@ -1767,7 +1881,12 @@ export class Room {
     if (!reply.ok) throw new Error(reply.error);
   }
 
+  /**
+   * Host: run a request on `canvas serve`. Only for its runtime, the board's
+   * own (ADR 0013, decision 7): another's isn't reachable from here.
+   */
   private execute(request: GuestRequest, author: Identity) {
+    if (reach(request, this.runtime) !== "own") throw new Error(NOT_REACHABLE);
     if (!this.server || this.server.status !== "open")
       throw new Error("not connected to canvas serve");
     switch (request.t) {
@@ -1800,7 +1919,7 @@ export class Room {
         return;
       }
       case "term-input":
-        this.server.send({ t: "term-input", id: request.id, data: request.data });
+        this.server.send({ t: "term-input", pty: request.pty, data: request.data });
         return;
     }
   }
@@ -1816,6 +1935,8 @@ export class Room {
   private async onGuestRequest(peerId: string, request: GuestRequest): Promise<GuestReply> {
     const peer = this.peerIdentity(peerId);
     try {
+      // Not for the host to approve: it can't reach it.
+      if (reach(request, this.runtime) !== "own") throw new Error(NOT_REACHABLE);
       const verdict = check(this.admissions.access(peerId), request);
       if (!verdict.ok) throw new Error(verdict.error);
       if (verdict.approve && !(await this.ask(peerId, peer, request)))
@@ -1837,11 +1958,12 @@ export class Room {
    */
   private onGuestRead(peerId: string, read: GuestRead): GuestReply {
     if (!this.admissions.access(peerId)) return { ok: false, error: "the host hasn't let you in" };
-    const session = this.sessions.get(read.sessionId);
+    const session = this.session(read.sessionId, read);
     if (!session) return { ok: false, error: "no such conversation" };
     if (!session.pending) {
       const history: HostBroadcast = {
         t: "session-history",
+        ...session.at,
         sessionId: read.sessionId,
         events: session.events.slice(),
       };
@@ -1907,7 +2029,13 @@ export class Room {
   }
 
   /** Host only: answer a tool-call permission the agent asked for. */
-  answerPermission(sessionId: string, requestId: string, optionId: string | null) {
+  answerPermission(
+    sessionId: string,
+    requestId: string,
+    optionId: string | null,
+    at: UncheckedAddress = {},
+  ) {
+    if (reach(at, this.runtime) !== "own") return;
     this.server?.send({
       t: "agent-permission",
       sessionId,
@@ -1918,8 +2046,9 @@ export class Room {
   }
 
   /** Host only: a terminal follows the host's frame size. */
-  resizeTerminal(id: string, cols: number, rows: number) {
-    this.server?.send({ t: "term-resize", id, cols, rows });
+  resizeTerminal(pty: string, cols: number, rows: number, at: UncheckedAddress = {}) {
+    if (reach(at, this.runtime) !== "own") return;
+    this.server?.send({ t: "term-resize", pty, cols, rows });
   }
 
   /** Host: `canvas serve`'s member list, and what it changes for who is connected. */
@@ -1958,7 +2087,14 @@ export class Room {
 const boardHeight = () =>
   document.querySelector("[data-board]")?.clientHeight || globalThis.innerHeight || 0;
 
+type AgentOptions = ReadonlyArray<AgentConfigOption>;
+
+/** Something mirrored, with its address as writers write it and its id there. */
+type Mirrored<T> = T & { readonly at: Address; readonly id: string };
+
 interface MirroredSession {
+  /** Its runtime, as writers write it: none for the board's own. */
+  readonly at: Address;
   meta: SessionMeta;
   events: AgentEvent[];
   /**

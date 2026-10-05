@@ -5,6 +5,7 @@ import { addFrame, removeFrame } from "./board";
 import {
   addComment,
   editComment,
+  isOn,
   mayChange,
   readComments,
   removeComment,
@@ -89,5 +90,32 @@ describe("comments", () => {
     const agent = { kind: "agent" } as const;
     expect(mayChange(agent, agents)).toBe(true);
     expect(mayChange(agent, mine)).toBe(false);
+  });
+});
+
+describe("comments at an address (ADR 0013)", () => {
+  const OWN = "own-runtime";
+
+  test("a comment is on its file at its address; absent is the own runtime", () => {
+    const { add } = board();
+    const plain = add();
+    const named = add({ runtime: OWN });
+    const there = add({ runtime: "laptop-2" });
+    expect(isOn(plain, "a.ts", {}, OWN)).toBe(true);
+    expect(isOn(named, "a.ts", {}, OWN)).toBe(true);
+    expect(isOn(there, "a.ts", {}, OWN)).toBe(false);
+    expect(isOn(there, "a.ts", { runtime: "laptop-2" }, OWN)).toBe(true);
+    expect(isOn(plain, "b.ts", {}, OWN)).toBe(false);
+  });
+
+  test("settle moves only the comments of that file at that address", () => {
+    const { doc, frame, add, all } = board();
+    add();
+    add({ root: "worktree-1" });
+    settle(doc, frame, "a.ts", "new\na\nb\n", {}, OWN);
+    expect(all().map((c) => [c.root ?? null, c.start])).toEqual([
+      ["worktree-1", 2],
+      [null, 3],
+    ]);
   });
 });

@@ -7,15 +7,22 @@
  * keeps their membership here (`members.ts`), as the host tab changes it.
  * Resetting the invite link, and removing a member, mints the board a new
  * room (ADR 0011, decision 6): the host tab hands it to the members in.
+ *
+ * It is one runtime (ADR 0013), with an id of its own (`.canvas/runtime.json`).
+ * Messages name the runtime, and a file's root, of what they are about; it
+ * takes as its own only its id or none, and no root, and refuses the rest
+ * (decision 7): addresses come from the board, which guests write.
  */
 
 import type { ServerWebSocket } from "bun";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { reach, type UncheckedAddress } from "../shared/address";
 import { nonce } from "../shared/identity";
 import {
   AUTH_REFUSED,
   HOST_REPLACED,
+  NOT_THIS_RUNTIME,
   type ClientToServer,
   type RelayVia,
   type ServerToClient,
@@ -145,8 +152,8 @@ export async function serve(options: ServeOptions) {
   process.on("exit", () => agents.close());
   const terminals = new Terminals(
     options.dir,
-    (id, data) => broadcast({ t: "term-data", id, data }),
-    (id, code) => broadcast({ t: "term-exit", id, code }),
+    (pty, data) => broadcast({ t: "term-data", pty, data }),
+    (pty, code) => broadcast({ t: "term-exit", pty, code }),
   );
 
   const welcome = (ws: ServerWebSocket<Conn>) => {
@@ -188,6 +195,22 @@ export async function serve(options: ServeOptions) {
   };
 
   const handle = (ws: ServerWebSocket<Conn>, message: ClientToServer) => {
+    // Another runtime's, or a root (there is only the working dir): nothing
+    // is opened, run or read. A file is denied as any file is; the rest is an error.
+    const address = message as UncheckedAddress;
+    if (reach(address, runtime) !== "own") {
+      if (message.t !== "file-open") throw new Error(`${message.t}: ${NOT_THIS_RUNTIME}`);
+      const { runtime: asked, root } = address;
+      return ws.send(
+        JSON.stringify({
+          t: "file",
+          ...(asked !== undefined && { runtime: asked as string }),
+          ...(root !== undefined && { root: root as string }),
+          path: message.path,
+          file: { kind: "denied", reason: NOT_THIS_RUNTIME },
+        } satisfies ServerToClient),
+      );
+    }
     switch (message.t) {
       case "auth":
         return;
@@ -230,21 +253,21 @@ export async function serve(options: ServeOptions) {
       case "tree-watch":
         return files.watchTree();
       case "term-open": {
-        const scrollback = terminals.open(message.id, message.cols, message.rows);
+        const scrollback = terminals.open(message.pty, message.cols, message.rows);
         if (scrollback)
           ws.send(
             JSON.stringify({
               t: "term-data",
-              id: message.id,
+              pty: message.pty,
               data: scrollback,
             } satisfies ServerToClient),
           );
         return;
       }
       case "term-input":
-        return terminals.input(message.id, message.data);
+        return terminals.input(message.pty, message.data);
       case "term-resize":
-        return terminals.resize(message.id, message.cols, message.rows);
+        return terminals.resize(message.pty, message.cols, message.rows);
       case "board-result":
         return boardMcp.result(message.callId, message.ok, message.text, message.images);
       case "member-admit":

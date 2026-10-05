@@ -51,8 +51,22 @@ export function addressKey(
   id: string,
 ): string {
   if (reach(address, own) === "own") return id;
+  const { runtime, root } = canonical(address, own);
   // NUL is in no id and no path.
-  return `${JSON.stringify([address.runtime ?? null, address.root ?? null])}\0${id}`;
+  return `${JSON.stringify([runtime ?? null, root ?? null])}\0${id}`;
+}
+
+/**
+ * An address as writers write it — into the doc, a link, a message: the own
+ * runtime and the working dir left absent, so the common case looks as it
+ * did, and nothing but the address.
+ */
+export function canonical(address: UncheckedAddress, own: string | null | undefined): Address {
+  const { runtime, root } = address as Address;
+  return {
+    ...(runtime !== undefined && runtime !== own && { runtime }),
+    ...(root !== undefined && { root }),
+  };
 }
 
 /** Do two addresses name the same place? Absent and the own runtime's id do. */

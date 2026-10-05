@@ -135,8 +135,10 @@ function AgentThread({
   room: ReturnType<typeof useRoomState>;
 }) {
   const sessionId = shownSession(frame);
-  const session = useSession(sessionId);
-  const kindOptions = useKindOptions(frame.agent);
+  // The runtime it is on (ADR 0013): what its sessions are keyed and named by.
+  const at = room.addressOf(frame);
+  const session = useSession(sessionId, at);
+  const kindOptions = useKindOptions(frame.agent, at);
   // Until its agent runs, the session's settings are what its kind offers,
   // with the values it last had, or (not begun) those the frame starts it with
   // (ADR 0012). The same while they read the same: a change waits for new
@@ -161,7 +163,7 @@ function AgentThread({
   const agentLabel =
     room.roomState?.agents.find((a) => a.kind === frame.agent)?.label ?? frame.agent;
   const access = room.access;
-  const mine = useFrameSessions(frame.id);
+  const mine = useFrameSessions(frame.id, at);
   const list = useMemo(
     () => conversations(mine, sessionId, session?.meta),
     [mine, sessionId, session?.meta],
@@ -173,7 +175,7 @@ function AgentThread({
     setError(null);
     setSending(true);
     try {
-      await room.act({ t: "agent-prompt", sessionId, frameId: frame.id, text: prompt });
+      await room.act({ t: "agent-prompt", ...at, sessionId, frameId: frame.id, text: prompt });
       text.delete(0, text.length);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -237,7 +239,7 @@ function AgentThread({
   const back = !readOnly && !busy ? backTo(list) : undefined;
 
   const configure = (configId: string, value: AgentConfigValue) =>
-    room.act({ t: "agent-config", sessionId, configId, value });
+    room.act({ t: "agent-config", ...at, sessionId, configId, value });
   const mode = useModeCycle(options, configure);
   const controls = readOnly || !room.hostOnline;
 
@@ -323,7 +325,7 @@ function AgentThread({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => void room.act({ t: "agent-cancel", sessionId })}
+                  onClick={() => void room.act({ t: "agent-cancel", ...at, sessionId })}
                   disabled={readOnly}
                 >
                   <CircleStop /> Stop

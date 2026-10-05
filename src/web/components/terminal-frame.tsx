@@ -26,6 +26,7 @@ export function TerminalFrame({
   const canType = room.isHost || room.access === "trusted";
   // The PTY it shows (ADR 0013): its own id's, unless it names another.
   const pty = shownPty(frame);
+  const { runtime } = room.addressOf(frame);
   // The scrollback, in lines, follows the frame's occupant.
   const surface = useRef<ScrollSurface | null>(null);
   const [terminal, setTerminal] = useState(0);
@@ -60,9 +61,10 @@ export function TerminalFrame({
     };
     setTerminal((n) => n + 1);
 
+    const at = runtime === undefined ? {} : { runtime };
     let written = 0;
     const flush = () => {
-      const data = room.terminal(pty);
+      const data = room.terminal(pty, at);
       // Scrollback is trimmed from the front; if we fell behind, redraw.
       if (data.length < written) {
         term.reset();
@@ -72,12 +74,12 @@ export function TerminalFrame({
       written = data.length;
     };
     flush();
-    const unsubscribe = room.subscribe(`term:${pty}`, flush);
+    const unsubscribe = room.subscribe(room.topic("term", at, pty), flush);
 
     const input = term.onData((data) => {
       if (readOnly) return;
       room
-        .act({ t: "term-input", id: pty, data })
+        .act({ t: "term-input", pty, ...at, data })
         .catch((error: Error) => setNotice(error.message));
     });
 
@@ -87,7 +89,7 @@ export function TerminalFrame({
       } catch {
         return;
       }
-      if (room.isHost) room.resizeTerminal(pty, term.cols, term.rows);
+      if (room.isHost) room.resizeTerminal(pty, term.cols, term.rows, at);
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host.current);
@@ -99,7 +101,7 @@ export function TerminalFrame({
       surface.current = null;
       term.dispose();
     };
-  }, [room, pty, readOnly]);
+  }, [room, pty, runtime, readOnly]);
 
   return (
     <FrameShell

@@ -40,7 +40,12 @@ canvas
   id in `.canvas/runtime.json`, sent in `welcome` and `RoomState`), its working dir, the frame's own
   id. Nothing writes the defaults, `tidy` neither: boards from before are unchanged. `reach` and
   `addressKey` in `shared/address.ts`; a frame elsewhere shows as not reachable (`Room.reachOf`,
-  `UnreachableFrame`) and nothing of it is opened or sent
+  `UnreachableFrame`) and nothing of it is opened or sent. File list entries, comments and links
+  (`LinkTarget`, `LinkBase`, `#…&runtime=…&root=…`) carry the same fields; relative links take
+  their base's. Messages naming a session, PTY (`pty`, not `id`) or file carry `runtime?`/`root?`;
+  `canvas serve` refuses any not its own (`file` denied "not this runtime's", else `error`).
+  Browsers key what they mirror by address (`Room.keyOf`: own runtime's by bare id). Agents' board
+  tools name paths without addresses: theirs is the runtime the call came from
 - comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with

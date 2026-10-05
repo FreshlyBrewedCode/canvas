@@ -42,7 +42,7 @@ import {
   type Target,
   type Tree,
 } from "../../shared/layout";
-import { isRuntimeId, reach, type Reach } from "../../shared/address";
+import { isRuntimeId, reach, type Address, type Reach } from "../../shared/address";
 import type { AgentSetting } from "../../shared/protocol";
 import { isSessionId } from "../../shared/sessions";
 import { clearComments } from "./comments";
@@ -134,6 +134,9 @@ export interface LineRange {
 /** One file of a list: shown in the tree at `display`, reading `path`. */
 export interface FileEntry {
   readonly display: string;
+  /** The runtime and root of its file (ADR 0013); absent: the board's own, its working dir. */
+  readonly runtime?: string;
+  readonly root?: string;
   /** A file of the shared set, or a scratch file (`canvas:scratch/…`). */
   readonly path: string;
   /** Lines to open it at, badged in the tree. */
@@ -441,13 +444,26 @@ export function tidy(doc: Y.Doc, { screen }: { readonly screen?: number } = {}):
   return true;
 }
 
+/** Change a frame's fields; `undefined` removes one. */
 export function updateFrame(doc: Y.Doc, id: string, patch: Partial<Record<string, unknown>>): void {
   const map = framesOf(doc).get(id);
   if (!map) return;
   doc.transact(() => {
-    for (const [key, value] of Object.entries(patch)) map.set(key, value);
+    for (const [key, value] of Object.entries(patch))
+      if (value === undefined) map.delete(key);
+      else map.set(key, value);
   });
 }
+
+/**
+ * The fields that put a file frame at `address` (`updateFrame`): written
+ * only when not the own runtime or the working dir, else removed (ADR 0013).
+ * `address` is as writers write it (`canonical`).
+ */
+export const atAddress = (address: Address) => ({
+  runtime: address.runtime,
+  root: address.root,
+});
 
 export function raiseFrame(doc: Y.Doc, id: string): void {
   const map = framesOf(doc).get(id);

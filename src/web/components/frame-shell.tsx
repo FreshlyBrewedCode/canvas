@@ -84,7 +84,12 @@ export function FrameShell({
       ? focus.occupant.color
       : null;
   // Links in the frame open new frames beside it (ADR 0007).
-  const scope = useMemo(() => ({ frame: frame.id }), [frame.id]);
+  // Links in it are read where it is (ADR 0013): an agent's replies on its runtime.
+  const { runtime } = room.addressOf(frame);
+  const scope = useMemo(
+    () => ({ frame: frame.id, ...(runtime !== undefined && { runtime }) }),
+    [frame.id, runtime],
+  );
   const fullscreen = useFullscreenFrame(frame);
   const drag = useDrag();
   const dragged =

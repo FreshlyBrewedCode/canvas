@@ -436,3 +436,44 @@ test("says which argument is missing", () => {
   expect(() => run("view_frame")).toThrow("frame is missing");
   expect(() => run("open_frame")).toThrow("type is missing");
 });
+
+describe("addresses (ADR 0013): agents name paths, the board knows where", () => {
+  const ADDRESS = ["runtime", "root", "pty"];
+  const named = (value: object) => Object.keys(value).filter((key) => ADDRESS.includes(key));
+
+  test("what an agent on the board's runtime opens, lists and comments on carries no address", () => {
+    const { run, doc, newest } = board(agent(0, 0));
+    run("open_frame", {
+      type: "file",
+      files: [{ display: "a", path: "src/a.ts" }],
+    });
+    const opened = newest();
+    expect(named(opened)).toEqual([]);
+    if (opened.type !== "file") throw new Error("not a file frame");
+    expect(opened.files!.flatMap(named)).toEqual([]);
+    run("add_comment", {
+      frame: opened.id,
+      path: "src/a.ts",
+      start_line: 1,
+      quote: "x",
+      body: "b",
+    });
+    expect(readComments(doc, opened.id).flatMap(named)).toEqual([]);
+    run("open_frame", { type: "terminal" });
+    expect(named(newest())).toEqual([]);
+  });
+
+  test("pointed at the agent's own path, a frame elsewhere comes to its runtime", () => {
+    const { run, frame, ids } = board(
+      agent(0, 0),
+      file(500, 0, "src/a.ts", { runtime: "laptop-2", root: "worktree-1" }),
+    );
+    run("update_frame", { frame: ids[1], path: "src/b.ts" });
+    expect(named(frame(ids[1]!)!)).toEqual([]);
+  });
+
+  test("a frame on another runtime is described as not reachable", () => {
+    const { run, ids } = board(agent(0, 0), file(500, 0, "src/a.ts", { runtime: "laptop-2" }));
+    expect(run("view_board")).toContain(`[${ids[1]}] file "a.ts" src/a.ts (not reachable`);
+  });
+});
