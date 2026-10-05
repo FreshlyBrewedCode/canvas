@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useSyncExternalStore }
 
 import type { Address } from "../../shared/address";
 import type { SessionMeta } from "../../shared/protocol";
-import { useFrames } from "./board";
+import { useFrames } from "../hooks/use-doc";
 import type { Peer, Room } from "./room";
 import { frameSessions, waitingFrames } from "./sessions";
 

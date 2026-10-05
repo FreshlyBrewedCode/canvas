@@ -18,5 +18,5 @@
     "noImplicitOverride": true
   },
   "include": ["src", "e2e", "vite.config.ts"],
-  "exclude": ["e2e/screenshots.ts", "e2e/projects"]
+  "exclude": ["e2e/screenshots.ts", "e2e/projects", "src/web/lib/room/no-dom"]
 }

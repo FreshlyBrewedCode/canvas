@@ -32,16 +32,8 @@ import { FullscreenProvider, useFullscreen, type Fullscreen } from "@/hooks/use-
 import { useAnchor } from "@/hooks/use-anchor";
 import { useBoardKeys } from "@/hooks/use-board-keys";
 import { startDrag } from "@/hooks/start-drag";
-import {
-  addFrame,
-  applyLayout,
-  newFrame,
-  own,
-  useBoard,
-  useFrames,
-  type Frame,
-  type FrameType,
-} from "@/lib/board";
+import { addFrame, applyLayout, newFrame, own, type Frame, type FrameType } from "@/lib/board";
+import { useBoard, useFrames } from "@/hooks/use-doc";
 import { mayEdit } from "@/lib/admission";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
 import { guestLink, saveIdentity } from "@/lib/link";

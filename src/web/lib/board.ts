@@ -8,7 +8,7 @@
  *   drawing:<frameId>  Y.Map<id, element>     a drawing frame's elements (`drawing.ts`)
  *
  * Agent threads, terminal output and file contents are not in here: they
- * come from the host's machine and are mirrored separately (see `room.ts`).
+ * come from the host's machine and are mirrored separately (`room/mirror.ts`).
  * Agent, file and terminal frames say where theirs are (ADR 0013): a
  * `runtime`, a file frame's `root`, a terminal's `pty`. Absent is the
  * board's own runtime, its working dir and the frame's own id: nothing
@@ -21,7 +21,6 @@
  * are migrated, what concurrency leaves is repaired, empty containers go.
  */
 
-import { useSyncExternalStore } from "react";
 import * as Y from "yjs";
 
 import {
@@ -291,7 +290,7 @@ export const allFrames = (doc: Y.Doc): Frame[] => readBoard(doc).frames;
 export const boardLayout = (doc: Y.Doc): Layout => readBoard(doc).layout;
 
 /** An immutable snapshot per doc, rebuilt when frames or the layout change. */
-class BoardStore {
+export class BoardStore {
   private snapshot: Board | null = null;
   constructor(private readonly doc: Y.Doc) {
     this.subscribe(() => (this.snapshot = null));
@@ -308,12 +307,12 @@ class BoardStore {
 }
 const stores = new WeakMap<Y.Doc, BoardStore>();
 
-export function useBoard(doc: Y.Doc): Board {
+/** The board's snapshot store, one per doc (`useBoard`, `hooks/use-doc.ts`). */
+export function boardStore(doc: Y.Doc): BoardStore {
   let store = stores.get(doc);
   if (!store) stores.set(doc, (store = new BoardStore(doc)));
-  return useSyncExternalStore(store.subscribe, store.get);
+  return store;
 }
-export const useFrames = (doc: Y.Doc): Frame[] => useBoard(doc).frames;
 
 /** A frame to add: any kind, without the id and stacking the board assigns. */
 export type NewFrame = Frame extends infer F

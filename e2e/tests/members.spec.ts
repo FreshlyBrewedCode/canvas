@@ -28,10 +28,10 @@ const reaches = async (page: Page, other: Page, ms = 1500) => {
   // A guest sends it even if it isn't let in: the host is what refuses it.
   await page.evaluate((k) => {
     const room = (window as any).room;
-    const access = room.access;
-    if (!room.isHost) room.access = "edit";
+    const access = room.participant.access;
+    if (!room.isHost) room.participant.access = "edit";
     room.doc.getMap("e2e").set(k, 1);
-    room.access = access;
+    room.participant.access = access;
   }, key);
   return other
     .waitForFunction((k) => (window as any).room.doc.getMap("e2e").has(k), key, { timeout: ms })
@@ -296,7 +296,7 @@ test("presence only among members", async ({ browser, host, guest, guestLink }, 
   const push = (page: Page) =>
     page.evaluate(() => {
       const room = (window as any).room;
-      room.sendPresence(room.peerIds());
+      room.participant.sendPresence(room.peerIds());
     });
   const gone = (page: Page, name: string) =>
     expect.poll(() => has(page, name), { timeout: 5000 }).toBe(false);
@@ -311,11 +311,13 @@ test("presence only among members", async ({ browser, host, guest, guestLink }, 
     await bob.evaluate(() => {
       const room = (window as any).room;
       const got: string[] = ((window as any).received = []);
-      for (const [name, channel] of Object.entries<any>(room.actions)) {
+      for (const [name, channel] of Object.entries<any>(room.participant.actions)) {
         const handler = channel.onMessage;
         if (handler)
           channel.onMessage = (data: unknown, context: { peerId: string }) => {
-            got.push(`${name} from ${context.peerId === room.hostPeer ? "host" : context.peerId}`);
+            got.push(
+              `${name} from ${context.peerId === room.participant.hostPeer ? "host" : context.peerId}`,
+            );
             return handler(data, context);
           };
       }
@@ -354,7 +356,7 @@ test("presence only among members", async ({ browser, host, guest, guestLink }, 
 
   await test.step("removed, even a Bob who stays is dropped, and gets nothing", async () => {
     await bob.evaluate(() => {
-      (window as any).room.leaveRoom = () => {};
+      (window as any).room.participant.leaveRoom = () => {};
     });
     await remove(host, bob);
     await gone(guest, "Bob");
@@ -449,10 +451,10 @@ for (const via of ["transport", "signal"] as const)
       await test.step("removing Bob resets it again; he gets no handover", async () => {
         const second = await roomOf(host);
         await bob.evaluate(() => {
-          (window as any).room.leaveRoom = () => {};
+          (window as any).room.participant.leaveRoom = () => {};
           const room = (window as any).room;
           const got: string[] = ((window as any).received = []);
-          for (const [name, channel] of Object.entries<any>(room.actions)) {
+          for (const [name, channel] of Object.entries<any>(room.participant.actions)) {
             const handler = channel.onMessage;
             if (handler)
               channel.onMessage = (data: any, context: unknown) => {

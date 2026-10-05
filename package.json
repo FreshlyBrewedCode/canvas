@@ -18,7 +18,7 @@
     "test": "bun test src e2e/acp",
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "e2e:record": "E2E_AGENTS=record playwright test -c e2e/playwright.config.ts --workers 1 --retries 0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.authority.json",
     "lint": "oxlint src e2e",
     "format": "oxfmt src bin scripts e2e vite.config.ts package.json .releaserc.json",
     "format:check": "oxfmt --check src bin scripts e2e vite.config.ts package.json .releaserc.json",

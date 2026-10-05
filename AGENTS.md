@@ -46,6 +46,14 @@ canvas
   `canvas serve` refuses any not its own (`file` denied "not this runtime's", else `error`).
   Browsers key what they mirror by address (`Room.keyOf`: own runtime's by bare id). Agents' board
   tools name paths without addresses: theirs is the runtime the call came from
+- the room (ADR 0013, decision 2, #110): `web/lib/room.ts` composes the roles, keeping the one
+  API components use. `room/participant.ts` is each browser's (transport, presence, focus,
+  connection log, `act`, a guest's side); `room/authority.ts` the host's authority (guests'
+  updates and requests, admission, member list, handover, `tidy`, saving) on the participant's
+  channels (`attach`); `room/gateway.ts` the link to `canvas serve`; `room/mirror.ts` sessions,
+  terminals and files keyed by address. The authority depends on no DOM or React:
+  `tsconfig.authority.json` typechecks it and its imports without them (`bun run typecheck`), so
+  the doc's modules stay React-free (their hooks: `hooks/use-doc.ts`)
 - comments (ADR 0006, finding 13): a file frame's comments live in `comments:<frameId>`, found
   again by their quoted lines (`shared/comments.ts`, `web/lib/comments.ts`); the source view's
   gutter "+" and cards come from `@pierre/diffs` line annotations. Agents read them with
@@ -65,7 +73,7 @@ canvas
   it (`components/drawing-editor.tsx`, lazy: Excalidraw is large). Agents' elements and mermaid
   become Excalidraw's, and `view_frame`'s image is rendered, in the host's browser around the
   sync tool call (`web/lib/drawing-kit.ts`); `board-result` carries images
-- canvas relay (ADR 0008, findings 15–16): `room.ts` reaches peers through a `Transport`
+- canvas relay (ADR 0008, findings 15–16): the room (`room/participant.ts`) reaches peers through a `Transport`
   (`web/lib/transport/`): trystero on Nostr (default), trystero meeting on a relay, or everything
   through `canvas relay` (`server/relay.ts`), sealed with the board key (`transport/envelope.ts`).
   The relay admits tokens `canvas serve` signs with an issuer key (`server/relay-token.ts`), sent
@@ -97,7 +105,7 @@ canvas
   member; never sent to `canvas serve`
 - the member list (ADR 0011, decision 5, `web/lib/member-list.ts`): the host signs who is in —
   `{host, version, members: peer id → fingerprint}`, statement `canvas-members:<room>:<json>` — and
-  hostcasts `member-list` when it changes (`Room.publishMembers`). Guests (`Members`) take it only
+  hostcasts `member-list` when it changes (`Authority.publishMembers`). Guests (`Members`) take it only
   from the verified host peer it names, newer than the last (versions: the host's clock, kept
   growing; a new host peer starts over), and presence — every path: pointer, view, selection,
   focus, drag all ride awareness — goes only to and is taken only from peers on it
@@ -106,7 +114,7 @@ canvas
   `member-remove`, make `canvas serve` mint a new room id and key (`Store.rotateRoom`, relay room
   and tokens with it), save it, and send the host tab `room`. The host seals `moved` to each peer
   in (`Admissions.moving`) — ECDH to the page's seal key from its join proof, signed with the host
-  key — waits for them to leave, then follows (`Room.relocate`: new transport, address bar via
+  key — waits for them to leave, then follows (`Participant.relocate`: new transport, address bar via
   `showLink`). Room ids are in signatures, so the owner's statement names the host public key;
   a welcome with another room than the link's moves the host tab there
 - frame focus (finding 08): who occupies a frame is presence (`web/lib/focus.ts`); the occupant

@@ -17,7 +17,7 @@
 
 import { fromBase64Url, toBase64Url, verify } from "../../shared/identity";
 import { signText } from "./host-key";
-import type { RelayLink } from "./link";
+import type { RelayLink } from "./link-types";
 
 /** Where the board went: what a member's link becomes. */
 export interface Move {

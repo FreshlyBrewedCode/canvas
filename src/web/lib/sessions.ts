@@ -4,7 +4,8 @@
  * worked out here is pure — which sessions a frame lists, what a new
  * conversation starts with, which frames a waiting session points at, which
  * requests a frame lets through, when an agent process may go, and how a log
- * arriving in pieces comes together — and `room.ts` does it.
+ * arriving in pieces comes together — and the room does it (`room/mirror.ts`,
+ * `room/gateway.ts`).
  */
 
 import { withSettings } from "../../shared/agent-settings";

@@ -14,7 +14,6 @@
  */
 
 import { generateNKeysBetween } from "fractional-indexing";
-import { useSyncExternalStore } from "react";
 import type * as Y from "yjs";
 
 export interface DrawingElement {
@@ -368,7 +367,7 @@ export function describeDrawing(elements: ReadonlyArray<DrawingElement>): string
 // ---------------------------------------------------------------------------
 
 /** An immutable snapshot per frame, rebuilt only when its elements change. */
-class DrawingStore {
+export class DrawingStore {
   private snapshot: DrawingElement[];
   constructor(
     private readonly doc: Y.Doc,
@@ -386,12 +385,13 @@ class DrawingStore {
 }
 const stores = new WeakMap<Y.Doc, Map<string, DrawingStore>>();
 
-export function useDrawing(doc: Y.Doc, frameId: string): DrawingElement[] {
+/** A frame's elements' snapshot store, one per frame (`useDrawing`, `hooks/use-doc.ts`). */
+export function drawingStore(doc: Y.Doc, frameId: string): DrawingStore {
   let perDoc = stores.get(doc);
   if (!perDoc) stores.set(doc, (perDoc = new Map()));
   let store = perDoc.get(frameId);
   if (!store) perDoc.set(frameId, (store = new DrawingStore(doc, frameId)));
-  return useSyncExternalStore(store.subscribe, store.get);
+  return store;
 }
 
 // ---------------------------------------------------------------------------

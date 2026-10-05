@@ -80,7 +80,7 @@ describe("relay transport", () => {
   });
 
   test("a burst of sends arrives whole and in order", async () => {
-    // As `room.ts` sends: without waiting for each one.
+    // As the room sends: without waiting for each one.
     const host = await peer("board-h", "h1", "host");
     const guest = await peer("board-h", "g1", "guest");
     await until(() => host.joined.includes("g1"));

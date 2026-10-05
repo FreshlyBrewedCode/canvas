@@ -3,7 +3,8 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "re
 
 import { FrameShell } from "@/components/frame-shell";
 import type { Frame } from "@/lib/board";
-import { restingView, useDrawing, visible, type DrawingElement } from "@/lib/drawing";
+import { useDrawing } from "@/hooks/use-doc";
+import { restingView, visible, type DrawingElement } from "@/lib/drawing";
 import { contentBounds, PADDING, renderSvg } from "@/lib/drawing-kit";
 import { useRoom } from "@/lib/room-context";
 

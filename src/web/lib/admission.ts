@@ -1,6 +1,6 @@
 /**
  * The host's admission (ADR 0011, decision 2): which connected peers are in,
- * which knock, and what each may do. Pure, for `room.ts` to act on.
+ * which knock, and what each may do. Pure, for `room/authority.ts` to act on.
  *
  * A peer counts once it proved its browser key (`shared/identity.ts`). If the
  * key is a member's (`canvas serve`'s list, found by the full fingerprint and
@@ -17,7 +17,7 @@
 
 import type { GuestAccess, GuestRequest, Member } from "../../shared/protocol";
 import type { PeerIdentity } from "../../shared/identity";
-import type { Identity } from "./link";
+import type { Identity } from "./link-types";
 
 /** A verified browser that isn't a member, waiting for the host. */
 export interface Knock extends Identity, PeerIdentity {
