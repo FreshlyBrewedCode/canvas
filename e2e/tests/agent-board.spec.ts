@@ -64,9 +64,45 @@ test.describe("in the shop", () => {
       expect(term!.y, "…below the agent").toBeGreaterThan((await at(host, self)).y);
     });
 
-    await test.step("after a restart of canvas serve, the tools reach the reloaded session", async () => {
+    await test.step("a board saved before addresses (ADR 0013) loads as it was: files, terminal, agent", async () => {
+      // Nothing names a runtime, root or PTY: what canvas serve keeps is a board from before.
+      const named = await host.evaluate(() => {
+        const out: string[] = [];
+        for (const [id, map] of (window as any).room.doc.getMap("frames").entries()) {
+          for (const key of ["runtime", "root", "pty"]) if (map.has(key)) out.push(`${id}.${key}`);
+          for (const entry of map.get("files") ?? [])
+            for (const key of ["runtime", "root"]) if (key in entry) out.push(`${id}.files.${key}`);
+        }
+        return out;
+      });
+      expect(named, "no addresses written").toEqual([]);
+      const ids = async () => (await frames(host)).map((f) => f.id).sort();
+      const before = await ids();
+      // The host saves the board a moment after it changes.
+      await settle(1500);
       await serve.restart();
+      await host.reload();
       await expect(host.getByText("connected to canvas serve")).toBeVisible({ timeout: 30_000 });
+      await expect.poll(ids, "the board, from disk").toEqual(before);
+      const all = await frames(host);
+      const password = all.find((f) => f.path === "src/auth/password.ts")!;
+      await expect(frame(host, password.id).getByText("verifyPassword").first()).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(
+        frame(host, self).locator("[data-turn-footer=done]"),
+        "the agent's thread",
+      ).toHaveCount(2);
+      const term = all.find((f) => f.type === "terminal")!;
+      await fit(host);
+      await frame(host, term.id).locator(".xterm").click();
+      await host.keyboard.type("echo addresses-$((40 + 2))\n");
+      await expect(frame(host, term.id).locator(".xterm-rows")).toContainText("addresses-42", {
+        timeout: 10_000,
+      });
+    });
+
+    await test.step("after a restart of canvas serve, the tools reach the reloaded session", async () => {
       await ask(
         host,
         self,

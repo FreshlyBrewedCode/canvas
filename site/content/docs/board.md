@@ -172,6 +172,9 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
 - **Move** it by its header, **resize** it by its edges.
 - **Rename** it by clicking its title in the header.
 - **Remove** it with the **×** in its header.
+- An agent, files or terminal frame is on the board's [runtime](/docs/glossary), the host's
+  `canvas serve`. One that names another runtime shows **Not reachable**, for everyone, and
+  nothing of it is opened; it still moves and closes.
 
 ## Presence
 

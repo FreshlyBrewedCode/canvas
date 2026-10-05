@@ -341,6 +341,8 @@ export type ServerToClient =
       /** The version `canvas serve` runs as; null for a checkout. */
       readonly version: string | null;
       readonly room: RoomSecrets;
+      /** This runtime's id (ADR 0013, decision 3): the board's own runtime. */
+      readonly runtime: string;
       readonly cwd: string;
       readonly agents: ReadonlyArray<AgentInfo>;
       /** base64 Yjs update of the persisted board, if any. */
@@ -456,6 +458,11 @@ export type Admission =
 
 export interface RoomState {
   readonly hostPeerId: string;
+  /**
+   * The board's own runtime's id (ADR 0013, decision 3): what an absent
+   * `runtime` means. Absent from hosts older than it.
+   */
+  readonly runtime?: string;
   readonly cwd: string;
   readonly agents: ReadonlyArray<AgentInfo>;
   /** `canvas serve`'s version, null for a checkout; absent from hosts older than it. */

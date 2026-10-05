@@ -6,11 +6,14 @@ import {
   addFrame,
   allFrames,
   boardLayout,
+  frameReach,
   framesOf,
   layoutOf,
   moveFrame,
+  newFrame,
   readFrame,
   removeFrame,
+  shownPty,
   tidy,
   type Frame,
 } from "./board";
@@ -106,5 +109,70 @@ describe("terminals", () => {
     framesOf(doc).get(t)!.set("height", 300);
     tidy(doc, { screen: 1200 });
     expect(allFrames(doc).find((f) => f.id === t)!.height).toBe(300);
+  });
+});
+
+describe("addresses (ADR 0013)", () => {
+  const OWN = "own-runtime";
+  const ADDRESS_KEYS = ["runtime", "root", "pty"];
+  const keysOf = (doc: Y.Doc) => [...framesOf(doc).values()].flatMap((map) => [...map.keys()]);
+  const read = (doc: Y.Doc, id: string) => allFrames(doc).find((f) => f.id === id)!;
+
+  test("a board from before loads as it is: tidy writes nothing for addresses", () => {
+    const doc = new Y.Doc();
+    const [f, t, a] = placeFrames(doc, [
+      file(0, 0),
+      { type: "terminal", title: "shell", x: 700, y: 0, w: 600, h: 400 },
+      { type: "agent", agent: "claude", title: "claude", x: 1400, y: 0, w: 460, h: 620 },
+    ]);
+    expect(tidy(doc)).toBe(false);
+    expect(keysOf(doc).filter((key) => ADDRESS_KEYS.includes(key))).toEqual([]);
+    // Each on the board's own runtime; the terminal shows the PTY with its own id.
+    for (const id of [f!, t!, a!]) expect(frameReach(read(doc, id), OWN)).toBe("own");
+    const terminal = read(doc, t!);
+    if (terminal.type !== "terminal") throw new Error("not a terminal");
+    expect(shownPty(terminal)).toBe(t!);
+  });
+
+  test("new frames carry no address", () => {
+    const doc = new Y.Doc();
+    for (const type of ["agent", "file", "terminal", "browser", "drawing"] as const)
+      addFrame(doc, newFrame(type, allFrames(doc)));
+    tidy(doc, { screen: 900 });
+    expect(keysOf(doc).filter((key) => ADDRESS_KEYS.includes(key))).toEqual([]);
+  });
+
+  test("a frame on another runtime or root is elsewhere; a bad value names nothing", () => {
+    const doc = new Y.Doc();
+    const id = addFrame(doc, { type: "file", title: "a.ts", path: "a.ts" });
+    const map = framesOf(doc).get(id)!;
+    map.set("runtime", OWN);
+    expect(frameReach(read(doc, id), OWN)).toBe("own");
+    map.set("runtime", "laptop-2");
+    expect(frameReach(read(doc, id), OWN)).toBe("elsewhere");
+    map.delete("runtime");
+    map.set("root", "worktree-1");
+    expect(frameReach(read(doc, id), OWN)).toBe("elsewhere");
+    map.set("root", 42);
+    expect(frameReach(read(doc, id), OWN)).toBe("nowhere");
+    // Browsers and drawings are on no runtime.
+    const page = addFrame(doc, { type: "browser", title: "p", url: "https://example.com" });
+    framesOf(doc).get(page)!.set("runtime", "laptop-2");
+    expect(frameReach(read(doc, page), OWN)).toBe("own");
+  });
+
+  test("a terminal shows the PTY it names; one that is no id is ignored", () => {
+    const doc = new Y.Doc();
+    const id = addFrame(doc, { type: "terminal", title: "shell" });
+    const pty = () => {
+      const frame = read(doc, id);
+      return frame.type === "terminal" ? shownPty(frame) : null;
+    };
+    framesOf(doc).get(id)!.set("pty", "pty-2");
+    expect(pty()).toBe("pty-2");
+    for (const bad of [42, "", "a b", "../x"]) {
+      framesOf(doc).get(id)!.set("pty", bad);
+      expect(pty(), JSON.stringify(bad)).toBe(id);
+    }
   });
 });

@@ -116,6 +116,7 @@ Everything `canvas serve` keeps lives in `<project>/.canvas/`:
 | File                    | Holds                                                         |
 | ----------------------- | ------------------------------------------------------------- |
 | `room.json`             | Room id, room key, the host's key pair (mode `0600`)          |
+| `runtime.json`          | This runtime's id: the machine's, kept when the invite link is reset |
 | `owners.json`           | The browsers paired as host: their public keys and fingerprints |
 | `pairing.json`          | The pending pairing code and when it runs out, if any         |
 | `serve.json`            | Where `canvas serve` and the web app are, for `canvas pair`'s links |

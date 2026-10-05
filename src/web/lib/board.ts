@@ -9,6 +9,10 @@
  *
  * Agent threads, terminal output and file contents are not in here: they
  * come from the host's machine and are mirrored separately (see `room.ts`).
+ * Agent, file and terminal frames say where theirs are (ADR 0013): a
+ * `runtime`, a file frame's `root`, a terminal's `pty`. Absent is the
+ * board's own runtime, its working dir and the frame's own id: nothing
+ * writes these defaults, so boards from before need no migration.
  *
  * Where frames are is structure — a frame's column, its row, its cluster —
  * and their rects are derived from it (`resolve`, `shared/layout.ts`), the
@@ -38,6 +42,7 @@ import {
   type Target,
   type Tree,
 } from "../../shared/layout";
+import { isRuntimeId, reach, type Reach } from "../../shared/address";
 import type { AgentSetting } from "../../shared/protocol";
 import { isSessionId } from "../../shared/sessions";
 import { clearComments } from "./comments";
@@ -84,6 +89,9 @@ export type Frame = FrameBase &
   (
     | {
         readonly type: "agent";
+        /** The runtime its sessions are on (ADR 0013); absent: the board's own. */
+        readonly runtime?: string;
+        /** A kind of agent its runtime offers. */
         readonly agent: string;
         /** The session it shows (ADR 0012); without one, the session with the frame's id. */
         readonly session?: string;
@@ -95,7 +103,10 @@ export type Frame = FrameBase &
       }
     | {
         readonly type: "file";
-        /** Working-dir-relative; "" until someone picks a file. */
+        /** The runtime and root of its file (ADR 0013); absent: the board's own, its working dir. */
+        readonly runtime?: string;
+        readonly root?: string;
+        /** Root-relative; "" until someone picks a file. */
         readonly path: string;
         readonly view?: FileView | null;
         /** Lines to show and highlight (1-based, inclusive); null for none. */
@@ -104,7 +115,13 @@ export type Frame = FrameBase &
         readonly files?: ReadonlyArray<FileEntry> | null;
       }
     | { readonly type: "browser"; readonly url: string }
-    | { readonly type: "terminal" }
+    | {
+        readonly type: "terminal";
+        /** The runtime its PTY is on (ADR 0013); absent: the board's own. */
+        readonly runtime?: string;
+        /** The PTY it shows; absent: the one with the frame's id (`shownPty`). */
+        readonly pty?: string;
+      }
     /** An Excalidraw drawing; its elements are in `drawing:<id>` (ADR 0009). */
     | { readonly type: "drawing" }
   );
@@ -179,6 +196,33 @@ export function showConversation(
       );
     else map.delete("settings");
   });
+}
+
+export type TerminalFrame = Extract<Frame, { type: "terminal" }>;
+
+/**
+ * The PTY a terminal frame shows (ADR 0013, decision 4): the one it names,
+ * else the one with the frame's id, as before. A name that is no id is
+ * ignored, as `shownSession` ignores a bad session.
+ */
+export const shownPty = (frame: TerminalFrame): string =>
+  isRuntimeId(frame.pty) ? frame.pty : frame.id;
+
+/**
+ * Where a frame's agent, file or terminal is, for whoever is connected to
+ * the runtime `own` (`shared/address.ts`). Browser and drawing frames are on
+ * no runtime: always here.
+ */
+export function frameReach(frame: Frame, own: string | null | undefined): Reach {
+  switch (frame.type) {
+    case "agent":
+    case "terminal":
+      return reach({ runtime: frame.runtime }, own);
+    case "file":
+      return reach({ runtime: frame.runtime, root: frame.root }, own);
+    default:
+      return "own";
+  }
 }
 
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");

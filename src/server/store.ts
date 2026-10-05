@@ -3,6 +3,8 @@
  *
  *   room.json              room id, trystero key, host keypair; a new id and key
  *                          when the invite link is reset
+ *   runtime.json           this runtime's id (ADR 0013, decision 3): the
+ *                          machine's, not the board's; kept across resets
  *   owners.json            the browsers paired as host (`owners.ts`)
  *   pairing.json           the pending pairing code, if any (`owners.ts`)
  *   serve.json             the host link's base, for `canvas pair`
@@ -34,6 +36,7 @@ import type {
   SessionMeta,
   SessionSnapshot,
 } from "../shared/protocol";
+import { isRuntimeId } from "../shared/address";
 import { withDefaults } from "./session-meta";
 
 export type RoomFile = RoomSecrets;
@@ -86,6 +89,22 @@ export class Store {
     writeFileSync(temp, JSON.stringify(room, null, 2), { mode: 0o600 });
     renameSync(temp, path);
     return room;
+  }
+
+  /**
+   * This runtime's id (ADR 0013, decision 3): made the first time, 9 random
+   * bytes as base64url. No secret, and not the room's: resetting the invite
+   * link keeps it. Deleting the file makes a new one.
+   */
+  runtime(): string {
+    const path = join(this.root, "runtime.json");
+    if (existsSync(path)) {
+      const { id } = JSON.parse(readFileSync(path, "utf8")) as { id?: unknown };
+      if (isRuntimeId(id)) return id;
+    }
+    const id = randomId(9);
+    writeFileSync(path, JSON.stringify({ id }, null, 2));
+    return id;
   }
 
   serveInfo(): ServeInfo | null {

@@ -5,10 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { FrameShell } from "@/components/frame-shell";
 import { useFollowScroll, type ScrollSurface } from "@/hooks/use-follow-scroll";
-import type { Frame } from "@/lib/board";
+import { shownPty, type TerminalFrame as TerminalFrameData } from "@/lib/board";
 import { useRoomState } from "@/lib/room-context";
-
-type TerminalFrameData = Extract<Frame, { type: "terminal" }>;
 
 /**
  * A shell on the host's machine. Output is mirrored to everyone; typing is
@@ -26,6 +24,8 @@ export function TerminalFrame({
   const host = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const canType = room.isHost || room.access === "trusted";
+  // The PTY it shows (ADR 0013): its own id's, unless it names another.
+  const pty = shownPty(frame);
   // The scrollback, in lines, follows the frame's occupant.
   const surface = useRef<ScrollSurface | null>(null);
   const [terminal, setTerminal] = useState(0);
@@ -62,7 +62,7 @@ export function TerminalFrame({
 
     let written = 0;
     const flush = () => {
-      const data = room.terminal(frame.id);
+      const data = room.terminal(pty);
       // Scrollback is trimmed from the front; if we fell behind, redraw.
       if (data.length < written) {
         term.reset();
@@ -72,12 +72,12 @@ export function TerminalFrame({
       written = data.length;
     };
     flush();
-    const unsubscribe = room.subscribe(`term:${frame.id}`, flush);
+    const unsubscribe = room.subscribe(`term:${pty}`, flush);
 
     const input = term.onData((data) => {
       if (readOnly) return;
       room
-        .act({ t: "term-input", id: frame.id, data })
+        .act({ t: "term-input", id: pty, data })
         .catch((error: Error) => setNotice(error.message));
     });
 
@@ -87,7 +87,7 @@ export function TerminalFrame({
       } catch {
         return;
       }
-      if (room.isHost) room.resizeTerminal(frame.id, term.cols, term.rows);
+      if (room.isHost) room.resizeTerminal(pty, term.cols, term.rows);
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host.current);
@@ -99,7 +99,7 @@ export function TerminalFrame({
       surface.current = null;
       term.dispose();
     };
-  }, [room, frame.id, readOnly]);
+  }, [room, pty, readOnly]);
 
   return (
     <FrameShell

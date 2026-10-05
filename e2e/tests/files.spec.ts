@@ -160,6 +160,45 @@ test.describe(() => {
       }
     });
 
+    await test.step("a frame on another runtime, set through the board: not reachable, nothing opened", async () => {
+      const set = (fields: Record<string, unknown>) =>
+        guest.evaluate(
+          ([frameId, f]) => {
+            const { doc } = (window as any).room;
+            const map = doc.getMap("frames").get(frameId);
+            doc.transact(() => {
+              for (const [k, v] of Object.entries(f))
+                if (v === null) map.delete(k);
+                else map.set(k, v);
+            });
+          },
+          [id, fields] as const,
+        );
+      const unreachable = (page: Page) => of(page).locator("[data-unreachable]");
+      // ADR 0013: a file never shown before, on a runtime this board isn't connected to.
+      const never = "docs/adr/0001-host-relayed-star-topology.md";
+      await set({ runtime: "laptop-2", path: never });
+      for (const page of [host, guest])
+        await expect(unreachable(page)).toContainText("runtime laptop-2", { timeout: 10_000 });
+      await set({ runtime: null, root: "worktree-1" });
+      await expect(unreachable(host)).toContainText("root worktree-1");
+      await set({ root: 42 });
+      await expect(unreachable(guest)).toContainText("names no runtime");
+      await settle(500);
+      expect(
+        await host.evaluate((p) => (window as any).room.file(p), never),
+        "the host opened nothing",
+      ).toBeUndefined();
+      // Back on the board's own runtime: the file shows.
+      await set({ root: null });
+      await expect(unreachable(guest)).toHaveCount(0);
+      await expect(of(guest).getByText("The host's browser is the only door").first()).toBeVisible({
+        timeout: 10_000,
+      });
+      // The frame came back as it is when first shown: its tree closed.
+      await of(host).getByTitle("Show files").click();
+    });
+
     await test.step("view guests see open files, but get no tree", async () => {
       await setRole(host, guest, "view");
       await pick(of(host), "docs/adr/0001-host-relayed-star-topology.md");

@@ -251,3 +251,30 @@ describe("resetting the invite link", async () => {
     again.ws.close();
   });
 });
+
+describe("the runtime id (ADR 0013, decision 3)", async () => {
+  const { open, answer, pairing, dir } = await start();
+  const owner = await browserKey();
+  const host = await answer(await open(), owner, pairing!);
+  const saved = () => JSON.parse(readFileSync(join(dir, ".canvas", "runtime.json"), "utf8"));
+  const runtimeOf = (tab: Tab) => {
+    const welcome = tab.received.find((m) => m.t === "welcome");
+    if (welcome?.t !== "welcome") throw new Error("no welcome");
+    return welcome.runtime;
+  };
+
+  test("made the first time, 12 characters, saved and in the welcome", () => {
+    expect(runtimeOf(host)).toMatch(/^[A-Za-z0-9_-]{12}$/);
+    expect(saved()).toEqual({ id: runtimeOf(host) });
+  });
+
+  test("the runtime's, not the room's: it survives resetting the invite link and a restart", async () => {
+    const id = runtimeOf(host);
+    host.ws.send(JSON.stringify({ t: "room-reset" }));
+    await until("room", () => got(host, "room"));
+    const again = await serve({ dir, port: 0, hostname: "127.0.0.1" });
+    afterAll(() => void again.server.stop(true));
+    expect(again.runtime).toBe(id);
+    expect(saved()).toEqual({ id });
+  });
+});

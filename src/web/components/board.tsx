@@ -18,7 +18,7 @@ import { GoProvider, useGo } from "@/components/board-link";
 import { BrowserFrame } from "@/components/browser-frame";
 import { DrawingFrame } from "@/components/drawing-frame";
 import { FileFrame } from "@/components/file-frame";
-import { FRAME_KINDS } from "@/components/frame-shell";
+import { FRAME_KINDS, UnreachableFrame } from "@/components/frame-shell";
 import { Edges } from "@/components/edges";
 import { FullscreenBar } from "@/components/fullscreen";
 import { Inserts } from "@/components/inserts";
@@ -360,6 +360,9 @@ function BoardView() {
 }
 
 function FrameView({ frame, readOnly }: { frame: Frame; readOnly: boolean }) {
+  const room = useRoomState();
+  const reach = room.reachOf(frame);
+  if (reach !== "own") return <UnreachableFrame frame={frame} readOnly={readOnly} reach={reach} />;
   switch (frame.type) {
     case "agent":
       return <AgentFrame frame={frame} readOnly={readOnly} />;

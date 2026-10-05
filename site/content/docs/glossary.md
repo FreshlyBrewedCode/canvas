@@ -45,6 +45,7 @@ order: 7
 | **relay token**   | Admits one board to a canvas relay for 30 days; the host's tab and guest links carry one. [Relay](/docs/relay) |
 | **role**          | What a member may do, set by the host per member: view or edit. [Guests](/docs/guests#members-and-roles) |
 | **row**           | Frames side by side in a cluster, left to right; they share a height. [Board](/docs/board#layout) |
+| **runtime**       | Where agents, terminals and files are: today the host's `canvas serve`, known by the id in `.canvas/runtime.json`. A frame on a runtime the board isn't connected to shows **Not reachable**. [Board](/docs/board#frames) |
 | **scratch file**  | A file an agent wrote for the board only, kept in `.canvas/scratch/`, shown as `canvas:scratch/<name>`. [Board tools](/docs/board-tools#scratch-files) |
 | **shared set**    | The files `canvas serve` lets out. [Security](/docs/security#the-shared-set) |
 | **signalling relay** | A server through which browsers find each other before they connect directly: public Nostr relays, or a canvas relay. [Connection](/docs/connection) |
