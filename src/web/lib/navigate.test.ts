@@ -7,12 +7,15 @@ import { navigate, type NavigateContext } from "./navigate";
 import { pendingReveal } from "./reveal";
 import { placeFrames, type Placed } from "./test-board";
 
+const OWN = "own-runtime";
+
 function board(canEdit = true) {
   const doc = new Y.Doc();
   const focused: string[] = [];
   const fitted: string[] = [];
   const ctx: NavigateContext = {
     doc,
+    runtime: OWN,
     canEdit,
     focus: (id) => focused.push(id),
     fit: (box) => fitted.push(`${box.x},${box.y}`),
@@ -137,5 +140,51 @@ describe("navigate, deep links", () => {
       lines: { start: 30, end: 33 },
     });
     expect(pendingReveal(id)).toMatchObject({ path: "src/a.ts", lines: { start: 30, end: 33 } });
+  });
+});
+
+describe("navigate, by address (ADR 0013)", () => {
+  test("wherever the path shows means a frame with the whole address", () => {
+    const { ctx, add, frame, doc } = board();
+    const here = add({ type: "file", path: "src/a.ts" });
+    const there = add({ type: "file", path: "src/a.ts", runtime: "laptop-2" } as never);
+    expect(navigate(ctx, { path: "src/a.ts", runtime: "laptop-2" })?.frame).toBe(there);
+    expect(navigate(ctx, { path: "src/a.ts" })?.frame).toBe(here);
+    // The own runtime's id written out is the same runtime.
+    expect(navigate(ctx, { path: "src/a.ts", runtime: OWN })).toEqual({
+      frame: here,
+      path: "src/a.ts",
+    });
+    // Elsewhere, and no frame shows it: a new one, at that address.
+    const where = navigate(ctx, { path: "src/b.ts", root: "worktree-1" });
+    expect(frame(where!.frame!)).toMatchObject({ path: "src/b.ts", root: "worktree-1" });
+    expect(where).toEqual({ frame: where!.frame, root: "worktree-1", path: "src/b.ts" });
+    expect(allFrames(doc)).toHaveLength(3);
+  });
+
+  test("a frame pointed at a file of the own runtime leaves no address behind", () => {
+    const { ctx, add, frame } = board();
+    const id = add({ type: "file", path: "src/a.ts", runtime: "laptop-2", root: "r" } as never);
+    navigate(ctx, { frame: id, path: "src/b.ts" });
+    expect(frame(id).path).toBe("src/b.ts");
+    expect("runtime" in frame(id) || "root" in frame(id)).toBe(false);
+    navigate(ctx, { frame: id, path: "src/b.ts", runtime: "laptop-3" });
+    expect(frame(id)).toMatchObject({ path: "src/b.ts", runtime: "laptop-3" });
+  });
+
+  test("a comment's file is at its address", () => {
+    const { ctx, add, frame, doc } = board();
+    const id = add({ type: "file", path: "src/a.ts" });
+    const comment = addComment(doc, id, {
+      runtime: "laptop-2",
+      path: "src/b.ts",
+      start: 4,
+      end: 6,
+      quote: "x",
+      body: "look",
+      author: { kind: "agent", frame: "f", name: "agent" },
+    });
+    navigate(ctx, { frame: id, comment: comment.id });
+    expect(frame(id)).toMatchObject({ runtime: "laptop-2", path: "src/b.ts" });
   });
 });

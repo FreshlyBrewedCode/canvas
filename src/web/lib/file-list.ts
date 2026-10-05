@@ -6,6 +6,7 @@
  * that is ever read.
  */
 
+import { sameAddress, type UncheckedAddress } from "../../shared/address";
 import type { FileEntry, LineRange } from "./board";
 
 /** A display path as the tree takes it; throws why it can't be one. */
@@ -54,20 +55,21 @@ export function listOrder(displays: ReadonlyArray<string>) {
 }
 
 /**
- * The entry a frame shows: the one for its path and lines, else the first
- * for its path. Undefined when the frame shows a file off the list.
+ * The entry a frame shows: the one for its file (path at `at`, ADR 0013) and
+ * lines, else the first for its file. Undefined when the frame shows a file
+ * off the list. `own`: the board's own runtime, what an absent one means.
  */
 export function entryFor(
   list: ReadonlyArray<FileEntry>,
   path: string,
   lines: LineRange | null | undefined,
+  at: UncheckedAddress = {},
+  own: string | null = null,
 ): FileEntry | undefined {
   const same = (a?: LineRange | null, b?: LineRange | null) =>
     a?.start === b?.start && a?.end === b?.end;
-  return (
-    list.find((entry) => entry.path === path && same(entry.lines, lines)) ??
-    list.find((entry) => entry.path === path)
-  );
+  const mine = list.filter((entry) => entry.path === path && sameAddress(entry, at, own));
+  return mine.find((entry) => same(entry.lines, lines)) ?? mine[0];
 }
 
 /** Every folder above a display path, without the trailing slash. */

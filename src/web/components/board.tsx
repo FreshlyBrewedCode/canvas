@@ -821,7 +821,7 @@ function ApprovalCard({ approval }: { approval: Approval }) {
     request.t === "agent-prompt"
       ? "wants to send a prompt"
       : request.t === "agent-config"
-        ? `wants to set ${describeConfig(room.optionsFor(request.sessionId), request)}`
+        ? `wants to set ${describeConfig(room.optionsFor(request.sessionId, request), request)}`
         : request.t === "term-input"
           ? "wants to type in a terminal"
           : "wants to stop an agent";

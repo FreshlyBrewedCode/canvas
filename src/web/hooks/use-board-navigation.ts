@@ -25,6 +25,9 @@ export function useBoardNavigation(
   const ctx = useMemo<NavigateContext>(
     () => ({
       doc: room.doc,
+      get runtime() {
+        return room.runtime;
+      },
       get canEdit() {
         return !latest.current.readOnly;
       },

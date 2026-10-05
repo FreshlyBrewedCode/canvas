@@ -33,8 +33,10 @@ import type { AgentInfo } from "../../shared/protocol";
 import {
   addFrame,
   allFrames,
+  atAddress,
   boardLayout,
   DEFAULT_SIZE,
+  frameReach,
   moveFrame,
   promptText,
   removeFrame,
@@ -62,10 +64,18 @@ import {
 } from "./drawing";
 import { checkDisplays, displayPath } from "./file-list";
 
+/**
+ * Agents name paths as today (ADR 0013, decision 5): of their runtime's
+ * working dir, which the call came from — `canvas serve`'s, the board's own.
+ * So what they open, list and comment on is written without an address, and
+ * a file frame they point somewhere comes to their runtime.
+ */
 export interface BoardToolContext {
   readonly doc: Y.Doc;
   /** The calling agent's frame (its session id). */
   readonly self: string;
+  /** The board's own runtime's id, if known: to tell agents which frames they can't reach. */
+  readonly runtime?: string | null;
   readonly agents: ReadonlyArray<AgentInfo>;
   /** An agent frame's session status, if known. */
   readonly status?: (frameId: string) => string | undefined;
@@ -198,6 +208,8 @@ function describe(ctx: BoardToolContext, frame: Frame): string {
       break;
     }
   }
+  if (frameReach(frame, ctx.runtime) !== "own")
+    parts.push("(not reachable: on another runtime than yours)");
   if (frame.id === ctx.self) parts.push("(you)");
   else if (frame.origin === ctx.self) parts.push("(opened by you)");
   else if (frame.origin) parts.push(`(opened by agent [${frame.origin}])`);
@@ -289,13 +301,14 @@ function changeFrame(
     if (args.path !== undefined) {
       const path = filePath(args.path);
       const defaultTitle = frame.title === basename(frame.path) || /^files-\d+$/.test(frame.title);
-      Object.assign(patch, { path, view: null, lines: lineRange(args) ?? null });
+      Object.assign(patch, { ...atAddress({}), path, view: null, lines: lineRange(args) ?? null });
       if (defaultTitle) patch.title = basename(path);
     } else if (args.start_line !== undefined) patch.lines = lineRange(args);
     if (args.comment !== undefined) {
       // Comments show in the source.
       const comment = knownComment(ctx, frame.id, args.comment);
       Object.assign(patch, {
+        ...atAddress({ runtime: comment.runtime, root: comment.root }),
         path: comment.path,
         view: null,
         lines: { start: comment.start, end: comment.end },
@@ -310,7 +323,12 @@ function changeFrame(
       // A new list shows its first entry, unless the frame is told what to show.
       const first = files?.[0];
       if (first && args.path === undefined && !files.some((e) => e.path === frame.path))
-        Object.assign(patch, { path: first.path, lines: first.lines ?? null, view: null });
+        Object.assign(patch, {
+          ...atAddress({}),
+          path: first.path,
+          lines: first.lines ?? null,
+          view: null,
+        });
     }
   }
   if (frame.type === "browser" && args.url !== undefined) patch.url = webUrl(args.url);

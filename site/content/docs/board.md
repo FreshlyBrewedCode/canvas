@@ -158,6 +158,10 @@ Links are ordinary markdown links. A path is from the project root, or, in a fil
 | `[x](canvas:scratch/notes.md)`        | A scratch file                           |
 | `[x](#frame=<id>)`                    | A frame; add `&lines=10-20`, `&path=…` or `&comment=<id>` |
 
+A file on another [runtime](/docs/glossary) than the board's, or in another root of it, adds
+`&runtime=<id>` (and `&root=<id>`) to the link; a path in a file is of that file's. Links on a
+board with one runtime never need them.
+
 Agents are told how to link, and [`view_board`](/docs/board-tools) gives them frame ids.
 
 ## Frames

@@ -79,3 +79,16 @@ describe("entryFor", () => {
     expect(entryFor(list, "src/c.ts", null)).toBeUndefined();
   });
 });
+
+describe("entryFor, by address (ADR 0013)", () => {
+  test("an entry is of its runtime and root; absent is the own runtime", () => {
+    const list = [
+      { display: "there", runtime: "laptop-2", path: "src/a.ts" },
+      { display: "here", path: "src/a.ts" },
+    ];
+    expect(entryFor(list, "src/a.ts", null)?.display).toBe("here");
+    expect(entryFor(list, "src/a.ts", null, { runtime: "own" }, "own")?.display).toBe("here");
+    expect(entryFor(list, "src/a.ts", null, { runtime: "laptop-2" }, "own")?.display).toBe("there");
+    expect(entryFor(list, "src/a.ts", null, { root: "worktree-1" }, "own")).toBeUndefined();
+  });
+});

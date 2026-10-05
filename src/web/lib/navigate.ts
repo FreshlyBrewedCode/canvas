@@ -6,14 +6,17 @@
  * — for you only. What the board shows is shared, as in the tree: a file no
  * frame shows opens in a new one beside the link's frame, a frame is pointed
  * at the file the link names, and lines mean its source, a heading its
- * preview.
+ * preview. A file is at its address (ADR 0013): a frame showing the same
+ * path elsewhere is another file.
  */
 
 import type * as Y from "yjs";
 
+import { canonical, sameAddress, type Address } from "../../shared/address";
 import {
   addFrame,
   allFrames,
+  atAddress,
   fileView,
   isMarkdown,
   raiseFrame,
@@ -30,6 +33,8 @@ type Box = { readonly x: number; readonly y: number; readonly w: number; readonl
 /** What following a link needs of the board, the room and the viewport. */
 export interface NavigateContext {
   readonly doc: Y.Doc;
+  /** The board's own runtime's id, if known: what an absent `runtime` means. */
+  readonly runtime?: string | null;
   /** May we change the board (open or retarget frames)? */
   readonly canEdit: boolean;
   /** Claim the frame if it is free; follow whoever holds it otherwise (`Room.focusFrame`). */
@@ -54,22 +59,28 @@ export function navigate(
   { from = null, inPlace = false }: NavigateOptions = {},
 ): LinkTarget | null {
   const frames = allFrames(ctx.doc);
+  const own = ctx.runtime;
   let { path, lines, heading } = target;
+  let address: Address = canonical(target, own);
 
   if (target.frame && target.comment) {
     const comment = commentsOf(ctx.doc, target.frame).get(target.comment);
     if (comment) {
       path = comment.path;
+      address = canonical(comment, own);
       lines = { start: comment.start, end: comment.end };
     }
   }
 
   let frame: Frame | undefined;
   if (target.frame) frame = frames.find((f) => f.id === target.frame);
-  else if (path) frame = pickFrame(frames, path, inPlace ? from : null, from);
+  else if (path) frame = pickFrame(frames, path, address, own, inPlace ? from : null, from);
   if (target.frame && !frame) return null;
   // Lines or a heading of a file frame, without a path: of the file it shows.
-  if (frame?.type === "file" && !path && (lines || heading)) path = frame.path || undefined;
+  if (frame?.type === "file" && !path && (lines || heading)) {
+    path = frame.path || undefined;
+    address = canonical(frame, own);
+  }
 
   if (!frame) {
     // No frame shows the file: open one beside the link.
@@ -78,12 +89,19 @@ export function navigate(
     const beside = from && frames.some((f) => f.id === from);
     const id = addFrame(
       ctx.doc,
-      { type: "file", path, title: basename(path), view: viewFor(path, lines, heading) },
+      {
+        type: "file",
+        ...address,
+        path,
+        title: basename(path),
+        view: viewFor(path, lines, heading),
+      },
       beside ? { anchor: from, side: "right" } : { before: null },
     );
     frame = allFrames(ctx.doc).find((f) => f.id === id)!;
   } else if (frame.type === "file" && path) {
-    const patch = retarget(frame, path, lines, heading);
+    const elsewhere = !sameAddress(frame, address, own);
+    const patch = retarget(frame, path, lines, heading, elsewhere ? address : null);
     if (patch) {
       if (!ctx.canEdit) return null;
       updateFrame(ctx.doc, frame.id, patch);
@@ -97,7 +115,7 @@ export function navigate(
     requestReveal(frame.id, { path, ...(lines && { lines }), ...(heading && { heading }) });
   return {
     frame: frame.id,
-    ...(path && { path }),
+    ...(path && { ...address, path }),
     ...(lines && { lines }),
     ...(heading && { heading }),
     ...(target.comment && { comment: target.comment }),
@@ -111,6 +129,8 @@ export function navigate(
 function pickFrame(
   frames: ReadonlyArray<Frame>,
   path: string,
+  address: Address,
+  runtime: string | null | undefined,
   inPlace: string | null,
   from: string | null,
 ): Frame | undefined {
@@ -118,21 +138,28 @@ function pickFrame(
     const own = frames.find((f) => f.id === inPlace);
     if (own?.type === "file") return own;
   }
-  const showing = frames.filter((f) => f.type === "file" && f.path === path);
+  const showing = frames.filter(
+    (f) => f.type === "file" && f.path === path && sameAddress(f, address, runtime),
+  );
   const origin = frames.find((f) => f.id === from);
   if (!origin) return showing[0];
   return showing.sort((a, b) => distance(a, origin) - distance(b, origin))[0];
 }
 
-/** What to change so a file frame shows `path` the way a link asks; null if it does. */
+/**
+ * What to change so a file frame shows `path` the way a link asks; null if
+ * it does. `moveTo`: the file is at another address than the frame's.
+ */
 function retarget(
   frame: Extract<Frame, { type: "file" }>,
   path: string,
   lines: LineRange | undefined,
   heading: string | undefined,
+  moveTo: Address | null,
 ): Record<string, unknown> | null {
-  if (frame.path !== path)
+  if (frame.path !== path || moveTo)
     return {
+      ...(moveTo && atAddress(moveTo)),
       path,
       lines: null,
       view: viewFor(path, lines, heading),

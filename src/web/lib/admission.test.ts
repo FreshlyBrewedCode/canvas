@@ -219,13 +219,13 @@ describe("the authority's checks", () => {
       ok: true,
       approve: false,
     });
-    expect(check("edit", { t: "term-input", id: "t", data: "ls\n" }).ok).toBe(false);
+    expect(check("edit", { t: "term-input", pty: "t", data: "ls\n" }).ok).toBe(false);
   });
 
   test("trusted: edits; runs without the approval click; terminals", () => {
     expect(mayEdit("trusted")).toBe(true);
     expect(check("trusted", prompt)).toEqual({ ok: true, approve: false });
-    expect(check("trusted", { t: "term-input", id: "t", data: "ls\n" })).toEqual({
+    expect(check("trusted", { t: "term-input", pty: "t", data: "ls\n" })).toEqual({
       ok: true,
       approve: false,
     });

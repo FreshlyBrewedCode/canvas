@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 
+import type { Address } from "../../shared/address";
 import type { SessionMeta } from "../../shared/protocol";
 import { useFrames } from "./board";
 import type { Peer, Room } from "./room";
@@ -70,17 +71,31 @@ export function useApprovals() {
   );
 }
 
-/** A session's mirrored log; `version` changes with every event. */
-export function useSession(id: string) {
-  const room = useRoom();
-  const signal = useSyncExternalStore(
-    (onChange) => room.subscribe(`session:${id}`, onChange),
-    () => {
-      const session = room.session(id);
-      return session ? `${session.version}:${session.meta.status}` : "none";
-    },
+/**
+ * The same address while it names the same place (ADR 0013): what the hooks
+ * below take, so a new object each render doesn't subscribe again.
+ */
+function useAddress(at: Address): Address {
+  const { runtime, root } = at;
+  return useMemo(
+    () => ({ ...(runtime !== undefined && { runtime }), ...(root !== undefined && { root }) }),
+    [runtime, root],
   );
-  const session = room.session(id);
+}
+
+/** A session's mirrored log, of the runtime `at` names; `version` changes with every event. */
+export function useSession(id: string, address: Address = {}) {
+  const room = useRoom();
+  const at = useAddress(address);
+  const subscribe = useCallback(
+    (onChange: () => void) => room.subscribe(room.topic("session", at, id), onChange),
+    [room, at, id],
+  );
+  const signal = useSyncExternalStore(subscribe, () => {
+    const session = room.session(id, at);
+    return session ? `${session.version}:${session.meta.status}` : "none";
+  });
+  const session = room.session(id, at);
   return useMemo(
     () =>
       session
@@ -100,11 +115,12 @@ export function useSession(id: string) {
 }
 
 /** The settings a kind of agent offers a new session; undefined until the host knows them. */
-export function useKindOptions(agent: string) {
+export function useKindOptions(agent: string, address: Address = {}) {
   const room = useRoom();
+  const at = useAddress(address);
   return useSyncExternalStore(
     (onChange) => room.subscribe("sessions", onChange),
-    () => room.kindOptions(agent),
+    () => room.kindOptions(agent, at),
   );
 }
 
@@ -120,41 +136,55 @@ export function useWaitingFrames(): ReadonlySet<string> {
     () => JSON.stringify(room.waitingSessions()),
   );
   return useMemo(
-    () => new Set(waitingFrames(frames, JSON.parse(key) as WaitingSession[])),
-    [frames, key],
+    () =>
+      new Set(
+        waitingFrames(
+          // Waiting sessions are the board's own runtime's (ADR 0013): so are the frames to point at.
+          frames.filter((frame) => room.reachOf(frame) === "own"),
+          JSON.parse(key) as WaitingSession[],
+        ),
+      ),
+    [room, frames, key],
   );
 }
 
-/** Every session of the board, the last active first (ADR 0012): heads, without logs. */
-export function useBoardSessions(): ReadonlyArray<SessionMeta> {
+/**
+ * Every session of the board on the runtime `at` names, the last active
+ * first (ADR 0012): heads, without logs.
+ */
+export function useBoardSessions(address: Address = {}): ReadonlyArray<SessionMeta> {
   const room = useRoom();
+  const at = useAddress(address);
   return useSyncExternalStore(
     (onChange) => room.subscribe("sessions", onChange),
-    () => room.sessionMetas(),
+    () => room.sessionMetas(at),
   );
 }
 
-/** The sessions that began in a frame, the last active first (ADR 0012, decision 2). */
-export function useFrameSessions(frameId: string): ReadonlyArray<SessionMeta> {
-  const all = useBoardSessions();
+/** The sessions that began in a frame, on its runtime, the last active first (ADR 0012, decision 2). */
+export function useFrameSessions(frameId: string, at: Address = {}): ReadonlyArray<SessionMeta> {
+  const all = useBoardSessions(at);
   return useMemo(() => frameSessions(all, frameId), [all, frameId]);
 }
 
-/** A file as the host mirrors it; undefined until it arrives. */
-export function useFile(path: string) {
+/** A file of the runtime and root `at` names, as the host mirrors it; undefined until it arrives. */
+export function useFile(path: string, address: Address = {}) {
   const room = useRoom();
-  return useSyncExternalStore(
-    (onChange) => room.subscribe(`file:${path}`, onChange),
-    () => room.file(path),
+  const at = useAddress(address);
+  const subscribe = useCallback(
+    (onChange: () => void) => room.subscribe(room.topic("file", at, path), onChange),
+    [room, at, path],
   );
+  return useSyncExternalStore(subscribe, () => room.file(path, at));
 }
 
-/** The shared set's file list; null until the host sends it (never to `view` guests). */
-export function useTree() {
+/** A root's shared set's file list; null until the host sends it (never to `view` guests). */
+export function useTree(address: Address = {}) {
   const room = useRoom();
+  const at = useAddress(address);
   return useSyncExternalStore(
     (onChange) => room.subscribe("tree", onChange),
-    () => room.tree(),
+    () => room.tree(at),
   );
 }
 

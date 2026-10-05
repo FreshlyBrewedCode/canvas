@@ -9,6 +9,26 @@
  * checks against the requesting member's role before relaying.
  */
 
+import type { Address } from "./address";
+
+// ---------------------------------------------------------------------------
+// Addresses (ADR 0013, decision 7)
+
+/**
+ * Where a session or PTY is: a runtime's (`shared/address.ts`). Absent: the
+ * board's own. Every message naming a session or a PTY carries it, in every
+ * direction; `canvas serve` refuses those not its own.
+ */
+export interface OnRuntime {
+  readonly runtime?: string;
+}
+
+/** Where a file is: a runtime and a root of it. Absent: the board's own, its working dir. */
+export type OnRoot = Address;
+
+/** Why `canvas serve` denies a file of another runtime or root (`FileContent`). */
+export const NOT_THIS_RUNTIME = "not this runtime's";
+
 // ---------------------------------------------------------------------------
 // Agent sessions
 
@@ -266,45 +286,51 @@ export type ClientToServer =
       readonly sessionId: string;
       readonly text: string;
       readonly author: Author;
-    } & SessionStart)
-  | { readonly t: "agent-cancel"; readonly sessionId: string }
+    } & SessionStart &
+      OnRuntime)
+  | ({ readonly t: "agent-cancel"; readonly sessionId: string } & OnRuntime)
   /**
    * Change a setting. The agent answers which settings follow, so a session
    * not begun yet begins here, as `start` says, and its process runs.
    */
-  | {
+  | ({
       readonly t: "agent-config";
       readonly sessionId: string;
       readonly configId: string;
       readonly value: AgentConfigValue;
       readonly start?: SessionStart;
-    }
+    } & OnRuntime)
   /** No frame shows this session any more: stop its agent, unless it is busy. */
-  | { readonly t: "agent-release"; readonly sessionId: string }
+  | ({ readonly t: "agent-release"; readonly sessionId: string } & OnRuntime)
   /** List this kind of agent's settings (`kind-options`), if not known yet: it runs once to say. */
-  | { readonly t: "kind-probe"; readonly agent: AgentKind }
+  | ({ readonly t: "kind-probe"; readonly agent: AgentKind } & OnRuntime)
   /** Send a session's log (`session-history`): a frame shows it. */
-  | { readonly t: "session-open"; readonly sessionId: string }
-  | {
+  | ({ readonly t: "session-open"; readonly sessionId: string } & OnRuntime)
+  | ({
       readonly t: "agent-permission";
       readonly sessionId: string;
       readonly requestId: string;
       readonly optionId: string | null;
       readonly by: string;
-    }
+    } & OnRuntime)
   /** Send a file now and on every change, until closed. */
-  | { readonly t: "file-open"; readonly path: string }
-  | { readonly t: "file-close"; readonly path: string }
+  | ({ readonly t: "file-open"; readonly path: string } & OnRoot)
+  | ({ readonly t: "file-close"; readonly path: string } & OnRoot)
   /** Send the shared set's file list now and whenever it changes. */
-  | { readonly t: "tree-watch" }
-  | { readonly t: "term-open"; readonly id: string; readonly cols: number; readonly rows: number }
-  | { readonly t: "term-input"; readonly id: string; readonly data: string }
-  | {
-      readonly t: "term-resize";
-      readonly id: string;
+  | ({ readonly t: "tree-watch" } & OnRoot)
+  | ({
+      readonly t: "term-open";
+      readonly pty: string;
       readonly cols: number;
       readonly rows: number;
-    }
+    } & OnRuntime)
+  | ({ readonly t: "term-input"; readonly pty: string; readonly data: string } & OnRuntime)
+  | ({
+      readonly t: "term-resize";
+      readonly pty: string;
+      readonly cols: number;
+      readonly rows: number;
+    } & OnRuntime)
   /** The answer to a `board-call`: the tool's text, for the agent, and any images. */
   | {
       readonly t: "board-result";
@@ -365,15 +391,19 @@ export type ServerToClient =
       readonly room: RoomSecrets;
       readonly relay: WelcomeRelay | null;
     }
-  | { readonly t: "agent-meta"; readonly meta: SessionMeta }
-  | { readonly t: "agent-event"; readonly sessionId: string; readonly event: AgentEvent }
+  | AgentMetaMessage
+  | ({
+      readonly t: "agent-event";
+      readonly sessionId: string;
+      readonly event: AgentEvent;
+    } & OnRuntime)
   | AgentOptionsMessage
   | SessionHistoryMessage
   | KindOptionsMessage
   | FileMessage
   | TreeMessage
-  | { readonly t: "term-data"; readonly id: string; readonly data: string }
-  | { readonly t: "term-exit"; readonly id: string; readonly code: number | null }
+  | TermDataMessage
+  | ({ readonly t: "term-exit"; readonly pty: string; readonly code: number | null } & OnRuntime)
   /**
    * An agent called a board tool (`shared/board-tools.ts`); the board is in
    * the browser, so the browser runs it. `frameId` is the frame the agent
@@ -469,23 +499,26 @@ export interface RoomState {
   readonly version?: string | null;
 }
 
-/** Requests a guest sends the host; the host answers `{ok}` or `{ok:false, error}`. */
+/**
+ * Requests a guest sends the host; the host answers `{ok}` or `{ok:false, error}`.
+ * Each names the runtime of what it is about (ADR 0013, decision 7).
+ */
 export type GuestRequest =
   /** A prompt into the session `frameId` shows. */
-  | {
+  | ({
       readonly t: "agent-prompt";
       readonly sessionId: string;
       readonly frameId: string;
       readonly text: string;
-    }
-  | { readonly t: "agent-cancel"; readonly sessionId: string }
-  | {
+    } & OnRuntime)
+  | ({ readonly t: "agent-cancel"; readonly sessionId: string } & OnRuntime)
+  | ({
       readonly t: "agent-config";
       readonly sessionId: string;
       readonly configId: string;
       readonly value: AgentConfigValue;
-    }
-  | { readonly t: "term-input"; readonly id: string; readonly data: string };
+    } & OnRuntime)
+  | ({ readonly t: "term-input"; readonly pty: string; readonly data: string } & OnRuntime);
 
 /**
  * Reads a guest asks the host for, on the same channel as `GuestRequest`:
@@ -495,7 +528,7 @@ export type GuestRequest =
  * `session-open`: a frame shows a session whose log we lack (ADR 0012,
  * decision 6). The log comes as a `session-history`, now or once the host has it.
  */
-export type GuestRead = { readonly t: "session-open"; readonly sessionId: string };
+export type GuestRead = { readonly t: "session-open"; readonly sessionId: string } & OnRuntime;
 
 export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly error: string };
 
@@ -516,19 +549,19 @@ export type GuestReply = { readonly ok: true } | { readonly ok: false; readonly 
  * A `session-history` always replaces what a guest has, up to its length.
  */
 export type HostBroadcast =
-  | { readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionHead> }
+  | ({ readonly t: "sessions"; readonly sessions: ReadonlyArray<SessionHead> } & OnRuntime)
   | SessionHistoryMessage
   | KindOptionsMessage
-  | { readonly t: "agent-meta"; readonly meta: SessionMeta }
-  | {
+  | AgentMetaMessage
+  | ({
       readonly t: "agent-event";
       readonly sessionId: string;
       readonly event: AgentEvent;
       /** Its place in the session's log. */
       readonly index: number;
-    }
+    } & OnRuntime)
   | AgentOptionsMessage
-  | { readonly t: "term-data"; readonly id: string; readonly data: string }
+  | TermDataMessage
   | FileMessage
   | TreeMessage
   /**
@@ -543,34 +576,47 @@ export interface SignedMemberList {
   readonly signature: string;
 }
 
-export interface FileMessage {
+/** A file, named as it was asked for (`file-open`). */
+export interface FileMessage extends OnRoot {
   readonly t: "file";
   readonly path: string;
   readonly file: FileContent;
 }
 
-/** Every file in the shared set, working-dir-relative with `/` separators. */
-export interface TreeMessage {
+/** Every file in the shared set of a root, root-relative with `/` separators. */
+export interface TreeMessage extends OnRoot {
   readonly t: "tree";
   readonly paths: ReadonlyArray<string>;
 }
 
+/** A PTY's output. */
+export interface TermDataMessage extends OnRuntime {
+  readonly t: "term-data";
+  readonly pty: string;
+  readonly data: string;
+}
+
+export interface AgentMetaMessage extends OnRuntime {
+  readonly t: "agent-meta";
+  readonly meta: SessionMeta;
+}
+
 /** A session's settings changed (or the agent connected and listed them). */
-export interface AgentOptionsMessage {
+export interface AgentOptionsMessage extends OnRuntime {
   readonly t: "agent-options";
   readonly sessionId: string;
   readonly options: ReadonlyArray<AgentConfigOption>;
 }
 
 /** A session's log, up to now: what came after arrives live. */
-export interface SessionHistoryMessage {
+export interface SessionHistoryMessage extends OnRuntime {
   readonly t: "session-history";
   readonly sessionId: string;
   readonly events: ReadonlyArray<AgentEvent>;
 }
 
 /** The settings a kind of agent offers a new session, as it listed them last. */
-export interface KindOptionsMessage {
+export interface KindOptionsMessage extends OnRuntime {
   readonly t: "kind-options";
   readonly agent: AgentKind;
   readonly options: ReadonlyArray<AgentConfigOption>;

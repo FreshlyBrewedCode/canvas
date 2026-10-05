@@ -68,7 +68,8 @@ later.
    the only root there is; an absent `pty` is the frame's own id. Writers leave all three absent
    for these: new frames, agents' tool calls, links, `tidy`. So boards from before need no
    migration, and `tidy` writes nothing. The own runtime's id written out names the same
-   runtime, and compares equal to absent, but nothing writes it. Guests write the
+   runtime, and compares equal to absent, but nothing writes it. A root id is letters, digits,
+   `-` and `_`, at most 64, as a runtime id. Guests write the
    doc, so a value is read with care: a `runtime` or `root` that is no id names nothing reachable
    (the frame says so, nothing is sent); a `pty` that is no id is ignored, as `shownSession`
    ignores a bad `session`. Switching a terminal frame to another PTY of its runtime is a doc
@@ -88,7 +89,10 @@ later.
      `cwd` now. "Wherever `path` shows" means a frame with the whole address.
    - agents' board tools: the paths an agent passes are of its own runtime's working dir, and
      `canvas serve` checks them against its shared set, as now. A frame the agent opens, a list
-     entry it writes, a comment it makes get the runtime of the agent's frame.
+     entry it writes, a comment it makes get the runtime of the agent's frame. That is the
+     runtime the call came from, so today they are written without an address, and a file frame
+     an agent points at a path comes to its runtime. `view_board` marks a frame on another
+     runtime as not reachable.
 
 6. **Scratch files are a runtime's, outside its roots.** ADR 0005 keeps them with `canvas serve`,
    and an agent's scratch files stay on the machine it ran on. `canvas:scratch/<name>` keeps its
@@ -112,7 +116,9 @@ later.
      names `pty`. The host checks the member's role as now.
 
    `canvas serve` takes an address as its own if `runtime` is absent or its id, and `root` is
-   absent. Anything else it refuses, and opens, runs or reads nothing: `file-open` answers `file`
+   absent; it checks every message so, not only those above. Its answers about its own things
+   leave the address absent, which names the same runtime as its id; a refusal names it exactly
+   as asked. Anything else it refuses, and opens, runs or reads nothing: `file-open` answers `file`
    with `{kind: "denied", reason: "not this runtime's"}`, which the frame shows as any denied
    file; every other message answers `error`, as for a session it hasn't got. The host's tab
    sends only addresses of runtimes it is connected to — today only the own runtime — and shows
