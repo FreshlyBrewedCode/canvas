@@ -38,6 +38,8 @@ import {
   type Target,
   type Tree,
 } from "../../shared/layout";
+import type { AgentSetting } from "../../shared/protocol";
+import { isSessionId } from "../../shared/sessions";
 import { clearComments } from "./comments";
 import { clearDrawing } from "./drawing";
 
@@ -80,7 +82,17 @@ interface FrameBase {
 
 export type Frame = FrameBase &
   (
-    | { readonly type: "agent"; readonly agent: string }
+    | {
+        readonly type: "agent";
+        readonly agent: string;
+        /** The session it shows (ADR 0012); without one, the session with the frame's id. */
+        readonly session?: string;
+        /**
+         * The settings a new conversation starts with, until its first prompt
+         * (decision 4): they only matter while the session it shows has no record.
+         */
+        readonly settings?: ReadonlyArray<AgentSetting>;
+      }
     | {
         readonly type: "file";
         /** Working-dir-relative; "" until someone picks a file. */
@@ -120,11 +132,54 @@ export const DEFAULT_SIZE: Record<FrameType, { w: number; h: number }> = {
   drawing: { w: 960, h: 640 },
 };
 
+export type AgentFrame = Extract<Frame, { type: "agent" }>;
+
 /**
- * The agent session a frame shows (ADR 0012): its first conversation has the
- * frame's id, so boards from before need no migration.
+ * The agent session a frame shows (ADR 0012): the one it names, else the one
+ * with the frame's id — its first conversation, so boards from before need no
+ * migration. A name that is no session id (guests write the doc) is ignored.
  */
-export const shownSession = (frame: Extract<Frame, { type: "agent" }>): string => frame.id;
+export const shownSession = (frame: AgentFrame): string =>
+  isSessionId(frame.session) ? frame.session : frame.id;
+
+/**
+ * A new conversation in an agent frame (decision 4): a fresh id, and the
+ * settings it starts with. Nothing runs, and `canvas serve` hears of it only
+ * with its first prompt. The new session's id.
+ */
+export function newConversation(
+  doc: Y.Doc,
+  frameId: string,
+  settings: ReadonlyArray<AgentSetting> | undefined,
+): string {
+  const id = crypto.randomUUID();
+  showConversation(doc, frameId, id, settings);
+  return id;
+}
+
+/**
+ * An agent frame shows another session (decision 1): shared, like everything
+ * a frame shows. Starting settings go with it, or (none given) go: those of
+ * a conversation never prompted are only good for that one.
+ */
+export function showConversation(
+  doc: Y.Doc,
+  frameId: string,
+  sessionId: string,
+  settings?: ReadonlyArray<AgentSetting>,
+): void {
+  const map = framesOf(doc).get(frameId);
+  if (!map || map.get("type") !== "agent" || !isSessionId(sessionId)) return;
+  doc.transact(() => {
+    map.set("session", sessionId);
+    if (settings?.length)
+      map.set(
+        "settings",
+        settings.map((s) => ({ ...s })),
+      );
+    else map.delete("settings");
+  });
+}
 
 export const framesOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("frames");
 export const layoutOf = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>("layout");

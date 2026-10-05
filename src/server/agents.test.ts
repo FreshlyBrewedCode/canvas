@@ -221,3 +221,12 @@ test("restored sessions act as their last turn's frame", () => {
   expect(agents.frameOf("s1")).toBe("f9");
   expect(agents.heads()).toEqual([{ meta: { ...meta, status: "idle" } }]);
 });
+
+test("a session's id names its log: one that could leave the folder begins nothing", () => {
+  const { agents, metas } = setup();
+  for (const sessionId of ["../escape", "a/b", ""])
+    expect(() =>
+      agents.prompt({ sessionId, frameId: "f1", agent: "fake", text: "hi", author }),
+    ).toThrow("not a session id");
+  expect(metas).toEqual([]);
+});

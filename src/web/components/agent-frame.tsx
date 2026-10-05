@@ -13,7 +13,7 @@ import {
   ShieldAlert,
   Wrench,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -47,6 +47,9 @@ import type { AgentConfigValue, AgentEvent, PlanEntry } from "../../shared/proto
 type AgentFrameData = Extract<Frame, { type: "agent" }>;
 
 const NO_EVENTS: AgentEvent[] = [];
+
+/** The session the frame shows: what its permission cards answer for. */
+const ShownSession = createContext("");
 
 export function AgentFrame({ frame, readOnly }: { frame: AgentFrameData; readOnly: boolean }) {
   const room = useRoomState();
@@ -118,9 +121,11 @@ function AgentThread({
   const session = useSession(sessionId);
   const kindOptions = useKindOptions(frame.agent);
   // Until its agent runs, the session's settings are what its kind offers,
-  // with the values it last had (ADR 0012). The same while they read the same:
-  // a change waits for new options as the agent's answer.
-  const derived = kindOptions && withSettings(kindOptions, session?.meta.settings);
+  // with the values it last had, or (not begun) those the frame starts it with
+  // (ADR 0012). The same while they read the same: a change waits for new
+  // options as the agent's answer.
+  const derived =
+    kindOptions && withSettings(kindOptions, session ? session.meta.settings : frame.settings);
   const derivedKey = JSON.stringify(derived);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stable = useMemo(() => derived, [derivedKey]);
@@ -204,88 +209,90 @@ function AgentThread({
         : "⌘↵ to send";
 
   return (
-    <FrameShell
-      frame={frame}
-      readOnly={readOnly}
-      status={
-        <>
-          <span className="bg-secondary text-secondary-foreground shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap">
-            {agentLabel}
-          </span>
-          {room.hostOnline && status === "waiting" ? (
-            <NeedsHost frameId={frame.id} host={room.isHost} />
-          ) : (
-            <StatusDot status={room.hostOnline ? status : "offline"} />
-          )}
-        </>
-      }
-      attention={room.hostOnline && status === "waiting"}
-    >
-      <div className="flex h-full flex-col">
-        <Thread
-          frameId={frame.id}
-          turns={turns}
-          onReuse={readOnly ? undefined : reuse}
-          version={version}
-          loading={room.hostOnline && (session ? session.loading : !room.sessionsKnown)}
-        />
-        <Plan events={events} version={version} />
-        <div className="border-t" data-composer="">
-          <CollabEditor
-            text={text}
-            readOnly={readOnly}
-            placeholder={`Prompt ${agentLabel}… (write together — everyone sees this draft)`}
-            onSubmit={send}
-            keys={{
-              "Shift-Tab": () => {
-                if (!controls) mode.cycle();
-                return true;
-              },
-              ArrowUp: (view) => recall(view, "older"),
-              ArrowDown: (view) => recall(view, "newer"),
-            }}
-            className="max-h-40 min-h-16 overflow-auto"
-          />
-          <div className="flex items-center gap-2 px-2.5 pb-2">
-            <AgentSettings
-              settings={settings}
-              options={options}
-              known={room.isHost || !!session}
-              disabled={controls}
-              onChange={configure}
-            />
-            <ModeChip settings={settings} mode={mode} disabled={controls} />
-            <span className="text-muted-foreground flex-1 truncate text-[11px]">
-              {error ? (
-                <span className="text-destructive">{error}</span>
-              ) : sending && !room.isHost && access === "edit" ? (
-                "waiting for the host to approve…"
-              ) : (
-                hint
-              )}
+    <ShownSession.Provider value={sessionId}>
+      <FrameShell
+        frame={frame}
+        readOnly={readOnly}
+        status={
+          <>
+            <span className="bg-secondary text-secondary-foreground shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap">
+              {agentLabel}
             </span>
-            {status !== "idle" && (
+            {room.hostOnline && status === "waiting" ? (
+              <NeedsHost frameId={frame.id} host={room.isHost} />
+            ) : (
+              <StatusDot status={room.hostOnline ? status : "offline"} />
+            )}
+          </>
+        }
+        attention={room.hostOnline && status === "waiting"}
+      >
+        <div className="flex h-full flex-col">
+          <Thread
+            frameId={frame.id}
+            turns={turns}
+            onReuse={readOnly ? undefined : reuse}
+            version={version}
+            loading={room.hostOnline && (session ? session.loading : !room.sessionsKnown)}
+          />
+          <Plan events={events} version={version} />
+          <div className="border-t" data-composer="">
+            <CollabEditor
+              text={text}
+              readOnly={readOnly}
+              placeholder={`Prompt ${agentLabel}… (write together — everyone sees this draft)`}
+              onSubmit={send}
+              keys={{
+                "Shift-Tab": () => {
+                  if (!controls) mode.cycle();
+                  return true;
+                },
+                ArrowUp: (view) => recall(view, "older"),
+                ArrowDown: (view) => recall(view, "newer"),
+              }}
+              className="max-h-40 min-h-16 overflow-auto"
+            />
+            <div className="flex items-center gap-2 px-2.5 pb-2">
+              <AgentSettings
+                settings={settings}
+                options={options}
+                known={room.isHost || !!session}
+                disabled={controls}
+                onChange={configure}
+              />
+              <ModeChip settings={settings} mode={mode} disabled={controls} />
+              <span className="text-muted-foreground flex-1 truncate text-[11px]">
+                {error ? (
+                  <span className="text-destructive">{error}</span>
+                ) : sending && !room.isHost && access === "edit" ? (
+                  "waiting for the host to approve…"
+                ) : (
+                  hint
+                )}
+              </span>
+              {status !== "idle" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void room.act({ t: "agent-cancel", sessionId })}
+                  disabled={readOnly}
+                >
+                  <CircleStop /> Stop
+                </Button>
+              )}
+              <UsageRing usage={session?.meta.usage} turns={turns} />
               <Button
                 size="sm"
-                variant="ghost"
-                onClick={() => void room.act({ t: "agent-cancel", sessionId })}
-                disabled={readOnly}
+                onClick={() => void send()}
+                disabled={readOnly || busy || !room.hostOnline}
               >
-                <CircleStop /> Stop
+                <SendHorizontal /> Send
               </Button>
-            )}
-            <UsageRing usage={session?.meta.usage} turns={turns} />
-            <Button
-              size="sm"
-              onClick={() => void send()}
-              disabled={readOnly || busy || !room.hostOnline}
-            >
-              <SendHorizontal /> Send
-            </Button>
+            </div>
           </div>
         </div>
-      </div>
-    </FrameShell>
+      </FrameShell>
+    </ShownSession.Provider>
   );
 }
 
@@ -353,7 +360,7 @@ function Thread({
             )
           )}
           {turns.map((turn) => (
-            <TurnView key={turn.id} turn={turn} frameId={frameId} onReuse={onReuse} />
+            <TurnView key={turn.id} turn={turn} onReuse={onReuse} />
           ))}
           <RemoteSelections frameId={frameId} version={version} />
         </div>
@@ -439,11 +446,9 @@ function PlanItem({ entry }: { entry: PlanEntry }) {
 
 function TurnView({
   turn,
-  frameId,
   onReuse,
 }: {
   turn: Turn;
-  frameId: string;
   onReuse: ((prompt: string) => void) | undefined;
 }) {
   return (
@@ -479,13 +484,13 @@ function TurnView({
       </div>
       {groupSteps(turn.rows).map((item) =>
         item.kind === "steps" ? (
-          <StepsView key={item.key} steps={item} frameId={frameId} running={!turn.end} />
+          <StepsView key={item.key} steps={item} running={!turn.end} />
         ) : (
-          <RowView key={item.key} row={item} frameId={frameId} />
+          <RowView key={item.key} row={item} />
         ),
       )}
       {turn.permissions.map((permission) => (
-        <PermissionCard key={permission.requestId} permission={permission} frameId={frameId} />
+        <PermissionCard key={permission.requestId} permission={permission} />
       ))}
       {turn.end?.error && <p className="text-destructive font-mono text-xs">{turn.end.error}</p>}
       {turn.end?.cancelled && <p className="text-muted-foreground font-mono text-xs">stopped</p>}
@@ -495,15 +500,7 @@ function TurnView({
 }
 
 /** Several tool calls in a row, folded into one line: how many, and the last. */
-function StepsView({
-  steps,
-  frameId,
-  running,
-}: {
-  steps: Steps;
-  frameId: string;
-  running: boolean;
-}) {
+function StepsView({ steps, running }: { steps: Steps; running: boolean }) {
   const tools = steps.rows.filter((row) => row.kind === "tool");
   const last = tools.at(-1)!;
   const errors = tools.filter((row) => row.isError).length;
@@ -529,7 +526,7 @@ function StepsView({
       >
         <div className="space-y-1.5">
           {steps.rows.map((row) => (
-            <RowView key={row.key} row={row} frameId={frameId} />
+            <RowView key={row.key} row={row} />
           ))}
         </div>
       </Disclosure>
@@ -537,11 +534,11 @@ function StepsView({
   );
 }
 
-function RowView({ row, frameId }: { row: Row; frameId: string }) {
-  return <div data-row={row.kind}>{rowBody(row, frameId)}</div>;
+function RowView({ row }: { row: Row }) {
+  return <div data-row={row.kind}>{rowBody(row)}</div>;
 }
 
-function rowBody(row: Row, frameId: string) {
+function rowBody(row: Row) {
   switch (row.kind) {
     case "text":
       return (
@@ -599,7 +596,7 @@ function rowBody(row: Row, frameId: string) {
             </div>
           </Disclosure>
           {row.permissions.map((permission) => (
-            <PermissionCard key={permission.requestId} permission={permission} frameId={frameId} />
+            <PermissionCard key={permission.requestId} permission={permission} />
           ))}
         </div>
       );
@@ -688,8 +685,9 @@ function NeedsHost({ frameId, host }: { frameId: string; host: boolean }) {
   );
 }
 
-function PermissionCard({ permission, frameId }: { permission: Permission; frameId: string }) {
+function PermissionCard({ permission }: { permission: Permission }) {
   const room = useRoom();
+  const sessionId = useContext(ShownSession);
   const resolved = permission.resolved;
   const chosen = permission.options.find((o) => o.optionId === resolved?.optionId);
   return (
@@ -720,7 +718,9 @@ function PermissionCard({ permission, frameId }: { permission: Permission; frame
                     : "outline"
                   : "ghost"
               }
-              onClick={() => room.answerPermission(frameId, permission.requestId, option.optionId)}
+              onClick={() =>
+                room.answerPermission(sessionId, permission.requestId, option.optionId)
+              }
             >
               {option.name}
             </Button>

@@ -72,6 +72,14 @@ describe("resolveOccupants", () => {
     });
   });
 
+  test("an agent of a session apart from its frame is named after the frame it acts as", () => {
+    const occupants = resolveOccupants(
+      [[1, person("Karl", null, [{ sessionId: "s9", agentFrame: "a1", frameId: "f2", since: 5 }])]],
+      (id) => (id === "a1" ? "claude-1" : undefined),
+    );
+    expect(occupants.get("f2")).toMatchObject({ key: "a:s9", name: "claude-1" });
+  });
+
   test("a person beats an agent, even one that came first", () => {
     const occupants = resolveOccupants([
       [1, person("Karl", null, [{ sessionId: "a1", frameId: "f2", since: 5 }])],

@@ -63,7 +63,9 @@ describe("BoardMcp", () => {
   test("initialize carries the priming as instructions", async () => {
     const { body } = await rpc("initialize", { protocolVersion: "2025-06-18" });
     expect(body.result.protocolVersion).toBe("2025-06-18");
-    expect(body.result.instructions).toContain("frame frame1");
+    // Not which frame: a conversation moves between frames (ADR 0012); view_board says.
+    expect(body.result.instructions).not.toContain("frame1");
+    expect(body.result.instructions).toContain('view_board marks as "you"');
     expect(body.result.instructions).toContain(
       "- code-tour: Give a code tour. Use when asked for one.",
     );

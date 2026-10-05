@@ -64,7 +64,8 @@ import type {
 import { PLAN_EVENT } from "../shared/protocol";
 import { todoPlan } from "./todo-plan";
 import { fromAcp, pendingChanges, seededSettings, settingsOf } from "./agent-config";
-import { lastFrame, newMeta, sessionTitle } from "./session-meta";
+import { isSessionId, lastFrame } from "../shared/sessions";
+import { newMeta, sessionTitle } from "./session-meta";
 import { SKILLS_DIR } from "./skills";
 import { trimEvent } from "./trim-event";
 
@@ -348,6 +349,8 @@ export class AgentManager {
   }
 
   private begin(id: string, start: SessionStart): Session {
+    // Its id names its log file: it comes from the board doc, which guests write.
+    if (!isSessionId(id)) throw new Error(`not a session id: ${id}`);
     if (!this.options.agents.some((a) => a.kind === start.agent))
       throw new Error(`unknown agent ${start.agent}`);
     const kind = this.kinds.get(start.agent);

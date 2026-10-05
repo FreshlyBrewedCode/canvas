@@ -1,6 +1,11 @@
 import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
 
+import type { SessionMeta } from "../../shared/protocol";
+import { useFrames } from "./board";
 import type { Peer, Room } from "./room";
+import { frameSessions, waitingFrames } from "./sessions";
+
+type WaitingSession = ReturnType<Room["waitingSessions"]>[number];
 
 export const RoomContext = createContext<Room | null>(null);
 
@@ -103,14 +108,36 @@ export function useKindOptions(agent: string) {
   );
 }
 
-/** The agent frames blocked on a permission for the host, by id. */
-export function useWaitingAgents(): ReadonlySet<string> {
+/**
+ * The agent frames a session blocked on a permission for the host points at,
+ * by id: those showing it, else the frame of its turn (ADR 0012, decision 3).
+ */
+export function useWaitingFrames(): ReadonlySet<string> {
   const room = useRoom();
+  const frames = useFrames(room.doc);
   const key = useSyncExternalStore(
     (onChange) => room.subscribe("sessions", onChange),
-    () => room.waitingSessions().join(" "),
+    () => JSON.stringify(room.waitingSessions()),
   );
-  return useMemo(() => new Set(key ? key.split(" ") : []), [key]);
+  return useMemo(
+    () => new Set(waitingFrames(frames, JSON.parse(key) as WaitingSession[])),
+    [frames, key],
+  );
+}
+
+/** Every session of the board, the last active first (ADR 0012): heads, without logs. */
+export function useBoardSessions(): ReadonlyArray<SessionMeta> {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("sessions", onChange),
+    () => room.sessionMetas(),
+  );
+}
+
+/** The sessions that began in a frame, the last active first (ADR 0012, decision 2). */
+export function useFrameSessions(frameId: string): ReadonlyArray<SessionMeta> {
+  const all = useBoardSessions();
+  return useMemo(() => frameSessions(all, frameId), [all, frameId]);
 }
 
 /** A file as the host mirrors it; undefined until it arrives. */
