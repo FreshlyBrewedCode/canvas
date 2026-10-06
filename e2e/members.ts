@@ -16,7 +16,7 @@ export const memberRow = async (host: Page, page: Page) =>
 /** The host sets what `page`'s browser may do, and waits until it knows. */
 export async function setRole(host: Page, page: Page, role: "view" | "edit") {
   const row = await memberRow(host, page);
-  await host.locator("[data-members-button]").click();
+  await host.locator("[data-share]").click();
   await row.locator("select").selectOption(role);
   await host.keyboard.press("Escape");
   await expect(page.locator(`[data-access="${role}"]`)).toHaveCount(1, { timeout: 10_000 });
@@ -25,7 +25,7 @@ export async function setRole(host: Page, page: Page, role: "view" | "edit") {
 /** The host trusts `page`'s browser for this session, or takes it back (decision 4). */
 export async function setTrusted(host: Page, page: Page, on: boolean) {
   const row = await memberRow(host, page);
-  await host.locator("[data-members-button]").click();
+  await host.locator("[data-share]").click();
   const toggle = row.getByRole("button", { name: /^(Trust|Take trusted back)/ });
   const role = await row.locator("select").inputValue();
   if ((await toggle.getAttribute("aria-pressed")) !== String(on)) await toggle.click();
@@ -38,7 +38,7 @@ export async function setTrusted(host: Page, page: Page, on: boolean) {
 /** The host removes `page`'s browser from the members. */
 export async function remove(host: Page, page: Page) {
   const row = await memberRow(host, page);
-  await host.locator("[data-members-button]").click();
+  await host.locator("[data-share]").click();
   await row.getByRole("button", { name: /^Remove/ }).click();
   await host.keyboard.press("Escape");
 }
@@ -46,7 +46,9 @@ export async function remove(host: Page, page: Page) {
 /** The guest link the host's board gives now: after a reset, not the first one (decision 6). */
 export async function copyGuestLink(host: Page) {
   await host.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await host.locator("[data-share]").click();
   await host.getByRole("button", { name: "Copy guest link" }).click();
+  await host.keyboard.press("Escape");
   return host.evaluate(() => navigator.clipboard.readText());
 }
 

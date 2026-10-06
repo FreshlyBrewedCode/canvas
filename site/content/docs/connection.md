@@ -7,7 +7,8 @@ order: 4
 
 The dot in the top bar says what your browser reaches: **connected to canvas serve** for the host,
 **host online** for a guest. It turns red when something is wrong, and counts new errors. Click it
-for the connection dialog.
+for the connection dialog. A guest waiting in the [lobby](/docs/guests#the-lobby) sees what is wrong
+there too, with **Connection details** to open it.
 
 ## Two legs
 

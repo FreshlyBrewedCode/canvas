@@ -7,7 +7,8 @@ order: 2
 
 ## Guest link
 
-The host copies it with **Copy guest link** in the top bar. It holds the room's key and the host's
+The host copies it from **Share** in the top bar: **Copy guest link**. Guests find the same link
+there, to pass on; whoever they send it to knocks too. It holds the room's key and the host's
 public key, but not where `canvas serve` is or a pairing code: only a browser paired as host
 controls it. A guest link is an invite: it finds the board, and the host decides who comes in
 and what they can do there.
@@ -20,7 +21,8 @@ server hosting the web app.
 Someone who opens the guest link in a browser the host hasn't let in yet waits in the **lobby**:
 **Waiting for the host to let you in**, with their browser's whole
 [fingerprint](/docs/board#presence). They see nothing of the board until then, nor anyone's
-pointer, and nothing they do reaches it; nobody sees theirs.
+pointer, and nothing they do reaches it; nobody sees theirs. If something keeps them from the host
+(the relay refuses the link, say), the lobby says what, with **Connection details**.
 
 The host sees a card for each knock, and the [inbox](#the-inbox) counts it: the name they typed
 and their whole fingerprint. Names are what people typed; if it matters, ask them to read you the
@@ -36,7 +38,7 @@ nobody new gets in.
 
 ## Members and roles
 
-**Members** in the top bar lists everyone the host let in, by name and fingerprint, with a dot for
+**Share** in the top bar lists the members: everyone the host let in, by name and fingerprint, with a dot for
 who is here now. Each member has a role, which the host changes there at any time; a guest sees
 theirs as a badge.
 
@@ -65,14 +67,14 @@ from someone, they knock again.
 
 ### Reset invite link
 
-**Reset invite link**, at the bottom of **Members**, makes a new guest link and retires the old
+**Reset invite link**, at the bottom of **Share**, makes a new guest link and retires the old
 one. Removing a member does the same by itself. Members on the board move along without noticing,
 trust included; their address bar shows the new link, so a reload keeps them in. The host's tab
 moves too, and the host link from before still opens the board.
 
 Everyone else holding the old link is left behind, in a room nobody comes to: someone waiting in
 the lobby, a removed member, and members who aren't on the board right now. Send them the new
-link from **Copy guest link**. Members come in with it without knocking.
+link from **Share**. Members come in with it without knocking.
 
 ## Approvals
 

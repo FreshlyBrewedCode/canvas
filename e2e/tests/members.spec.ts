@@ -153,7 +153,7 @@ test("the guest link is an invite: the lobby", async ({ browser, host, guestLink
     expect(await reaches(guest, host, 10_000), "its edits reach the host").toBe(true);
     expect(await ask(), "its requests run").toBe("ok");
     await expect(host.locator('[data-avatar="Ada"]')).toBeVisible({ timeout: 10_000 });
-    await host.locator("[data-members-button]").click();
+    await host.locator("[data-share]").click();
     await expect((await memberRow(host, guest)).locator("select")).toHaveValue("edit");
     await host.keyboard.press("Escape");
   });
@@ -192,6 +192,42 @@ test("the guest link is an invite: the lobby", async ({ browser, host, guestLink
   await guest.context().close();
 });
 
+test("share: the guest link for everyone, the members for the host", async ({ host, guest }) => {
+  await guest.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const share = (page: Page) => page.locator("[data-share-popover]");
+
+  await test.step("the host: the link, the members, resetting the link", async () => {
+    await host.locator("[data-share]").click();
+    await expect(share(host).getByRole("textbox", { name: "Guest link" })).toHaveValue(/room=/);
+    await expect(share(host).locator('[data-member="Ada"]')).toBeVisible();
+    await expect(share(host).locator("[data-reset-link]")).toBeVisible();
+    await host.keyboard.press("Escape");
+  });
+
+  await test.step("a guest: the link to pass on, nothing of the members", async () => {
+    await guest.locator("[data-share]").click();
+    await expect(share(guest)).toContainText("the host lets them in");
+    await expect(share(guest).locator("[data-members]")).toHaveCount(0);
+    await share(guest).getByRole("button", { name: "Copy guest link" }).click();
+    const link = await guest.evaluate(() => navigator.clipboard.readText());
+    expect(new URL(link).searchParams.get("room"), "the board's room").toBe(await roomOf(host));
+  });
+});
+
+test("the lobby says what keeps a guest out", async ({ browser, guestLink }, testInfo) => {
+  // A relay token the relay refuses: the guest never reaches the room.
+  const url = new URL(guestLink);
+  const fragment = new URLSearchParams(url.hash.slice(1));
+  test.skip(!fragment.get("rt"), "only through a canvas relay");
+  fragment.set("rt", "not-a-token");
+  url.hash = fragment.toString();
+  const guest = await open(browser, url.href, "Ada", "#3b82f6", testInfo);
+  const hint = guest.locator("[data-lobby-connection]");
+  await expect(hint).toContainText("Can't reach the relay", { timeout: 30_000 });
+  await hint.getByRole("button", { name: "Connection details" }).click();
+  await expect(guest.locator("[data-connection-dialog]")).toBeVisible();
+});
+
 test("trusted for one host session", async ({ host, guest }) => {
   const approval = host.getByRole("button", { name: "Run on my machine" });
   /** A request that waits for the host's approval as edit: setting an agent's option. */
@@ -225,7 +261,7 @@ test("trusted for one host session", async ({ host, guest }) => {
   await test.step("granted on top of the saved role", async () => {
     await expect(guest.locator('[data-access="edit"]')).toHaveCount(1);
     await setTrusted(host, guest, true);
-    await host.locator("[data-members-button]").click();
+    await host.locator("[data-share]").click();
     const row = await memberRow(host, guest);
     await expect(row).toHaveAttribute("data-trusted", "true");
     await expect(row.locator("select"), "its saved role stays edit").toHaveValue("edit");
@@ -248,7 +284,7 @@ test("trusted for one host session", async ({ host, guest }) => {
     await host.reload();
     await expect(connected(host)).toBeVisible({ timeout: 15_000 });
     await expect(guest.locator('[data-access="edit"]')).toHaveCount(1, { timeout: 30_000 });
-    await host.locator("[data-members-button]").click();
+    await host.locator("[data-share]").click();
     await expect(await memberRow(host, guest)).not.toHaveAttribute("data-trusted", /.*/);
     await host.keyboard.press("Escape");
     await ask();
@@ -420,7 +456,7 @@ for (const via of ["transport", "signal"] as const)
       let newLink = "";
 
       await test.step("the members move along; the lobby stays behind", async () => {
-        await host.locator("[data-members-button]").click();
+        await host.locator("[data-share]").click();
         await host.locator("[data-reset-link]").click();
         await host.keyboard.press("Escape");
         await moved(first);
