@@ -3,14 +3,13 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { Knock } from "@/lib/admission";
 import { useMembers, usePeers, useRoom, useRoomState, useTrusted } from "@/lib/room-context";
 import { readable, readableFull } from "../../shared/identity";
 import type { GuestAccess, MemberRole } from "../../shared/protocol";
 
 /**
- * Members and the lobby (ADR 0011, decision 2): the host's knock cards and
- * member list, a guest's role, and the lobby a guest waits in. Trusted
+ * Members and the lobby (ADR 0011, decision 2): the host's member list, a
+ * guest's role, and the lobby a guest waits in. Trusted
  * (decision 4) is granted here for this host session, never saved.
  */
 
@@ -18,44 +17,6 @@ const ROLE: Record<MemberRole, string> = {
   view: "view only",
   edit: "can edit · runs need approval",
 };
-
-/** Host: someone knocks. Their whole fingerprint, so two browsers can be told apart. */
-export function KnockCard({ knock }: { knock: Knock }) {
-  const room = useRoom();
-  return (
-    <div
-      data-knock={knock.name}
-      data-fingerprint={knock.fingerprint}
-      data-status="ready"
-      className="bg-card border-status-ready/45 border border-l-[3px] p-3 shadow-md"
-      style={{ borderLeftColor: knock.color }}
-    >
-      <p className="mb-1 text-xs">
-        <span className="font-semibold" style={{ color: knock.color }}>
-          {knock.name}
-        </span>{" "}
-        wants to join
-      </p>
-      <p
-        className="text-muted-foreground mb-2 font-mono text-[11px] break-words"
-        title="This browser's fingerprint: ask them what theirs shows"
-      >
-        {readableFull(knock.fingerprint)}
-      </p>
-      <div className="flex justify-end gap-1.5">
-        <Button size="sm" variant="ghost" onClick={() => room.deny(knock.peerId)}>
-          Deny
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => room.admit(knock.peerId, "view")}>
-          Admit to view
-        </Button>
-        <Button size="sm" onClick={() => room.admit(knock.peerId, "edit")}>
-          Admit to edit
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 /** Host: everyone admitted, whether they are here, their role, trusted now; remove them. */
 export function MembersButton() {

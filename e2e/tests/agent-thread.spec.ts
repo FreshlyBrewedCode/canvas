@@ -59,19 +59,28 @@ test("agents waiting on a permission are hard to miss", async ({ host, guest }) 
     await page.locator("[data-hud]").getByTitle("Reset to 100%").click();
   const id = await newAgent(host, "opencode");
   const needs = (page: Page) => page.locator(`[data-needs-host="${id}"]`);
+  const inbox = (page: Page) => page.locator("header [data-inbox]");
+  /** The agent's line in `page`'s inbox; it opens it. */
+  const listed = async (page: Page) => {
+    await inbox(page).click();
+    return page.locator(`[data-inbox-list] [data-waiting="${id}"]`);
+  };
   // Reading outside the project makes opencode ask (its default policy).
   await send(host, id, "Read the file /etc/hostname with your read tool and tell me what it says.");
 
-  await test.step("the header, the outline and the top bar say so", async () => {
+  await test.step("the header, the outline and the inbox say so", async () => {
     await expect(needs(host)).toContainText("needs you", { timeout: 60_000 });
     await expect(frame(host, id)).toHaveAttribute("data-attention", /.*/);
     await expect(needs(guest)).toContainText("needs host");
-    await expect(host.locator("[data-waiting-count]")).toContainText("1 agent needs you");
-    await expect(guest.locator("[data-waiting-count]")).toContainText("waits for the host");
+    await expect(inbox(host)).toHaveAttribute("data-count", "1");
+    await expect(await listed(host)).toContainText("asks for a permission");
+    await host.keyboard.press("Escape");
+    await expect(await listed(guest)).toContainText("waits for the host's permission");
+    await guest.keyboard.press("Escape");
     await expect(host.locator("[data-waiting-marker]"), "in view: no marker").toHaveCount(0);
   });
 
-  await test.step("out of view, a marker; it and the count go there", async () => {
+  await test.step("out of view, a marker; it and the inbox go there", async () => {
     await host.mouse.move(60, 820);
     for (let i = 0; i < 10; i++) await host.mouse.wheel(400, 0);
     await expect(host.locator(`[data-waiting-marker="${id}"]`)).toHaveCount(1);
@@ -79,14 +88,14 @@ test("agents waiting on a permission are hard to miss", async ({ host, guest }) 
     await expect(host.locator("[data-waiting-marker]")).toHaveCount(0);
     for (let i = 0; i < 10; i++) await host.mouse.wheel(0, 400);
     await settle(600);
-    await host.locator("[data-waiting-count]").click();
+    await (await listed(host)).getByRole("button", { name: "Go there" }).click();
     await expect(host.locator("[data-waiting-marker]")).toHaveCount(0);
   });
 
   await test.step("answering it ends all of it", async () => {
     await frame(host, id).locator("[data-permission-kind=allow_once]").first().click();
     await expect(needs(host)).toHaveCount(0, { timeout: 30_000 });
-    await expect(host.locator("[data-waiting-count]")).toHaveCount(0);
+    await expect(inbox(host)).toHaveAttribute("data-count", "0");
     await expect(frame(host, id)).not.toHaveAttribute("data-attention", /.*/);
     await idle(host, id, { turn: 1 });
   });

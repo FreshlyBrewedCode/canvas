@@ -103,6 +103,10 @@ canvas
   Trusted (decision 4): the host's grant per member fingerprint, kept only in `Admissions`
   (`trust`, `Room.trust`/`Room.trusted`), so it lasts while the host tab does and goes with the
   member; never sent to `canvas serve`
+- the inbox (`web/lib/notices.ts`, `components/inbox.tsx`): what waits on someone — knocks,
+  guests' requests, agents blocked on a permission; a guest's own requests — derived from the
+  room's state, never stored, so nothing outlives its cause. The top bar's bell lists them;
+  knocks and requests also get a card over the board (`arrivals`) until answered or put off
 - the member list (ADR 0011, decision 5, `web/lib/member-list.ts`): the host signs who is in —
   `{host, version, members: peer id → fingerprint}`, statement `canvas-members:<room>:<json>` — and
   hostcasts `member-list` when it changes (`Authority.publishMembers`). Guests (`Members`) take it only
