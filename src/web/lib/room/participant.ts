@@ -155,6 +155,12 @@ export interface ParticipantOptions {
   readonly emitter: Emitter;
 }
 
+/** Guests: a request of ours on its way to the host, or waiting for its approval. */
+export interface OwnRequest {
+  readonly id: string;
+  readonly request: GuestRequest;
+}
+
 export class Participant {
   readonly awareness: Awareness;
   readonly isHost: boolean;
@@ -174,6 +180,8 @@ export class Participant {
   log: ConnectionEvent[] = [];
   /** When we joined the room. */
   joinedAt: number | null = null;
+  /** Guests: what we asked the host to run and it hasn't answered yet; a new array on every change. */
+  requests: ReadonlyArray<OwnRequest> = [];
 
   /**
    * Host: the board's authority, in this tab; who is in is its to say. Set
@@ -874,11 +882,19 @@ export class Participant {
     if (this.host) return this.host.execute(request, this.identity);
     const hostPeerId = this.hostPeer;
     if (!this.actions || !hostPeerId || !this.hostOnline) throw new Error("the host is offline");
-    const reply = (await this.actions.request.request(json(request), {
-      target: hostPeerId,
-      timeoutMs: 5 * 60_000,
-    })) as unknown as GuestReply;
-    if (!reply.ok) throw new Error(reply.error);
+    const own: OwnRequest = { id: crypto.randomUUID(), request };
+    this.requests = [...this.requests, own];
+    this.emit("approvals");
+    try {
+      const reply = (await this.actions.request.request(json(request), {
+        target: hostPeerId,
+        timeoutMs: 5 * 60_000,
+      })) as unknown as GuestReply;
+      if (!reply.ok) throw new Error(reply.error);
+    } finally {
+      this.requests = this.requests.filter((r) => r !== own);
+      this.emit("approvals");
+    }
   }
 
   // -------------------------------------------------------------------------

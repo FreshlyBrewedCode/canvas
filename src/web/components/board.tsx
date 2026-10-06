@@ -22,7 +22,8 @@ import { FRAME_KINDS, UnreachableFrame } from "@/components/frame-shell";
 import { Edges } from "@/components/edges";
 import { FullscreenBar } from "@/components/fullscreen";
 import { Inserts } from "@/components/inserts";
-import { AccessBadge, KnockCard, Lobby, MembersButton } from "@/components/members";
+import { Arrivals, Inbox, InboxProvider } from "@/components/inbox";
+import { AccessBadge, Lobby, MembersButton } from "@/components/members";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
@@ -37,34 +38,30 @@ import { useBoard, useFrames } from "@/hooks/use-doc";
 import { mayEdit } from "@/lib/admission";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
 import { guestLink, saveIdentity } from "@/lib/link";
-import type { Approval, Peer, Presence } from "@/lib/room";
-import {
-  useApprovals,
-  useKnocks,
-  usePeers,
-  useRoom,
-  useRoomState,
-  useWaitingFrames,
-} from "@/lib/room-context";
+import type { Peer, Presence } from "@/lib/room";
+import { usePeers, useRoom, useRoomState, useWaitingFrames } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { PAGE_VERSION, versionSkew } from "@/lib/version";
 import { edgeMarker, showsAny, toViewport, viewRect } from "@/lib/viewport";
 import { readable } from "../../shared/identity";
 import { MIN_H, MIN_W, type Beside, type Box, type ResolvedCluster } from "../../shared/layout";
-import type { AgentConfigOption, AgentConfigValue } from "../../shared/protocol";
 
 /** A guest sees the board once the host lets it in (ADR 0011); until then, the lobby. */
 export function Board() {
   const room = useRoomState();
-  if (!room.isHost && room.admission !== "admitted")
-    return (
-      <div className="flex h-full flex-col">
-        <TopBar following={null} onFollow={() => {}} fullscreen={null} />
-        <Lobby />
-      </div>
-    );
-  return <BoardView />;
+  return (
+    <InboxProvider>
+      {!room.isHost && room.admission !== "admitted" ? (
+        <div className="flex h-full flex-col">
+          <TopBar following={null} onFollow={() => {}} fullscreen={null} />
+          <Lobby />
+        </div>
+      ) : (
+        <BoardView />
+      )}
+    </InboxProvider>
+  );
 }
 
 function BoardView() {
@@ -298,7 +295,7 @@ function BoardView() {
           <PeerMarkers viewport={viewport} />
           <WaitingMarkers frames={frames} viewport={viewport} />
           {!readOnly && !row && <Toolbar onCreate={create} />}
-          <Approvals />
+          <Arrivals />
           <HostElsewhere />
           <HostRefused />
           {frames.length === 0 && <EmptyBoard readOnly={readOnly} />}
@@ -723,32 +720,6 @@ function WaitingMarkers({
   );
 }
 
-/** How many agents wait on a permission; a click goes to the next one. */
-function WaitingCount() {
-  const room = useRoomState();
-  const go = useGo();
-  const waiting = useWaiting();
-  const next = useRef(0);
-  if (!waiting.length) return null;
-  return (
-    <button
-      type="button"
-      data-waiting-count={waiting.length}
-      title={waiting.length > 1 ? "Go to the next one" : "Go there"}
-      className="bg-status-ready/15 text-status-ready border-status-ready/45 flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium"
-      onClick={() => {
-        const frame = waiting[next.current++ % waiting.length]!;
-        go({ kind: "board", target: { frame: frame.id } });
-      }}
-    >
-      <ShieldAlert className="size-3.5" />
-      {waiting.length === 1
-        ? `1 agent ${room.isHost ? "needs you" : "waits for the host"}`
-        : `${waiting.length} agents ${room.isHost ? "need you" : "wait for the host"}`}
-    </button>
-  );
-}
-
 /** Host: another tab took over the board; this one waits until it is asked back. */
 function HostElsewhere() {
   const room = useRoomState();
@@ -787,78 +758,6 @@ function HostRefused() {
       </p>
     </div>
   );
-}
-
-/** Host: who knocks (ADR 0011), and what guests ask to run. */
-function Approvals() {
-  const approvals = useApprovals();
-  const knocks = useKnocks();
-  if (!approvals.length && !knocks.length) return null;
-  return (
-    <div data-hud="" className="absolute top-3 right-3 flex w-80 flex-col gap-2">
-      {knocks.map((knock) => (
-        <KnockCard key={knock.peerId} knock={knock} />
-      ))}
-      {approvals.map((approval) => (
-        <ApprovalCard key={approval.id} approval={approval} />
-      ))}
-    </div>
-  );
-}
-
-function ApprovalCard({ approval }: { approval: Approval }) {
-  const room = useRoom();
-  const { request, peer } = approval;
-  const what =
-    request.t === "agent-prompt"
-      ? "wants to send a prompt"
-      : request.t === "agent-config"
-        ? `wants to set ${describeConfig(room.optionsFor(request.sessionId, request), request)}`
-        : request.t === "term-input"
-          ? "wants to type in a terminal"
-          : "wants to stop an agent";
-  return (
-    <div
-      className="bg-card border-status-ready/45 border border-l-[3px] p-3 shadow-md"
-      style={{ borderLeftColor: peer.color }}
-      data-status="ready"
-    >
-      <p className="mb-1 text-xs">
-        <span className="font-semibold" style={{ color: peer.color }}>
-          {peer.name}
-        </span>{" "}
-        {what}
-      </p>
-      {request.t === "agent-prompt" && (
-        <p className="bg-muted/60 mb-2 max-h-32 overflow-auto p-2 text-xs whitespace-pre-wrap">
-          {request.text}
-        </p>
-      )}
-      <div className="flex justify-end gap-1.5">
-        <Button size="sm" variant="ghost" onClick={() => approval.resolve(false)}>
-          Decline
-        </Button>
-        <Button size="sm" onClick={() => approval.resolve(true)}>
-          <Check /> Run on my machine
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** "Model to Sonnet 5", from the option list the host has for the session. */
-function describeConfig(
-  options: ReadonlyArray<AgentConfigOption> | undefined,
-  request: { configId: string; value: AgentConfigValue },
-) {
-  const option = options?.find((o) => o.id === request.configId);
-  const value =
-    typeof request.value === "boolean"
-      ? request.value
-        ? "on"
-        : "off"
-      : (option?.choices.find((c) => c.value === request.value)?.name ?? request.value);
-  return `${option?.name ?? request.configId} to ${value}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -946,7 +845,6 @@ function TopBar({
       </span>
       <ConnectionIndicator />
       {fullscreen && <FullscreenBar fullscreen={fullscreen} />}
-      <WaitingCount />
 
       <div className="ml-auto flex items-center gap-2">
         <div className="flex -space-x-1">
@@ -993,6 +891,7 @@ function TopBar({
         >
           {readable(room.fingerprint)}
         </span>
+        {inside && <Inbox />}
         {room.isHost ? <MembersButton /> : <AccessBadge access={room.access} />}
         {inside && (
           <Button

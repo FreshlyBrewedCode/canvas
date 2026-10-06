@@ -91,9 +91,10 @@ can change that). The request appears in the thread, under the tool call it gate
 can answer it**, whatever the guest's role; guests see that it waits for the host.
 
 A waiting agent is hard to miss: its frame is outlined, and its header says **needs you** (for
-guests, **needs host**); a click scrolls to the request. The top bar counts the agents waiting, and
-each click on the count goes to the next one. An agent frame out of view that waits gets a marker
-on the edge of the screen, in its direction, like people do; a click goes there.
+guests, **needs host**); a click scrolls to the request. The top bar's
+[inbox](/docs/guests#the-inbox) lists the agents waiting, each with **Go there**. An agent frame
+out of view that waits gets a marker on the edge of the screen, in its direction, like people do; a
+click goes there.
 
 | Host                                          | Guest                                           |
 | --------------------------------------------- | ----------------------------------------------- |
