@@ -91,6 +91,39 @@ export function ConnectionIndicator() {
   );
 }
 
+/**
+ * Guests in the lobby: what keeps us from the host, when something does, and
+ * the dialog to look closer — the top bar's dot is easy to miss there.
+ */
+export function LobbyConnection() {
+  const [open, setOpen] = useState(false);
+  const view = useConnection(open);
+  const headline = diagnose(view);
+  if (headline.tone !== "blocked") return null;
+  return (
+    <div
+      data-status="blocked"
+      data-lobby-connection=""
+      className="space-y-2 border border-l-[3px] border-[color-mix(in_oklch,var(--status)_45%,transparent)] border-l-[var(--status)] bg-[color-mix(in_oklch,var(--status)_8%,transparent)] p-3"
+    >
+      <p className="text-xs font-medium">{headline.title}</p>
+      {headline.detail && (
+        <p className="text-muted-foreground text-xs leading-relaxed">{headline.detail}</p>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline">
+            Connection details
+          </Button>
+        </DialogTrigger>
+        <DialogContent data-connection-dialog="">
+          <ConnectionDetails view={view} headline={headline} />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function ConnectionDetails({ view, headline }: { view: ConnectionView; headline: Headline }) {
   const room = useRoomState();
   // Once per opening, and again on request: it takes a few seconds and says

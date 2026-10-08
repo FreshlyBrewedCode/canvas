@@ -50,7 +50,7 @@ export CANVAS_RELAY_KEY="karl:<the secret>"
 canvas serve
 ```
 
-Open the host link, **Copy guest link**, and share it as usual. The connection dialog shows
+Open the host link, **Copy guest link** from **Share**, and send it as usual. The connection dialog shows
 **Through the board's canvas relay** and each person's route as **through canvas relay**.
 
 ## Settings
