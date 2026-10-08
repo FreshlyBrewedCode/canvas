@@ -193,7 +193,8 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
   ([Focus](/docs/focus)), though the two go together: follow someone's view into the frame they
   occupy and you scroll with them there too.
 - **Text selections** in agent threads and files frames show in the selecting person's colour.
-- The top bar lists everyone on the board. You are the ringed avatar at its end: click it to
+- The top bar lists everyone on the board; past five, **+n** lists the rest, and clicking a
+  name there follows them too. You are the ringed avatar at its end: click it to
   change your **name** and **colour**, and to read your fingerprint and, as a guest, what the host
   lets you do. A new browser gets an animal name and a colour. A guest who may only view has a
   **view only** chip beside it.
