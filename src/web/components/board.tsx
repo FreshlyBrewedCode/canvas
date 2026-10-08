@@ -22,6 +22,7 @@ import { FullscreenBar } from "@/components/fullscreen";
 import { Inserts } from "@/components/inserts";
 import { Arrivals, Inbox, InboxProvider } from "@/components/inbox";
 import { Lobby, Share } from "@/components/members";
+import { PresenceStack, who } from "@/components/presence-stack";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { YouMenu } from "@/components/you-menu";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ import { addFrame, applyLayout, newFrame, own, type Frame, type FrameType } from
 import { useBoard, useFrames } from "@/hooks/use-doc";
 import { mayEdit } from "@/lib/admission";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
-import type { Peer, Presence } from "@/lib/room";
+import type { Presence } from "@/lib/room";
 import { usePeers, useRoom, useRoomState, useWaitingFrames } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -843,41 +844,11 @@ function TopBar({
       {fullscreen && <FullscreenBar fullscreen={fullscreen} />}
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="flex -space-x-1">
-          {peers.map((peer) => {
-            const on = peer.user.peerId === following;
-            return (
-              <button
-                key={peer.user.peerId}
-                type="button"
-                aria-pressed={on}
-                data-avatar={peer.user.name}
-                data-fingerprint={peer.fingerprint ?? ""}
-                title={`${on ? "Stop following" : "Follow"} ${who(peer)}`}
-                onClick={() => onFollow(peer.user.peerId)}
-                className="border-card grid size-6 place-items-center rounded-full border-2 text-[10px] font-semibold"
-                style={{
-                  backgroundColor: peer.user.color,
-                  color: "oklch(0.2 0 0)",
-                  outline: on ? `2px solid ${peer.user.color}` : undefined,
-                  outlineOffset: 1,
-                }}
-              >
-                {peer.user.name.slice(0, 1)}
-              </button>
-            );
-          })}
-        </div>
+        <PresenceStack peers={peers} following={following} onFollow={onFollow} />
         {inside && <Inbox />}
         {inside && <Share />}
         <YouMenu />
       </div>
     </header>
   );
-}
-
-/** Someone as a title names them: name, fingerprint if verified, host. */
-function who(peer: Peer) {
-  const fingerprint = peer.fingerprint ? readable(peer.fingerprint) : "not verified";
-  return `${peer.user.name} · ${fingerprint}${peer.user.host ? " (host)" : ""}`;
 }
