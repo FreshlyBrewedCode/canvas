@@ -1,7 +1,5 @@
 import {
-  Check,
   GripVertical,
-  Link2,
   Maximize2,
   Minus,
   MousePointer2,
@@ -23,7 +21,7 @@ import { Edges } from "@/components/edges";
 import { FullscreenBar } from "@/components/fullscreen";
 import { Inserts } from "@/components/inserts";
 import { Arrivals, Inbox, InboxProvider } from "@/components/inbox";
-import { AccessBadge, Lobby, MembersButton } from "@/components/members";
+import { AccessBadge, Lobby, Share } from "@/components/members";
 import { TerminalFrame } from "@/components/terminal-frame";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
@@ -37,7 +35,7 @@ import { addFrame, applyLayout, newFrame, own, type Frame, type FrameType } from
 import { useBoard, useFrames } from "@/hooks/use-doc";
 import { mayEdit } from "@/lib/admission";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
-import { guestLink, saveIdentity } from "@/lib/link";
+import { saveIdentity } from "@/lib/link";
 import type { Peer, Presence } from "@/lib/room";
 import { usePeers, useRoom, useRoomState, useWaitingFrames } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
@@ -831,7 +829,6 @@ function TopBar({
   const all = usePeers();
   const inside = room.isHost || room.admission === "admitted";
   const peers = inside ? all : [];
-  const [copied, setCopied] = useState(false);
   const [name, setName] = useState(room.identity.name);
 
   return (
@@ -891,23 +888,9 @@ function TopBar({
         >
           {readable(room.fingerprint)}
         </span>
+        {!room.isHost && <AccessBadge access={room.access} />}
         {inside && <Inbox />}
-        {room.isHost ? <MembersButton /> : <AccessBadge access={room.access} />}
-        {inside && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              void navigator.clipboard.writeText(
-                guestLink(room.inviteRoom(), undefined, room.guestRelay()),
-              );
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-          >
-            {copied ? <Check /> : <Link2 />} {copied ? "Copied" : "Copy guest link"}
-          </Button>
-        )}
+        {inside && <Share />}
       </div>
     </header>
   );

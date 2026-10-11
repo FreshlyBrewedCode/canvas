@@ -133,7 +133,9 @@ export const test = base.extend<Options & Fixtures>({
 
   guestLink: async ({ host }, use) => {
     await host.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await host.locator("[data-share]").click();
     await host.getByRole("button", { name: "Copy guest link" }).click();
+    await host.keyboard.press("Escape");
     await use(await host.evaluate(() => navigator.clipboard.readText()));
   },
 
