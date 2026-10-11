@@ -2,7 +2,7 @@
 // viewport's edge; clicking an avatar follows that view until our own pan or zoom.
 import type { Page } from "@playwright/test";
 import { clear, settle } from "../board";
-import { expect, test } from "../fixtures";
+import { expect, letIn, open, test } from "../fixtures";
 
 type View = { x: number; y: number; w: number; h: number };
 
@@ -211,4 +211,52 @@ test("you: your name and colour, for everyone", async ({ host, guest }) => {
     await expect(guest.locator("[data-you-access]")).toContainText("can edit");
     await guest.keyboard.press("Escape");
   });
+});
+
+test("a full board: past a few avatars, +n lists the rest", async ({
+  browser,
+  host,
+  guest,
+  guestLink,
+}, testInfo) => {
+  test.slow();
+  const names = ["Bob", "Cy", "Dee", "Eve", "Fay"];
+  const more = host.locator("header [data-avatars-more]");
+  const avatars = host.locator("header [data-avatar]");
+  const pages: Page[] = [];
+
+  await test.step("five fit; a sixth turns the last place into +2", async () => {
+    for (const [i, name] of names.entries()) {
+      const page = await open(browser, guestLink, name, "#22c55e", testInfo);
+      await letIn(host, page, name);
+      pages.push(page);
+      if (i === 3) {
+        await expect(avatars).toHaveCount(5, { timeout: 10_000 });
+        await expect(more).toHaveCount(0);
+      }
+    }
+    await expect(more).toHaveText("+2", { timeout: 10_000 });
+    await expect(avatars).toHaveCount(4);
+  });
+
+  await test.step("+2 lists the other two; following one of them gives it an avatar", async () => {
+    await more.click();
+    const rows = host.locator("[data-avatars-list] [data-avatar-row]");
+    await expect(rows).toHaveCount(2);
+    const name = (await rows.last().getAttribute("data-avatar-row"))!;
+    await rows.last().click();
+    const lead = host.locator(`header [data-avatar="${name}"]`);
+    await expect(lead, "followed, so shown").toHaveAttribute("aria-pressed", "true");
+    await expect(more).toHaveText("+2");
+    await lead.click();
+    await expect(lead, "let go: back under +2").toHaveCount(0);
+  });
+
+  await test.step("one leaves: everyone fits again", async () => {
+    await pages[0]!.context().close();
+    await expect(more).toHaveCount(0, { timeout: 30_000 });
+    await expect(avatars).toHaveCount(5);
+  });
+  void guest;
+  for (const page of pages.slice(1)) await page.context().close();
 });
