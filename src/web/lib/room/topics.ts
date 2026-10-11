@@ -5,6 +5,7 @@
 
 export type Topic =
   | "room"
+  /** Host: guests' requests to approve. Guests: their own, until answered. */
   | "approvals"
   /** Host: the member list and the knocks. */
   | "members"

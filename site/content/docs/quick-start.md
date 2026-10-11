@@ -64,7 +64,7 @@ an agent, write a prompt and press **Send** (⌘/Ctrl-Enter).
 
 The guest's browser finds the host's peer to peer and waits in the lobby until you let it in; next
 time, the same browser comes straight in. Anything a guest wants to run on your machine appears as
-an approval card for you.
+an approval card for you; the bell in the top bar counts what waits on you.
 
 ![The host's top bar: members, and the guest link to copy](./screenshots/topbar-host.webp)
 

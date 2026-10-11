@@ -46,6 +46,7 @@ import {
   boardHeight,
   type AdmissionStatus,
   type FrameFocus,
+  type OwnRequest,
   type Peer,
   type Presence,
 } from "./room/participant";
@@ -57,6 +58,7 @@ export type {
   AdmissionStatus,
   FrameFocus,
   LineSelection,
+  OwnRequest,
   Peer,
   Presence,
   Selection,
@@ -431,6 +433,10 @@ export class Room {
 
   get approvals(): Approval[] {
     return this.authority?.approvals ?? NO_APPROVALS;
+  }
+  /** Guests: what we asked the host to run, until it answers; a new array on every change. */
+  get requests(): ReadonlyArray<OwnRequest> {
+    return this.participant.requests;
   }
   /** Host: the members `canvas serve` keeps; a new array on every change. */
   get members(): ReadonlyArray<Member> {

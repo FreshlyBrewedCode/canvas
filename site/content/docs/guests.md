@@ -22,8 +22,9 @@ Someone who opens the guest link in a browser the host hasn't let in yet waits i
 [fingerprint](/docs/board#presence). They see nothing of the board until then, nor anyone's
 pointer, and nothing they do reaches it; nobody sees theirs.
 
-The host sees a card for each knock: the name they typed and their whole fingerprint. Names are
-what people typed; if it matters, ask them to read you the fingerprint their lobby shows. Then:
+The host sees a card for each knock, and the [inbox](#the-inbox) counts it: the name they typed
+and their whole fingerprint. Names are what people typed; if it matters, ask them to read you the
+fingerprint their lobby shows. Then:
 
 - **Admit to edit** or **Admit to view**: they are a **member** with that role, and the board
   appears for them.
@@ -83,9 +84,21 @@ approval card for the host:
 - stopping an agent
 
 The host presses **Run on my machine** or **Decline**. The guest's frame says **waiting for the
-host to approve…** until then.
+host to approve…** until then, and so does the guest's [inbox](#the-inbox).
 
 ![An approval card: a guest wants to send a prompt](./screenshots/approval.webp)
+
+## The inbox
+
+The bell in the top bar counts what waits, and lists it when you click it.
+
+- **Host**: who knocks, what guests ask to run, and agents asking for a
+  [permission](/docs/agent#permissions). Knocks and approvals are answered right in the list;
+  **Go there** takes you to an agent's frame, where its request is.
+- **Guest**: your own requests the host hasn't answered yet, and agents waiting for the host.
+
+A knock or a request also shows as a card at the top right of the board, at most three at a time.
+**Later** hides a card; it stays in the inbox until you answer it there.
 
 ## Permissions are the host's
 

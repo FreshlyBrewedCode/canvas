@@ -71,6 +71,15 @@ export function useApprovals() {
   );
 }
 
+/** Guests: what we asked the host to run, until it answers. */
+export function useRequests() {
+  const room = useRoom();
+  return useSyncExternalStore(
+    (onChange) => room.subscribe("approvals", onChange),
+    () => room.requests,
+  );
+}
+
 /**
  * The same address while it names the same place (ADR 0013): what the hooks
  * below take, so a new object each render doesn't subscribe again.

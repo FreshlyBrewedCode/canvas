@@ -30,6 +30,7 @@ order: 7
 | **full screen**   | Your own view of one row at 100%, its frames as tall as your screen. [Board](/docs/board#full-screen) |
 | **guest**         | Anyone on the board who opened the guest link                               |
 | **guest link**    | The invite to a board: whoever opens it knocks, and the host lets them in. Share it with the people you invite; **Reset invite link** retires it. [Guests](/docs/guests#reset-invite-link) |
+| **inbox**         | The bell in the top bar: what waits on you (knocks, approvals, agents' permissions), or, for a guest, on the host. [Guests](/docs/guests#the-inbox) |
 | **issuer key**    | A name and secret a relay's operator gives a host or team; `canvas serve` signs relay tokens with it. [Relay](/docs/relay) |
 | **line**          | Clusters side by side, left to right, tops aligned; lines go top to bottom. [Board](/docs/board#layout) |
 | **lobby**         | Where someone who opened the guest link waits until the host lets them in. [Guests](/docs/guests#the-lobby) |
