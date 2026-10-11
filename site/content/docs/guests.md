@@ -39,8 +39,9 @@ nobody new gets in.
 ## Members and roles
 
 **Share** in the top bar lists the members: everyone the host let in, by name and fingerprint, with a dot for
-who is here now. Each member has a role, which the host changes there at any time; a guest sees
-theirs as a badge.
+who is here now. Each member has a role, which the host changes there at any time. A guest finds
+theirs, and what it lets them do, by clicking their own avatar at the end of the top bar; view
+only also shows next to it.
 
 | Role               | Board                              | Runs on the host's machine      |
 | ------------------ | ---------------------------------- | ------------------------------- |
@@ -55,7 +56,7 @@ The shield next to a member's role makes them **trusted**: what they ask for run
 approval card, and they type into terminals. It goes on top of their role, for as long as the
 host's tab stays open: their own reloads keep it, but when the host's tab reloads or closes they
 are back to their role. It is never saved. The members list marks who is trusted right now; press
-the shield again to take it back, at once. A guest sees **trusted** as their badge.
+the shield again to take it back, at once. A guest's own menu says **trusted**.
 
 Trust them only as far as you would let them use your keyboard: a terminal runs as you.
 

@@ -7,18 +7,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { guestLink } from "@/lib/link";
 import { useMembers, usePeers, useRoom, useRoomState, useTrusted } from "@/lib/room-context";
 import { readable, readableFull } from "../../shared/identity";
-import type { GuestAccess, MemberRole } from "../../shared/protocol";
+import type { MemberRole } from "../../shared/protocol";
 
 /**
  * Members and the lobby (ADR 0011, decision 2): the guest link and the
- * host's member list, a guest's role, and the lobby a guest waits in. Trusted
+ * host's member list, and the lobby a guest waits in. Trusted
  * (decision 4) is granted here for this host session, never saved.
  */
-
-const ROLE: Record<MemberRole, string> = {
-  view: "view only",
-  edit: "can edit · runs need approval",
-};
 
 /**
  * Who comes onto the board, in one place: the guest link to invite with, and,
@@ -205,16 +200,6 @@ function MemberList() {
         </Button>
       </div>
     </>
-  );
-}
-
-/** Guest: what the host lets us do. */
-export function AccessBadge({ access }: { access: GuestAccess | null }) {
-  if (!access) return null;
-  return (
-    <span data-access={access} className="bg-secondary rounded-md px-2 py-1 font-mono text-[11px]">
-      {access === "trusted" ? "trusted" : ROLE[access]}
-    </span>
   );
 }
 

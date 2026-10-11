@@ -81,7 +81,7 @@ function fragment(link: BoardLink): URLSearchParams {
 // ---------------------------------------------------------------------------
 
 /** Presence hues: distinct at a glance, readable as a label background with dark text. */
-const PRESENCE = [
+export const PRESENCE = [
   "#f97316",
   "#22c55e",
   "#3b82f6",

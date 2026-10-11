@@ -52,9 +52,12 @@ test("each browser proves its key; everyone sees whose each peer is", async ({ h
   expect(karl, "host and guest have different keys").not.toBe(ada);
   await seen(host, "Ada").toBe(ada);
   await seen(guest, "Karl").toBe(karl);
-  await expect(host.locator("[data-fingerprint-self]")).toHaveText(
-    `${karl.slice(0, 4)} ${karl.slice(4, 8)}`,
-  );
+  await host.locator("header [data-you]").click();
+  await expect(
+    host.locator("[data-you-fingerprint]"),
+    "the whole of it, in the You menu",
+  ).toHaveText(karl.match(/.{4}/g)!.join(" "));
+  await host.keyboard.press("Escape");
 
   await test.step("reloads keep the key: the guest's, then the host's", async () => {
     await guest.reload();
@@ -180,6 +183,10 @@ test("the guest link is an invite: the lobby", async ({ browser, host, guestLink
     await guest.reload();
     await letIn(host, guest, "Ada", "view");
     await expect(guest.locator('[data-access="view"]')).toHaveCount(1, { timeout: 10_000 });
+    await expect(
+      guest.locator("header [data-access-chip]"),
+      "view only, said beside us",
+    ).toHaveText("view only");
     await expect(guest.locator("[data-hud]").getByRole("button", { name: "Agent" })).toHaveCount(0);
     expect(await reaches(guest, host), "a view guest's edits don't reach the host").toBe(false);
     expect(await ask(), "a view guest's requests are refused").toContain("read-only");
@@ -188,6 +195,7 @@ test("the guest link is an invite: the lobby", async ({ browser, host, guestLink
     await guest.reload();
     await expect(guest.locator('[data-access="edit"]')).toHaveCount(1, { timeout: 30_000 });
     await expect(knock, "no knock").toHaveCount(0);
+    await expect(guest.locator("header [data-access-chip]"), "edit needs no chip").toHaveCount(0);
   });
   await guest.context().close();
 });

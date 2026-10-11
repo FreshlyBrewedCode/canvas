@@ -164,3 +164,51 @@ test("following someone's view", async ({ host, guest }) => {
     expect(await following()).toBeNull();
   });
 });
+
+test("you: your name and colour, for everyone", async ({ host, guest }) => {
+  const you = host.locator("header [data-you]");
+  const menu = host.locator("[data-you-menu]");
+  const karlOnGuest = guest.locator("header [data-avatar]").first();
+
+  await test.step("the header has no name field: our avatar, ringed, opens the menu", async () => {
+    await expect(host.locator('header [aria-label="Your name"]')).toHaveCount(0);
+    await expect(you).toHaveText("K");
+    await you.click();
+    await expect(menu.getByLabel("Your name")).toHaveValue("Karl");
+    await expect(menu, "the host is told what hosting means").toContainText("You host this board");
+  });
+
+  await test.step("a new name, kept on Enter, reaches the guest", async () => {
+    await menu.getByLabel("Your name").fill("Karla");
+    await menu.getByLabel("Your name").press("Enter");
+    await expect(you).toHaveAttribute("aria-label", "You: Karla");
+    await expect(guest.locator('header [data-avatar="Karla"]')).toBeVisible({ timeout: 10_000 });
+  });
+
+  await test.step("a new colour, the same way; both kept by this browser", async () => {
+    await menu.getByRole("button", { name: "Colour #a855f7" }).click();
+    await expect(menu.getByRole("button", { name: "Colour #a855f7" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect
+      .poll(() => karlOnGuest.evaluate((el) => getComputedStyle(el).backgroundColor), {
+        timeout: 10_000,
+      })
+      .toBe("rgb(168, 85, 247)");
+    await host.keyboard.press("Escape");
+    // The fixture sets the name again on every load: what this browser keeps is what counts.
+    expect(await host.evaluate(() => JSON.parse(localStorage.getItem("canvas.identity")!))).toEqual(
+      {
+        name: "Karla",
+        color: "#a855f7",
+      },
+    );
+  });
+
+  await test.step("a guest's menu says what it may do", async () => {
+    await guest.locator("header [data-you]").click();
+    await expect(guest.locator("[data-you-access]")).toContainText("can edit");
+    await guest.keyboard.press("Escape");
+  });
+});

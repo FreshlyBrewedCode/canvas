@@ -193,9 +193,11 @@ Agents are told how to link, and [`view_board`](/docs/board-tools) gives them fr
   ([Focus](/docs/focus)), though the two go together: follow someone's view into the frame they
   occupy and you scroll with them there too.
 - **Text selections** in agent threads and files frames show in the selecting person's colour.
-- The top bar lists everyone on the board. Your **name** is the field next to it; a new browser
-  gets an animal name and a colour.
-- Each browser has a **fingerprint**, like `ab12 cd34`: yours is next to your name, everyone
+- The top bar lists everyone on the board. You are the ringed avatar at its end: click it to
+  change your **name** and **colour**, and to read your fingerprint and, as a guest, what the host
+  lets you do. A new browser gets an animal name and a colour. A guest who may only view has a
+  **view only** chip beside it.
+- Each browser has a **fingerprint**, like `ab12 cd34`: yours is in that menu, everyone
   else's on their pointer and in their avatar's tooltip. The host checks each one as people join,
   so a name can be anything, but a fingerprint can't be borrowed: if someone's shows **not
   verified**, the host hasn't vouched for it. It stays the same as long as you use the same

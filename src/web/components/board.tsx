@@ -21,8 +21,9 @@ import { Edges } from "@/components/edges";
 import { FullscreenBar } from "@/components/fullscreen";
 import { Inserts } from "@/components/inserts";
 import { Arrivals, Inbox, InboxProvider } from "@/components/inbox";
-import { AccessBadge, Lobby, Share } from "@/components/members";
+import { Lobby, Share } from "@/components/members";
 import { TerminalFrame } from "@/components/terminal-frame";
+import { YouMenu } from "@/components/you-menu";
 import { Button } from "@/components/ui/button";
 import { useBoardNavigation } from "@/hooks/use-board-navigation";
 import { useFollowView } from "@/hooks/use-follow-view";
@@ -35,7 +36,6 @@ import { addFrame, applyLayout, newFrame, own, type Frame, type FrameType } from
 import { useBoard, useFrames } from "@/hooks/use-doc";
 import { mayEdit } from "@/lib/admission";
 import { preview, useDrag, type DragGhost } from "@/lib/drag";
-import { saveIdentity } from "@/lib/link";
 import type { Peer, Presence } from "@/lib/room";
 import { usePeers, useRoom, useRoomState, useWaitingFrames } from "@/lib/room-context";
 import { readSelection } from "@/lib/selection";
@@ -829,7 +829,6 @@ function TopBar({
   const all = usePeers();
   const inside = room.isHost || room.admission === "admitted";
   const peers = inside ? all : [];
-  const [name, setName] = useState(room.identity.name);
 
   return (
     <header className="bg-card relative flex h-12 shrink-0 items-center gap-3 border-b px-3">
@@ -869,28 +868,9 @@ function TopBar({
             );
           })}
         </div>
-        <input
-          aria-label="Your name"
-          className="bg-muted/60 w-28 rounded-md border-l-[3px] px-2 py-1 text-xs outline-none"
-          style={{ borderLeftColor: room.identity.color }}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => {
-            const identity = { ...room.identity, name: name.trim() || room.identity.name };
-            saveIdentity(identity);
-            room.rename(identity);
-          }}
-        />
-        <span
-          data-fingerprint-self={room.fingerprint}
-          className="text-muted-foreground font-mono text-[11px]"
-          title="This browser's fingerprint: who you are to the others on the board"
-        >
-          {readable(room.fingerprint)}
-        </span>
-        {!room.isHost && <AccessBadge access={room.access} />}
         {inside && <Inbox />}
         {inside && <Share />}
+        <YouMenu />
       </div>
     </header>
   );
